@@ -1,3 +1,3 @@
-# Gold_bot
+# Gold Bot
 
 Initial repository setup.
