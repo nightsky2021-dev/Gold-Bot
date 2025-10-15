@@ -1,15 +1,15 @@
-# Django Framework
+# Core Framework
 Django>=4.2,<5.0
 
-# Telegram Bot Support (pre-release for full async support)
-python-telegram-bot[all]>=20.0
+# Telegram Bot (with async support)
+python-telegram-bot[all]>=21.0
 
-# Environment Variable Management
+# Environment Management
 django-environ>=0.11.0
 
-# PostgreSQL Database Driver
+# Database
 psycopg2-binary>=2.9.0
 
-# Utilities
+# Additional utilities
 python-decouple>=3.8
 pytz>=2023.3

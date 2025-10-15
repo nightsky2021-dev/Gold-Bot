@@ -1,7 +1,7 @@
 from django.apps import AppConfig
 
 
-class BotConfig(AppConfig):
+class CoreConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'bot'
-    verbose_name = 'ربات تلگرام'
+    name = 'core'
+    verbose_name = 'هسته سیستم'

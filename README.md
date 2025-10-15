@@ -1,216 +1,254 @@
-# 🪙 سیستم معاملات طلای آنلاین با ربات تلگرام
+# 🏆 سیستم معاملات طلای آنلاین - Gold Shop
 
-یک سیستم کامل بک‌اند و ربات تلگرامی برای معاملات طلا با معماری تمیز و مقیاس‌پذیر.
+یک سیستم جامع و حرفه‌ای برای مدیریت معاملات طلا از طریق ربات تلگرام، ساخته شده با Django و python-telegram-bot.
 
 ## 📋 ویژگی‌ها
 
-- ✅ ثبت‌نام و احراز هویت کاربران از طریق تلگرام
-- ✅ سیستم تایید کاربران توسط ادمین
-- ✅ مدیریت موجودی ریالی و طلای کاربران
-- ✅ ثبت سفارشات خرید و فروش طلا
-- ✅ محاسبه خودکار بر اساس ریال یا گرم
-- ✅ پنل مدیریت قدرتمند Django
-- ✅ ربات تلگرامی با رابط کاربری ساده و کارآمد
-- ✅ معماری ماژولار و قابل توسعه
-- ✅ استفاده از Type Hinting و Clean Code
-- ✅ تراکنش‌های اتمی برای امنیت داده‌ها
+### برای کاربران:
+- ✅ ثبت‌نام و احراز هویت با شماره تلگرام
+- 💰 مشاهده قیمت‌های لحظه‌ای طلا
+- 📈 ثبت سفارش خرید طلا (با دو روش: بر اساس مبلغ یا وزن)
+- 📉 ثبت سفارش فروش طلا به سیستم
+- 📊 مشاهده پورتفولیو (موجودی ریالی و طلا)
+- 📜 مشاهده تاریخچه سفارشات
+
+### برای مدیران:
+- 🔐 پنل مدیریت قدرتمند Django
+- ✅ تأیید/رد کاربران جدید
+- 💼 مدیریت محصولات و قیمت‌ها
+- 📦 پردازش و تأیید سفارشات
+- 📊 گزارش‌گیری کامل
 
 ## 🏗️ معماری پروژه
 
 ```
 gold_shop/
-├── core/                   # تنظیمات مرکزی پروژه
-│   ├── settings.py        # تنظیمات با django-environ
-│   ├── urls.py
-│   └── wsgi.py
-│
-├── users/                  # مدیریت کاربران و پروفایل‌ها
-│   ├── models.py          # مدل Profile
-│   ├── admin.py           # پنل مدیریت کاربران
-│   └── services.py        # لایه سرویس کاربران
-│
-├── trading/                # مدیریت محصولات و سفارشات
-│   ├── models.py          # مدل‌های Product و Order
-│   ├── admin.py           # پنل مدیریت معاملات
-│   └── services.py        # منطق تجاری معاملات
-│
-├── bot/                    # ربات تلگرام
-│   ├── constants.py       # ثوابت و پیام‌های ربات
-│   ├── management/
-│   │   └── commands/
-│   │       ├── runbot.py          # اجرای ربات
-│   │       └── update_prices.py   # به‌روزرسانی قیمت‌ها
-│
-├── requirements.txt        # وابستگی‌های پروژه
-├── .env                    # متغیرهای محیطی (نباید commit شود)
-└── .env.example            # نمونه متغیرهای محیطی
+├── gold_shop/          # تنظیمات اصلی پروژه
+│   ├── settings.py     # پیکربندی با django-environ
+│   └── urls.py
+├── core/               # اپلیکیشن هسته (مشترک)
+├── users/              # مدیریت کاربران و پروفایل‌ها
+│   ├── models.py       # مدل Profile با signals
+│   ├── admin.py        # پنل ادمین کاربران
+│   └── signals.py
+├── trading/            # مدیریت معاملات
+│   ├── models.py       # Product, Order
+│   ├── services.py     # لایه سرویس (منطق تجاری)
+│   ├── admin.py        # پنل ادمین معاملات
+│   └── management/
+│       └── commands/
+│           └── update_prices.py
+└── bot/                # ربات تلگرام
+    ├── constants.py    # ثوابت و حالت‌های مکالمه
+    └── management/
+        └── commands/
+            └── runbot.py  # Entry point ربات
 ```
 
-## 🚀 راه‌اندازی پروژه
+## 🚀 نصب و راه‌اندازی
 
-### 1. پیش‌نیازها
-
+### پیش‌نیازها:
 - Python 3.10 یا بالاتر
-- PostgreSQL (اختیاری، برای پروداکشن)
+- PostgreSQL (اختیاری، SQLite برای توسعه کافی است)
 - یک ربات تلگرام (از [@BotFather](https://t.me/botfather) دریافت کنید)
 
-### 2. نصب
+### مراحل نصب:
 
+#### 1. کلون کردن پروژه
 ```bash
-# کلون پروژه
 git clone <repository-url>
 cd gold_shop
-
-# ایجاد محیط مجازی
-python -m venv venv
-source venv/bin/activate  # در ویندوز: venv\Scripts\activate
-
-# نصب وابستگی‌ها
-pip install -r requirements.txt
-
-# کپی فایل محیطی
-cp .env.example .env
 ```
 
-### 3. تنظیمات
-
-فایل `.env` را ویرایش کرده و مقادیر زیر را تنظیم کنید:
-
-```env
-SECRET_KEY=your-secret-key-here
-DEBUG=True
-TELEGRAM_BOT_TOKEN=your-bot-token-from-botfather
-
-# برای استفاده از PostgreSQL:
-DATABASE_URL=postgres://user:password@localhost:5432/dbname
-```
-
-### 4. مهاجرت دیتابیس و ایجاد سوپریوزر
-
+#### 2. ایجاد محیط مجازی
 ```bash
-# اجرای مهاجرت‌ها
+python -m venv venv
+
+# در لینوکس/مک:
+source venv/bin/activate
+
+# در ویندوز:
+venv\Scripts\activate
+```
+
+#### 3. نصب پکیج‌ها
+```bash
+pip install -r requirements.txt
+```
+
+#### 4. پیکربندی متغیرهای محیطی
+```bash
+# کپی کردن فایل نمونه
+cp .env.example .env
+
+# ویرایش .env و تنظیم مقادیر
+nano .env
+```
+
+محتوای `.env`:
+```env
+SECRET_KEY=your-very-secret-key-here
+DEBUG=True
+ALLOWED_HOSTS=localhost,127.0.0.1
+
+# Database (SQLite for development)
+DATABASE_URL=sqlite:///db.sqlite3
+
+# Telegram Bot Token from @BotFather
+TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
+
+TIME_ZONE=Asia/Tehran
+```
+
+#### 5. اجرای Migration ها
+```bash
 python manage.py makemigrations
 python manage.py migrate
+```
 
-# ایجاد سوپریوزر
+#### 6. ایجاد سوپریوزر
+```bash
 python manage.py createsuperuser
 ```
 
-### 5. ایجاد محصولات نمونه
-
-پس از ورود به پنل ادمین (`http://localhost:8000/admin/`), محصولات طلا را اضافه کنید:
-
-- طلای 18 عیار (slug: tala-18-ayar)
-- طلای 24 عیار (slug: tala-24-ayar)
-- سکه بهار آزادی (slug: sekeh-bahar-azadi)
-
-### 6. اجرای پروژه
-
+#### 7. ایجاد محصولات اولیه (اختیاری)
 ```bash
-# اجرای سرور Django
-python manage.py runserver
+python manage.py shell
+```
 
-# در ترمینال دیگر، اجرای ربات تلگرام
+در shell پایتون:
+```python
+from trading.models import Product
+
+Product.objects.create(
+    name="سکه بهار آزادی",
+    buy_price=65000000,
+    sell_price=68000000,
+    is_active=True
+)
+
+Product.objects.create(
+    name="طلای 18 عیار",
+    buy_price=2500000,
+    sell_price=2600000,
+    is_active=True
+)
+
+exit()
+```
+
+#### 8. اجرای سرور Django (برای پنل ادمین)
+```bash
+python manage.py runserver
+```
+
+پنل ادمین در: http://localhost:8000/admin
+
+#### 9. اجرای ربات تلگرام
+```bash
 python manage.py runbot
 ```
 
-## 🤖 استفاده از ربات تلگرام
+## 📱 استفاده از ربات
 
-### جریان کار کاربر:
+### برای کاربران:
 
-1. **ثبت‌نام**: `/start` → اشتراک‌گذاری شماره تماس
-2. **انتظار تایید**: ادمین باید کاربر را در پنل مدیریت تایید کند
-3. **منوی اصلی** (پس از تایید):
+1. **شروع (/start)**
+   - کاربر جدید: درخواست شماره تماس
+   - ثبت‌نام و انتظار برای تأیید مدیر
+   - پس از تأیید: دسترسی به منوی اصلی
+
+2. **منوی اصلی**
    - 📈 قیمت لحظه‌ای
    - 💰 خرید طلا
    - 🛒 فروش طلا
    - 📊 پورتفولیو من
    - 📜 تاریخچه سفارشات
 
-### جریان خرید/فروش:
+3. **فرآیند خرید/فروش**
+   - انتخاب محصول
+   - انتخاب روش محاسبه (مبلغ یا وزن)
+   - وارد کردن مقدار
+   - تأیید پیش‌فاکتور
+   - ثبت سفارش
 
-1. انتخاب محصول
-2. انتخاب روش محاسبه (ریال یا گرم)
-3. وارد کردن مقدار
-4. تایید پیش‌فاکتور
-5. ثبت سفارش (منتظر تایید ادمین)
+### برای مدیران:
 
-## 👨‍💼 پنل مدیریت
+1. ورود به پنل ادمین: http://localhost:8000/admin
 
-### تایید کاربران:
-1. به `Users → Profiles` بروید
-2. کاربر را انتخاب کنید
-3. گزینه "تأیید شده" را فعال کنید
+2. **تأیید کاربران**
+   - رفتن به بخش "پروفایل‌ها"
+   - انتخاب کاربران در انتظار
+   - استفاده از bulk action "تأیید کاربران"
 
-### مدیریت سفارشات:
-1. به `Trading → Orders` بروید
-2. سفارشات در انتظار را مشاهده کنید
-3. استفاده از Action "تایید و پردازش سفارشات انتخاب شده"
-   - این عملیات به صورت خودکار موجودی کاربر را به‌روزرسانی می‌کند
+3. **مدیریت محصولات**
+   - افزودن محصول جدید
+   - به‌روزرسانی قیمت‌ها
+   - فعال/غیرفعال کردن محصولات
 
-### به‌روزرسانی قیمت‌ها:
+4. **پردازش سفارشات**
+   - مشاهده سفارشات در حالت PENDING
+   - بررسی جزئیات
+   - استفاده از bulk action "تکمیل سفارشات"
+   - موجودی‌های کاربر به صورت خودکار به‌روزرسانی می‌شود
+
+## 🔄 به‌روزرسانی قیمت‌ها
+
+### روش دستی:
 ```bash
-# دستی
-python manage.py update_prices
-
-# برای تست (بدون ذخیره تغییرات)
-python manage.py update_prices --dry-run
+python manage.py update_prices --dry-run  # نمایش تغییرات بدون ذخیره
+python manage.py update_prices            # اعمال تغییرات
 ```
 
-### تنظیم Cron Job برای به‌روزرسانی خودکار:
+### زمان‌بندی خودکار (Cron Job):
 ```bash
 # ویرایش crontab
 crontab -e
 
-# اضافه کردن: هر 30 دقیقه یکبار
-*/30 * * * * cd /path/to/project && /path/to/venv/bin/python manage.py update_prices >> /var/log/gold_shop_prices.log 2>&1
+# افزودن این خط برای به‌روزرسانی هر ساعت
+0 * * * * cd /path/to/gold_shop && /path/to/venv/bin/python manage.py update_prices
 ```
 
-## 🔒 امنیت
+## 🔧 تنظیمات پیشرفته
 
-- ✅ استفاده از `transaction.atomic()` برای عملیات‌های حساس
-- ✅ اعتبارسنجی ورودی‌های کاربر
-- ✅ محافظت در برابر موجودی منفی
-- ✅ استفاده از `select_for_update()` برای جلوگیری از race conditions
-- ✅ جداسازی کامل منطق تجاری در لایه سرویس
+### استفاده از PostgreSQL (توصیه شده برای Production):
 
-## 📊 مدل‌های پایگاه داده
-
-### Profile (users app)
-- کاربر (OneToOne به User)
-- شناسه و نام کاربری تلگرام
-- شماره تماس
-- وضعیت تایید
-- موجودی ریالی و طلا
-
-### Product (trading app)
-- نام و slug محصول
-- قیمت خرید و فروش
-- وضعیت فعال/غیرفعال
-
-### Order (trading app)
-- پروفایل کاربر و محصول
-- نوع سفارش (خرید/فروش)
-- مقدار و قیمت
-- وضعیت (در انتظار/تکمیل شده/لغو شده)
-
-## 🛠️ توسعه و سفارشی‌سازی
-
-### افزودن API واقعی برای قیمت‌ها:
-فایل `bot/management/commands/update_prices.py` را ویرایش کنید:
-
-```python
-def fetch_prices_from_api(self):
-    import requests
-    response = requests.get('https://your-api.com/prices')
-    data = response.json()
-    return self.parse_api_response(data)
+1. نصب PostgreSQL و ایجاد دیتابیس:
+```bash
+sudo -u postgres psql
+CREATE DATABASE gold_shop;
+CREATE USER gold_shop_user WITH PASSWORD 'your-password';
+GRANT ALL PRIVILEGES ON DATABASE gold_shop TO gold_shop_user;
+\q
 ```
 
-### افزودن قابلیت‌های جدید به ربات:
-1. ثوابت را در `bot/constants.py` تعریف کنید
-2. هندلرها را در `bot/management/commands/runbot.py` اضافه کنید
-3. منطق تجاری را در `services.py` مربوطه پیاده‌سازی کنید
+2. تغییر DATABASE_URL در `.env`:
+```env
+DATABASE_URL=postgres://gold_shop_user:your-password@localhost:5432/gold_shop
+```
+
+### Logging:
+
+لاگ‌ها در `logs/gold_shop.log` ذخیره می‌شوند. برای تنظیمات بیشتر، `settings.py` را ویرایش کنید.
+
+## 🛡️ امنیت
+
+- ✅ همه تراکنش‌های مالی atomic هستند
+- ✅ اعتبارسنجی کامل ورودی‌ها
+- ✅ احراز هویت با شماره تلگرام
+- ✅ تأیید دو مرحله‌ای توسط مدیر
+- ⚠️ در Production حتماً DEBUG=False قرار دهید
+- ⚠️ SECRET_KEY را تغییر دهید
+- ⚠️ از HTTPS استفاده کنید
+
+## 📊 بهترین شیوه‌ها (Best Practices)
+
+1. **Separation of Concerns**: منطق تجاری در services.py
+2. **Type Hinting**: تمام توابع type-annotated هستند
+3. **Atomic Transactions**: عملیات مالی داخل transaction.atomic
+4. **Validation**: اعتبارسنجی در سه لایه (مدل، سرویس، view)
+5. **Logging**: ثبت همه رویدادهای مهم
+6. **Clean Code**: کد خوانا و قابل نگهداری
 
 ## 🧪 تست
 
@@ -218,41 +256,37 @@ def fetch_prices_from_api(self):
 # اجرای تست‌ها
 python manage.py test
 
-# بررسی کد با flake8 (نصب: pip install flake8)
-flake8 .
-
-# بررسی Type hints (نصب: pip install mypy)
-mypy .
+# بررسی coverage
+coverage run --source='.' manage.py test
+coverage report
 ```
 
-## 📝 TODO و پیشنهادات
+## 📝 توسعه‌های آتی
 
-- [ ] افزودن تست‌های واحد (Unit Tests)
-- [ ] پیاده‌سازی API RESTful با Django REST Framework
-- [ ] افزودن سیستم نوتیفیکیشن (اطلاع‌رسانی تایید سفارش)
-- [ ] افزودن لاگ‌های دقیق‌تر
-- [ ] پیاده‌سازی کش با Redis
-- [ ] افزودن گزارشات و آمار برای ادمین
-- [ ] پشتیبانی از چند ارز
-- [ ] افزودن محدودیت نرخ (Rate Limiting)
+- [ ] یکپارچه‌سازی با API واقعی قیمت طلا (Tgju.org)
+- [ ] سیستم اعلان‌های Webhook
+- [ ] پشتیبانی از پرداخت آنلاین
+- [ ] گزارش‌های پیشرفته و نمودارها
+- [ ] API RESTful برای اپلیکیشن موبایل
+- [ ] سیستم پشتیبانی چت
 
 ## 🤝 مشارکت
 
 برای مشارکت در پروژه:
 1. Fork کنید
-2. برنچ جدید بسازید (`git checkout -b feature/AmazingFeature`)
+2. یک branch جدید بسازید (`git checkout -b feature/AmazingFeature`)
 3. تغییرات را commit کنید (`git commit -m 'Add some AmazingFeature'`)
 4. Push کنید (`git push origin feature/AmazingFeature`)
-5. Pull Request ایجاد کنید
+5. یک Pull Request باز کنید
 
-## 📄 لایسنس
+## 📄 مجوز
 
-این پروژه تحت لایسنس MIT منتشر شده است.
+این پروژه تحت مجوز MIT منتشر شده است.
 
-## 💬 پشتیبانی
+## 📞 پشتیبانی
 
-برای سوالات و پشتیبانی، یک Issue در GitHub ایجاد کنید.
+برای سوالات و مشکلات، یک Issue در GitHub باز کنید.
 
 ---
 
-**ساخته شده با ❤️ برای جامعه توسعه‌دهندگان ایرانی**
+**توجه**: این پروژه یک نمونه آموزشی و پایه‌ای است. برای استفاده در محیط تولید (Production)، حتماً موارد امنیتی و قانونی را بررسی کنید.

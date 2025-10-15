@@ -1,147 +1,148 @@
 """
-Constants and configuration for Telegram bot
+Constants for the Telegram bot.
+
+Defines conversation states, keyboard layouts, and message templates.
 """
 
-# ==================== Conversation States ====================
-# حالت‌های مختلف در ConversationHandler برای خرید و فروش
+from typing import Final
 
-# Registration states
-(WAITING_FOR_PHONE,) = range(1)
+# Conversation States
+SELECTING_PRODUCT: Final[int] = 0
+SELECTING_METHOD: Final[int] = 1
+ENTERING_AMOUNT: Final[int] = 2
+CONFIRMING_BUY: Final[int] = 3
+CONFIRMING_SELL: Final[int] = 4
 
-# Buy flow states
-(
-    SELECTING_PRODUCT_BUY,
-    SELECTING_METHOD_BUY,
-    ENTERING_AMOUNT_BUY,
-    CONFIRMING_BUY,
-) = range(100, 104)
+# Callback Data Prefixes
+PRODUCT_PREFIX: Final[str] = "product_"
+METHOD_PREFIX: Final[str] = "method_"
+CONFIRM_PREFIX: Final[str] = "confirm_"
+CANCEL_PREFIX: Final[str] = "cancel_"
 
-# Sell flow states
-(
-    SELECTING_PRODUCT_SELL,
-    SELECTING_METHOD_SELL,
-    ENTERING_AMOUNT_SELL,
-    CONFIRMING_SELL,
-) = range(200, 204)
+# Calculation Methods
+METHOD_GRAMS: Final[str] = "grams"
+METHOD_RIAL: Final[str] = "rial"
 
+# Main Menu Buttons
+MENU_PRICE: Final[str] = "📈 قیمت لحظه‌ای"
+MENU_BUY: Final[str] = "💰 خرید طلا"
+MENU_SELL: Final[str] = "🛒 فروش طلا"
+MENU_PORTFOLIO: Final[str] = "📊 پورتفولیو من"
+MENU_HISTORY: Final[str] = "📜 تاریخچه سفارشات"
+MENU_CANCEL: Final[str] = "❌ لغو"
 
-# ==================== Callback Data Patterns ====================
-# الگوهای callback_data برای دکمه‌های شیشه‌ای
+# Welcome Messages
+WELCOME_NEW_USER: Final[str] = (
+    "👋 *سلام و خوش آمدید به ربات معاملات طلا!*\n\n"
+    "برای شروع، لطفاً روی دکمه زیر کلیک کنید "
+    "تا شماره تماس خود را با ما به اشتراک بگذارید.\n\n"
+    "این اطلاعات برای احراز هویت و امنیت حساب شما ضروری است."
+)
 
-# Product selection
-CALLBACK_PRODUCT_BUY = "buy_product_{}"
-CALLBACK_PRODUCT_SELL = "sell_product_{}"
+WELCOME_PENDING_USER: Final[str] = (
+    "⏳ *حساب شما در انتظار تأیید است.*\n\n"
+    "کارشناسان ما در حال بررسی اطلاعات شما هستند.\n"
+    "لطفاً صبور باشید. به محض تأیید، شما را مطلع خواهیم کرد.\n\n"
+    "برای اطلاعات بیشتر با پشتیبانی تماس بگیرید."
+)
 
-# Method selection
-CALLBACK_METHOD_RIAL = "method_rial"
-CALLBACK_METHOD_GRAM = "method_gram"
+WELCOME_APPROVED_USER: Final[str] = (
+    "✅ *خوش آمدید {name}!*\n\n"
+    "حساب شما فعال است و می‌توانید از خدمات ما استفاده کنید.\n"
+    "از منوی زیر گزینه مورد نظر را انتخاب کنید:"
+)
 
-# Confirmation
-CALLBACK_CONFIRM_YES = "confirm_yes"
-CALLBACK_CONFIRM_NO = "confirm_no"
-CALLBACK_CANCEL = "cancel"
+REGISTRATION_SUCCESS: Final[str] = (
+    "✅ *ثبت‌نام شما با موفقیت انجام شد!*\n\n"
+    "📋 اطلاعات شما:\n"
+    "📱 شماره تماس: {phone}\n\n"
+    "⏳ لطفاً منتظر تایید مدیر باشید.\n"
+    "کارشناسان ما در اسرع وقت حساب شما را بررسی خواهند کرد.\n\n"
+    "پس از تایید، می‌توانید شروع به معامله کنید."
+)
 
+# Error Messages
+ERROR_NOT_APPROVED: Final[str] = (
+    "⚠️ حساب شما هنوز تأیید نشده است.\n"
+    "لطفاً منتظر تایید مدیر باشید."
+)
 
-# ==================== Menu Options ====================
-# گزینه‌های منوی اصلی
+ERROR_INVALID_AMOUNT: Final[str] = (
+    "❌ مقدار وارد شده نامعتبر است.\n"
+    "لطفاً یک عدد معتبر وارد کنید."
+)
 
-MENU_PRICES = "📈 قیمت لحظه‌ای"
-MENU_BUY = "💰 خرید طلا"
-MENU_SELL = "🛒 فروش طلا"
-MENU_PORTFOLIO = "📊 پورتفولیو من"
-MENU_HISTORY = "📜 تاریخچه سفارشات"
+ERROR_GENERAL: Final[str] = (
+    "❌ متأسفانه خطایی رخ داد.\n"
+    "لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید."
+)
 
+ERROR_NO_PRODUCTS: Final[str] = (
+    "❌ متأسفانه در حال حاضر محصولی برای معامله موجود نیست.\n"
+    "لطفاً بعداً تلاش کنید."
+)
 
-# ==================== Messages ====================
-# پیام‌های استاندارد ربات
+# Order Messages
+ORDER_SUCCESS: Final[str] = (
+    "✅ *سفارش شما با موفقیت ثبت شد!*\n\n"
+    "شماره سفارش: #{order_id}\n\n"
+    "سفارش شما در صف بررسی قرار گرفت.\n"
+    "پس از تأیید مدیر، به شما اطلاع داده خواهد شد.\n\n"
+    "می‌توانید وضعیت سفارش را از منوی \"تاریخچه سفارشات\" مشاهده کنید."
+)
 
-MSG_WELCOME_NEW = """
-سلام! 👋
+ORDER_CANCELLED: Final[str] = (
+    "❌ سفارش لغو شد.\n"
+    "شما به منوی اصلی بازگشتید."
+)
 
-به ربات معاملات طلای آنلاین خوش آمدید.
+# Prompts
+PROMPT_SELECT_PRODUCT: Final[str] = (
+    "لطفاً محصول مورد نظر خود را انتخاب کنید:"
+)
 
-برای شروع، لطفاً روی دکمه زیر کلیک کنید تا شماره تماس خود را با ما به اشتراک بگذارید.
-این اطلاعات برای احراز هویت شما لازم است.
-"""
+PROMPT_SELECT_METHOD: Final[str] = (
+    "روش محاسبه را انتخاب کنید:\n\n"
+    "• *بر اساس مبلغ (ریال):* مبلغی که می‌خواهید خرج کنید را وارد کنید.\n"
+    "• *بر اساس مقدار (گرم):* مقدار طلایی که می‌خواهید بخرید را وارد کنید."
+)
 
-MSG_REGISTRATION_PENDING = """
-✅ ثبت‌نام شما با موفقیت انجام شد!
+PROMPT_ENTER_AMOUNT_GRAMS: Final[str] = (
+    "⚖️ لطفاً مقدار طلا را به *گرم* وارد کنید:\n\n"
+    "مثال: 2.5 یا 10"
+)
 
-حساب شما در انتظار تایید مدیر است.
-لطفاً صبور باشید، ادمین در اسرع وقت حساب شما را بررسی خواهد کرد.
+PROMPT_ENTER_AMOUNT_RIAL: Final[str] = (
+    "💰 لطفاً مبلغ مورد نظر را به *ریال* وارد کنید:\n\n"
+    "مثال: 1000000 یا 5000000"
+)
 
-شما از طریق همین ربات از وضعیت حساب خود مطلع خواهید شد.
-"""
+PROMPT_ENTER_AMOUNT_SELL_GRAMS: Final[str] = (
+    "⚖️ لطفاً مقدار طلایی که می‌خواهید بفروشید را به *گرم* وارد کنید:\n\n"
+    "موجودی فعلی شما: {balance} گرم\n\n"
+    "مثال: 2.5 یا 10"
+)
 
-MSG_NOT_APPROVED = """
-⏳ حساب شما هنوز تایید نشده است.
+PROMPT_ENTER_AMOUNT_SELL_RIAL: Final[str] = (
+    "💰 لطفاً مبلغی که می‌خواهید از فروش طلا دریافت کنید را به *ریال* وارد کنید:\n\n"
+    "موجودی فعلی شما: {balance} گرم\n\n"
+    "مثال: 1000000 یا 5000000"
+)
 
-لطفاً صبور باشید. پس از تایید حساب توسط مدیر، می‌توانید از تمامی امکانات استفاده کنید.
+# History Messages
+NO_ORDERS: Final[str] = (
+    "📜 شما هنوز سفارشی ثبت نکرده‌اید.\n\n"
+    "از منوی اصلی می‌توانید سفارش جدید ثبت کنید."
+)
 
-در صورت نیاز به پشتیبانی، با ادمین تماس بگیرید.
-"""
+ORDERS_HISTORY_HEADER: Final[str] = (
+    "📜 *آخرین سفارشات شما:*\n\n"
+)
 
-MSG_WELCOME_APPROVED = """
-✨ خوش آمدید!
-
-حساب شما فعال است و می‌توانید از تمامی امکانات استفاده کنید.
-
-از منوی زیر گزینه مورد نظر خود را انتخاب کنید:
-"""
-
-MSG_INVALID_INPUT = """
-❌ ورودی نامعتبر است.
-
-لطفاً یک عدد معتبر وارد کنید.
-"""
-
-MSG_INSUFFICIENT_BALANCE = """
-❌ موجودی شما کافی نیست.
-
-لطفاً ابتدا موجودی خود را شارژ کنید یا مقدار کمتری را وارد نمایید.
-"""
-
-MSG_ORDER_SUCCESS = """
-✅ سفارش شما با موفقیت ثبت شد!
-
-شماره سفارش: `{order_id}`
-
-سفارش شما در انتظار بررسی و تایید مدیر است.
-پس از تایید، موجودی شما به‌روزرسانی خواهد شد.
-
-از صبر و شکیبایی شما سپاسگزاریم.
-"""
-
-MSG_CANCELLED = """
-❌ عملیات لغو شد.
-
-برای شروع مجدد، از منوی اصلی استفاده کنید.
-"""
-
-MSG_ERROR = """
-❌ خطایی رخ داد!
-
-لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.
-
-جزئیات خطا: {}
-"""
-
-
-# ==================== Button Labels ====================
-# برچسب‌های دکمه‌ها
-
-BTN_SHARE_CONTACT = "📱 اشتراک‌گذاری شماره تماس"
-BTN_RIAL = "💵 بر اساس مبلغ (ریال)"
-BTN_GRAM = "⚖️ بر اساس وزن (گرم)"
-BTN_CONFIRM = "✅ تایید نهایی"
-BTN_CANCEL = "❌ لغو"
-BTN_BACK = "🔙 بازگشت"
-
-
-# ==================== Validation ====================
-# محدودیت‌ها و اعتبارسنجی
-
-MIN_ORDER_RIAL = 100000  # حداقل مبلغ سفارش: 100,000 ریال
-MIN_ORDER_GRAM = 0.01    # حداقل وزن سفارش: 0.01 گرم
-MAX_ORDER_RIAL = 1000000000  # حداکثر مبلغ سفارش: 1 میلیارد ریال
-MAX_ORDER_GRAM = 10000   # حداکثر وزن سفارش: 10 کیلوگرم
+# Button Texts
+BTN_SHARE_CONTACT: Final[str] = "📱 ارسال شماره تماس"
+BTN_METHOD_GRAMS: Final[str] = "⚖️ بر اساس مقدار (گرم)"
+BTN_METHOD_RIAL: Final[str] = "💰 بر اساس مبلغ (ریال)"
+BTN_CONFIRM: Final[str] = "✅ تایید نهایی"
+BTN_CANCEL: Final[str] = "❌ لغو"
+BTN_BACK_TO_MENU: Final[str] = "🔙 بازگشت به منوی اصلی"
