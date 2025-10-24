@@ -3,9 +3,14 @@
 Script to setup sample data for development/testing.
 
 Run with: python setup_sample_data.py
+
+This script creates:
+- Sample gold products with realistic prices
+- A test user with initial balance for testing the bot
 """
 
 import os
+import sys
 import django
 
 # Setup Django
@@ -19,56 +24,49 @@ from decimal import Decimal
 
 
 def create_sample_products():
-    """Create sample gold products."""
+    """Create sample gold products with realistic prices."""
     products_data = [
         {
-            'name': 'سکه بهار آزادی',
-            'buy_price': Decimal('65000000'),
-            'sell_price': Decimal('68000000'),
+            'product_code': Product.PRODUCT_CODE_GOLD,
+            'name': 'طلای آبشده (هر گرم)',
+            'buy_price': Decimal('3850000'),  # قیمت خرید ما از مشتری
+            'sell_price': Decimal('3950000'),  # قیمت فروش ما به مشتری
             'is_active': True,
         },
         {
-            'name': 'نیم سکه',
-            'buy_price': Decimal('35000000'),
-            'sell_price': Decimal('36500000'),
+            'product_code': Product.PRODUCT_CODE_COIN,
+            'name': 'سکه تمام بهار آزادی',
+            'buy_price': Decimal('47500000'),
+            'sell_price': Decimal('48500000'),
             'is_active': True,
         },
         {
-            'name': 'ربع سکه',
-            'buy_price': Decimal('19000000'),
-            'sell_price': Decimal('19800000'),
-            'is_active': True,
-        },
-        {
-            'name': 'طلای 18 عیار',
-            'buy_price': Decimal('2500000'),
-            'sell_price': Decimal('2600000'),
-            'is_active': True,
-        },
-        {
-            'name': 'طلای 24 عیار',
-            'buy_price': Decimal('3300000'),
-            'sell_price': Decimal('3450000'),
+            'product_code': Product.PRODUCT_CODE_DOLLAR,
+            'name': 'دلار آمریکا',
+            'buy_price': Decimal('520000'),
+            'sell_price': Decimal('530000'),
             'is_active': True,
         },
     ]
     
     print("Creating sample products...")
     created_count = 0
+    updated_count = 0
     
     for product_data in products_data:
-        product, created = Product.objects.get_or_create(
-            name=product_data['name'],
+        product, created = Product.objects.update_or_create(
+            product_code=product_data['product_code'],
             defaults=product_data
         )
         if created:
-            print(f"  ✓ Created: {product.name}")
+            print(f"  ✓ Created: {product.name} ({product.product_code})")
             created_count += 1
         else:
-            print(f"  - Already exists: {product.name}")
+            print(f"  ⟳ Updated: {product.name} ({product.product_code})")
+            updated_count += 1
     
-    print(f"\nCreated {created_count} new products.")
-    return created_count
+    print(f"\nCreated {created_count} new products, updated {updated_count} existing products.")
+    return created_count + updated_count
 
 
 def create_test_user():
@@ -92,13 +90,14 @@ def create_test_user():
         else:
             print("  - User already exists: test_user")
         
-        # Create profile if doesn't exist
-        profile, created = Profile.objects.get_or_create(
+        # Create or update profile
+        profile, created = Profile.objects.update_or_create(
             user=user,
             defaults={
                 'telegram_id': '123456789',  # Fake ID for testing
                 'telegram_username': 'test_user',
                 'phone_number': '+989121234567',
+                'national_code': '1234567890',
                 'is_approved': True,
                 'rial_balance': Decimal('100000000'),  # 100M Rial
                 'gold_balance_grams': Decimal('10.5000'),  # 10.5 grams

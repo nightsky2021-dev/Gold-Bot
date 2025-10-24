@@ -1,37 +1,47 @@
 """
 Constants for the Telegram bot.
 
-Defines conversation states, keyboard layouts, and message templates.
+Defines conversation states, keyboard layouts, callback patterns, and message templates.
 """
 
 from typing import Final
 
-# Conversation States
+# ==================== Conversation States ====================
+# States for the buy/sell conversation flow
 SELECTING_PRODUCT: Final[int] = 0
 SELECTING_METHOD: Final[int] = 1
 ENTERING_AMOUNT: Final[int] = 2
 CONFIRMING_BUY: Final[int] = 3
 CONFIRMING_SELL: Final[int] = 4
 
-# Callback Data Prefixes
+# ==================== Callback Data Prefixes ====================
 PRODUCT_PREFIX: Final[str] = "product_"
 METHOD_PREFIX: Final[str] = "method_"
 CONFIRM_PREFIX: Final[str] = "confirm_"
 CANCEL_PREFIX: Final[str] = "cancel_"
 
-# Calculation Methods
+# ==================== Calculation Methods ====================
 METHOD_GRAMS: Final[str] = "grams"
 METHOD_RIAL: Final[str] = "rial"
 
-# Main Menu Buttons
+# ==================== Main Menu Buttons ====================
 MENU_PRICE: Final[str] = "📈 قیمت لحظه‌ای"
 MENU_BUY: Final[str] = "💰 خرید طلا"
 MENU_SELL: Final[str] = "🛒 فروش طلا"
-MENU_PORTFOLIO: Final[str] = "📊 پورتفولیو من"
+MENU_PORTFOLIO: Final[str] = "📊 کیف پول من"
 MENU_HISTORY: Final[str] = "📜 تاریخچه سفارشات"
 MENU_CANCEL: Final[str] = "❌ لغو"
 
-# Welcome Messages
+# ==================== Validation Limits ====================
+# Minimum order amounts to prevent dust transactions
+MIN_ORDER_GRAMS: Final[Decimal] = Decimal('0.01')  # Minimum 0.01 grams
+MIN_ORDER_RIAL: Final[Decimal] = Decimal('10000')  # Minimum 10,000 Rials
+
+# Maximum order amounts for safety
+MAX_ORDER_GRAMS: Final[Decimal] = Decimal('1000.0')  # Maximum 1kg per order
+MAX_ORDER_RIAL: Final[Decimal] = Decimal('10000000000')  # Maximum 10 billion Rials
+
+# ==================== Welcome Messages ====================
 WELCOME_NEW_USER: Final[str] = (
     "👋 *سلام و خوش آمدید به ربات معاملات طلا!*\n\n"
     "برای شروع، لطفاً روی دکمه زیر کلیک کنید "
@@ -61,7 +71,7 @@ REGISTRATION_SUCCESS: Final[str] = (
     "پس از تایید، می‌توانید شروع به معامله کنید."
 )
 
-# Error Messages
+# ==================== Error Messages ====================
 ERROR_NOT_APPROVED: Final[str] = (
     "⚠️ حساب شما هنوز تأیید نشده است.\n"
     "لطفاً منتظر تایید مدیر باشید."
@@ -70,6 +80,18 @@ ERROR_NOT_APPROVED: Final[str] = (
 ERROR_INVALID_AMOUNT: Final[str] = (
     "❌ مقدار وارد شده نامعتبر است.\n"
     "لطفاً یک عدد معتبر وارد کنید."
+)
+
+ERROR_INSUFFICIENT_BALANCE_RIAL: Final[str] = (
+    "❌ موجودی ریالی شما کافی نیست.\n\n"
+    "موجودی فعلی: {current} ریال\n"
+    "مورد نیاز: {required} ریال"
+)
+
+ERROR_INSUFFICIENT_BALANCE_GOLD: Final[str] = (
+    "❌ موجودی طلای شما کافی نیست.\n\n"
+    "موجودی فعلی: {current} گرم\n"
+    "مورد نیاز: {required} گرم"
 )
 
 ERROR_GENERAL: Final[str] = (
@@ -82,7 +104,17 @@ ERROR_NO_PRODUCTS: Final[str] = (
     "لطفاً بعداً تلاش کنید."
 )
 
-# Order Messages
+ERROR_AMOUNT_TOO_SMALL: Final[str] = (
+    "❌ مقدار سفارش خیلی کم است.\n\n"
+    "حداقل مقدار: {min_amount}"
+)
+
+ERROR_AMOUNT_TOO_LARGE: Final[str] = (
+    "❌ مقدار سفارش خیلی زیاد است.\n\n"
+    "حداکثر مقدار: {max_amount}"
+)
+
+# ==================== Order Messages ====================
 ORDER_SUCCESS: Final[str] = (
     "✅ *سفارش شما با موفقیت ثبت شد!*\n\n"
     "شماره سفارش: #{order_id}\n\n"
@@ -96,7 +128,7 @@ ORDER_CANCELLED: Final[str] = (
     "شما به منوی اصلی بازگشتید."
 )
 
-# Prompts
+# ==================== Prompts ====================
 PROMPT_SELECT_PRODUCT: Final[str] = (
     "لطفاً محصول مورد نظر خود را انتخاب کنید:"
 )
@@ -129,7 +161,7 @@ PROMPT_ENTER_AMOUNT_SELL_RIAL: Final[str] = (
     "مثال: 1000000 یا 5000000"
 )
 
-# History Messages
+# ==================== History Messages ====================
 NO_ORDERS: Final[str] = (
     "📜 شما هنوز سفارشی ثبت نکرده‌اید.\n\n"
     "از منوی اصلی می‌توانید سفارش جدید ثبت کنید."
@@ -139,10 +171,13 @@ ORDERS_HISTORY_HEADER: Final[str] = (
     "📜 *آخرین سفارشات شما:*\n\n"
 )
 
-# Button Texts
+# ==================== Button Texts ====================
 BTN_SHARE_CONTACT: Final[str] = "📱 ارسال شماره تماس"
 BTN_METHOD_GRAMS: Final[str] = "⚖️ بر اساس مقدار (گرم)"
 BTN_METHOD_RIAL: Final[str] = "💰 بر اساس مبلغ (ریال)"
 BTN_CONFIRM: Final[str] = "✅ تایید نهایی"
 BTN_CANCEL: Final[str] = "❌ لغو"
 BTN_BACK_TO_MENU: Final[str] = "🔙 بازگشت به منوی اصلی"
+
+# Import Decimal for validation constants
+from decimal import Decimal

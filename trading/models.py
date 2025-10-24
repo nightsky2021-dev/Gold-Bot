@@ -24,6 +24,26 @@ class Product(models.Model):
     Prices are updated periodically via management command.
     """
     
+    # Product code constants for standardized product identification
+    PRODUCT_CODE_GOLD = 'gold'  # طلای آبشده
+    PRODUCT_CODE_COIN = 'coin'  # سکه تمام
+    PRODUCT_CODE_DOLLAR = 'dollar'  # دلار آمریکا
+    
+    PRODUCT_CODE_CHOICES = [
+        (PRODUCT_CODE_GOLD, 'طلای آبشده'),
+        (PRODUCT_CODE_COIN, 'سکه تمام'),
+        (PRODUCT_CODE_DOLLAR, 'دلار آمریکا'),
+    ]
+    
+    product_code = models.CharField(
+        max_length=20,
+        unique=True,
+        choices=PRODUCT_CODE_CHOICES,
+        verbose_name="کد محصول",
+        help_text="کد یکتای محصول برای شناسایی",
+        db_index=True
+    )
+    
     name = models.CharField(
         max_length=100,
         unique=True,
@@ -98,6 +118,22 @@ class Product(models.Model):
         if self.buy_price > 0:
             return (self.get_price_spread() / self.buy_price) * 100
         return Decimal('0')
+    
+    @classmethod
+    def get_by_code(cls, product_code: str) -> 'Product':
+        """
+        Get a product by its product code.
+        
+        Args:
+            product_code: The product code (e.g., 'gold', 'coin', 'dollar')
+            
+        Returns:
+            Product instance
+            
+        Raises:
+            Product.DoesNotExist: If product not found
+        """
+        return cls.objects.get(product_code=product_code, is_active=True)
 
 
 class Order(models.Model):

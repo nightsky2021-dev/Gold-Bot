@@ -45,10 +45,9 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     
     # Local apps
-    'core',
-    'users',
-    'trading',
-    'bot',
+    'users.apps.UsersConfig',
+    'trading.apps.TradingConfig',
+    'bot.apps.BotConfig',
 ]
 
 MIDDLEWARE = [
@@ -124,11 +123,13 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_DIRS = [BASE_DIR / 'static']
+# Only add STATICFILES_DIRS if the static directory exists
+if (BASE_DIR / 'static').exists():
+    STATICFILES_DIRS = [BASE_DIR / 'static']
 
-MEDIA_URL = 'media/'
+MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
@@ -164,6 +165,7 @@ LOGGING = {
             'class': 'logging.FileHandler',
             'filename': BASE_DIR / 'logs' / 'gold_shop.log',
             'formatter': 'verbose',
+            'encoding': 'utf-8',
         },
     },
     'root': {

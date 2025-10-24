@@ -97,7 +97,7 @@
 
 ```
 gold_shop/
-├── core/
+├── gold_shop/               # تنظیمات اصلی Django
 │   ├── __init__.py
 │   ├── settings.py          # تنظیمات با django-environ
 │   ├── urls.py
@@ -142,16 +142,20 @@ gold_shop/
 │   ├── tests.py
 │   └── views.py
 │
-├── .env                      # متغیرهای محیطی (git ignored)
-├── .env.example             # نمونه متغیرها
+├── logs/                    # فایل‌های لاگ
+│   └── .gitkeep
+├── .env                     # متغیرهای محیطی (git ignored)
+├── .env.example            # نمونه متغیرها
 ├── .gitignore              # فایل‌های نادیده گرفته شده
-├── db.sqlite3              # دیتابیس SQLite
+├── db.sqlite3              # دیتابیس SQLite (dev)
 ├── manage.py               # ابزار مدیریت Django
 ├── requirements.txt        # وابستگی‌ها
-├── init_sample_data.py     # اسکریپت داده نمونه
+├── setup_sample_data.py    # اسکریپت داده نمونه
 ├── setup.sh                # اسکریپت راه‌اندازی
 ├── README.md               # مستندات اصلی
 ├── QUICKSTART.md           # شروع سریع
+├── DEPLOYMENT.md           # راهنمای استقرار
+├── CHECKLIST.md            # چک‌لیست
 └── PROJECT_SUMMARY.md      # این فایل
 ```
 
