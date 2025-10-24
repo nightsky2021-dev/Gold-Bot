@@ -71,6 +71,9 @@ class ProfileAdmin(admin.ModelAdmin):
         'telegram_username'
     )
     
+    # Enable autocomplete for OrderAdmin
+    autocomplete_fields = ('user',)
+    
     list_editable = ('is_approved',)
     
     readonly_fields = (

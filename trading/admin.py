@@ -31,8 +31,6 @@ class ProductAdmin(admin.ModelAdmin):
         'updated_at'
     )
     
-    list_editable = ('buy_price', 'sell_price', 'is_active')
-    
     list_filter = ('is_active', 'updated_at')
     
     search_fields = ('name', 'slug')
