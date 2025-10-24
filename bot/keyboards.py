@@ -1,11 +1,9 @@
 """
 کیبوردهای مورد استفاده در ربات تلگرام
 """
-from typing import List, Optional
 from telegram import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton, KeyboardButton
-from trading.models import Product
 from .constants import (
-    MENU_PRICES, MENU_PORTFOLIO, MENU_HISTORY, MENU_REFRESH, MENU_CANCEL,
+    MENU_PRICES, MENU_PORTFOLIO, MENU_HISTORY, MENU_CANCEL,
     CALLBACK_PRICE_GOLD, CALLBACK_PRICE_COIN, CALLBACK_PRICE_DOLLAR, CALLBACK_PRICE_ALL,
     CALLBACK_PRICE_REFRESH,
     CALLBACK_TRADE_PRODUCT_PREFIX, CALLBACK_ACTION_BUY, CALLBACK_ACTION_SELL,
@@ -74,29 +72,31 @@ def get_product_detail_keyboard(product_code: str, can_trade: bool = True, is_ex
     return InlineKeyboardMarkup(keyboard)
 
 
-# تابع get_trade_menu_keyboard حذف شد
-# معاملات اکنون از طریق بخش قیمت‌ها انجام می‌شوند
-
-
-# تابع get_buy_sell_keyboard حذف شد
-# دکمه‌های خرید/فروش مستقیماً در get_product_detail_keyboard هستند
-
-
-def get_amount_method_keyboard() -> InlineKeyboardMarkup:
-    """دریافت کیبورد انتخاب روش محاسبه"""
-    keyboard = [
-        [InlineKeyboardButton("⚖️ مقدار (گرم/عدد)", callback_data=CALLBACK_METHOD_GRAM)],
-        [InlineKeyboardButton("💵 مبلغ (ریال)", callback_data=CALLBACK_METHOD_RIAL)],
-        [InlineKeyboardButton("❌ لغو معامله", callback_data=CALLBACK_CONFIRM_NO)],
-    ]
+def get_amount_method_keyboard(product_code: str | None = None) -> InlineKeyboardMarkup:
+    """دریافت کیبورد انتخاب روش محاسبه - استایل شیشه‌ای
+    
+    Args:
+        product_code: کد محصول (gold, coin, dollar)
+    """
+    keyboard = []
+    
+    # همیشه گزینه مقدار را نمایش بده
+    keyboard.append([InlineKeyboardButton("⚖️ محاسبه بر اساس مقدار (گرم/عدد)", callback_data=CALLBACK_METHOD_GRAM)])
+    
+    # فقط برای طلای آبشده گزینه مبلغ را نمایش بده
+    if product_code == PRODUCT_GOLD:
+        keyboard.append([InlineKeyboardButton("💰 محاسبه بر اساس مبلغ (ریال)", callback_data=CALLBACK_METHOD_RIAL)])
+    
+    keyboard.append([InlineKeyboardButton("🔙 انصراف", callback_data=CALLBACK_CONFIRM_NO)])
+    
     return InlineKeyboardMarkup(keyboard)
 
 
 def get_confirmation_keyboard() -> InlineKeyboardMarkup:
-    """دریافت کیبورد تایید نهایی"""
+    """دریافت کیبورد تایید نهایی - استایل شیشه‌ای"""
     keyboard = [
-        [InlineKeyboardButton("✅ تایید و ثبت", callback_data=CALLBACK_CONFIRM_YES)],
-        [InlineKeyboardButton("❌ انصراف", callback_data=CALLBACK_CONFIRM_NO)],
+        [InlineKeyboardButton("✨ تایید و ثبت سفارش ✨", callback_data=CALLBACK_CONFIRM_YES)],
+        [InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data=CALLBACK_CONFIRM_NO)],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -107,8 +107,10 @@ def get_cancel_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
-def get_back_to_prices_keyboard() -> ReplyKeyboardMarkup:
-    """دریافت کیبورد بازگشت به قیمت‌ها"""
-    keyboard = [[MENU_PRICES]]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+def get_back_to_prices_keyboard() -> InlineKeyboardMarkup:
+    """دریافت کیبورد بازگشت به قیمت‌ها (Inline)"""
+    keyboard = [
+        [InlineKeyboardButton("📊 مشاهده قیمت‌ها", callback_data=CALLBACK_PRICE_ALL)],
+    ]
+    return InlineKeyboardMarkup(keyboard)
 

@@ -89,7 +89,7 @@ class TradingService:
         product: Product,
         quantity_grams: Decimal,
         total_amount: Decimal,
-        invoice_number: str = None
+        invoice_number: Optional[str] = None
     ) -> Order:
         """
         ایجاد سفارش خرید (مشتری از ما می‌خرد)
@@ -133,7 +133,7 @@ class TradingService:
         product: Product,
         quantity_grams: Decimal,
         total_amount: Decimal,
-        invoice_number: str = None
+        invoice_number: Optional[str] = None
     ) -> Order:
         """
         ایجاد سفارش فروش (مشتری به ما می‌فروشد)

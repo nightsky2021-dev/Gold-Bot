@@ -75,7 +75,6 @@ class Command(BaseCommand):
         application.add_handler(MessageHandler(filters.Regex(f'^{MENU_PRICES}$'), show_prices_menu))
         application.add_handler(MessageHandler(filters.Regex(f'^{MENU_PORTFOLIO}$'), show_portfolio))
         application.add_handler(MessageHandler(filters.Regex(f'^{MENU_HISTORY}$'), show_history))
-        # دکمه معامله حذف شد - معامله از طریق بخش قیمت‌ها انجام می‌شود
         
         # Price callbacks
         application.add_handler(CallbackQueryHandler(show_price_gold, pattern=f'^{CALLBACK_PRICE_GOLD}$'))
@@ -85,6 +84,9 @@ class Command(BaseCommand):
         
         # Price refresh callbacks
         application.add_handler(CallbackQueryHandler(refresh_price, pattern=f'^{CALLBACK_PRICE_REFRESH}(gold|coin|dollar)$'))
+        
+        # Back to prices menu callback
+        application.add_handler(CallbackQueryHandler(back_to_prices_menu, pattern='^back_to_prices_menu$'))
         
         # Error handler
         application.add_error_handler(handle_error)
@@ -113,13 +115,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     elif not is_approved:
         await update.message.reply_text(
             "⏳ حساب کاربری شما در انتظار تایید مدیر است.\n\n"
-            "پس از تایید، می‌توانید از تمامی امکانات استفاده کنید. 🙏"
+            "پس از تایید، می‌توانید از تمامی امکانات استفاده کنید. 🙏",
+            reply_markup=ReplyKeyboardRemove()
         )
     else:
         await update.message.reply_text(
             f"👋 سلام {profile.user.get_full_name()}!\n\n"
             "به ربات معاملات طلا و ارز خوش آمدید.\n\n"
-            "📊 *قیمت‌ها:* مشاهده قیمت‌های لحظه‌ای و خرید/فروش\n"
+            "💰 *قیمت و معامله:* مشاهده قیمت‌های لحظه‌ای و خرید/فروش\n"
             "👛 *کیف پول:* مشاهده موجودی\n"
             "📋 *تاریخچه:* مشاهده سفارشات قبلی",
             reply_markup=get_main_menu_keyboard(),
@@ -133,7 +136,8 @@ async def handle_error(update: Optional[Update], context: ContextTypes.DEFAULT_T
     if update and update.effective_message:
         try:
             await update.effective_message.reply_text(
-                "❌ خطایی رخ داد. لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید."
+                "❌ خطایی رخ داد. لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.",
+                reply_markup=get_main_menu_keyboard()
             )
         except:
             pass
@@ -246,19 +250,22 @@ async def registration_national_code(update: Update, context: ContextTypes.DEFAU
                 f"🆔 کد ملی: {national_code}\n\n"
                 "⏳ حساب شما در انتظار تایید مدیر است.\n"
                 "پس از تایید، از منوی ربات استفاده کنید. 🙏",
-                parse_mode='Markdown'
+                parse_mode='Markdown',
+                reply_markup=ReplyKeyboardRemove()
             )
             logger.info(f"کاربر جدید: {context.user_data['first_name']} {context.user_data['last_name']} - {context.user_data['phone_number']} ({context.user_data['telegram_id']})")
         else:
             await update.message.reply_text(
                 "ℹ️ شما قبلاً ثبت‌نام کرده‌اید.",
-                parse_mode='Markdown'
+                parse_mode='Markdown',
+                reply_markup=ReplyKeyboardRemove()
             )
     
     except Exception as e:
         logger.error(f"خطا در ثبت‌نام: {e}")
         await update.message.reply_text(
-            "❌ خطایی رخ داد. لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید."
+            "❌ خطایی رخ داد. لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.",
+            reply_markup=ReplyKeyboardRemove()
         )
     
     context.user_data.clear()
@@ -323,6 +330,42 @@ async def expire_price_buttons(context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.error(f"خطا در حذف خودکار دکمه‌ها: {e}")
 
 
+async def expire_invoice_buttons(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """حذف خودکار دکمه‌های پیش‌فاکتور پس از 60 ثانیه"""
+    job = context.job
+    data = job.data
+    
+    try:
+        # حذف تمام دکمه‌های inline و نمایش پیام منقضی شده
+        expired_message = (
+            f"⏰ *زمان معامله به پایان رسید*\n\n"
+            f"{data['invoice_text']}\n\n"
+            f"❌ *این پیش‌فاکتور منقضی شده است*\n"
+            f"قیمت‌ها ممکن است تغییر کرده باشند."
+        )
+        
+        # حذف کامل inline keyboard
+        await context.bot.edit_message_text(
+            chat_id=data['chat_id'],
+            message_id=data['message_id'],
+            text=expired_message,
+            parse_mode='Markdown',
+            reply_markup=None  # حذف کامل دکمه‌ها
+        )
+        
+        # ارسال منوی اصلی به صورت keyboard
+        await context.bot.send_message(
+            chat_id=data['chat_id'],
+            text="💡 برای معامله جدید، قیمت‌های جدید را مشاهده کنید:",
+            reply_markup=get_main_menu_keyboard()
+        )
+    except telegram.error.BadRequest as e:
+        if "Message is not modified" not in str(e):
+            logger.error(f"خطا در حذف خودکار دکمه‌های پیش‌فاکتور: {e}")
+    except Exception as e:
+        logger.error(f"خطا در expire_invoice_buttons: {e}")
+
+
 def is_price_expired(context: ContextTypes.DEFAULT_TYPE, product_code: str) -> bool:
     """بررسی اینکه آیا قیمت منقضی شده است (بیش از 1 دقیقه)"""
     price_timestamp_key = f'price_timestamp_{product_code}'
@@ -375,7 +418,10 @@ async def show_prices_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     is_approved, profile = await UserService.acheck_user_approval_status(telegram_id)
     
     if not profile or not is_approved:
-        await update.message.reply_text("❌ شما مجاز به استفاده از این بخش نیستید.")
+        await update.message.reply_text(
+            "❌ شما مجاز به استفاده از این بخش نیستید.",
+            reply_markup=get_main_menu_keyboard()
+        )
         return
     
     await update.message.reply_text(
@@ -591,9 +637,28 @@ async def show_all_prices(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     message += f"─────────────────\n"
     message += f"_به‌روزرسانی: {format_datetime(products[0].updated_at)}_"
     
+    # کیبورد با فقط دکمه بازگشت
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+    back_keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 بازگشت به منوی قیمت‌ها", callback_data="back_to_prices_menu")]
+    ])
+    
     await safe_edit_message_text(
         query,
         message,
+        reply_markup=back_keyboard,
+        parse_mode='Markdown'
+    )
+
+
+async def back_to_prices_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """بازگشت به منوی قیمت‌ها"""
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text(
+        "📊 *قیمت‌های لحظه‌ای*\n\n"
+        "لطفاً محصول مورد نظر را انتخاب کنید:",
         reply_markup=get_prices_menu_keyboard(),
         parse_mode='Markdown'
     )
@@ -678,7 +743,10 @@ async def show_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     is_approved, profile = await UserService.acheck_user_approval_status(telegram_id)
     
     if not profile or not is_approved:
-        await update.message.reply_text("❌ شما مجاز به استفاده از این بخش نیستید.")
+        await update.message.reply_text(
+            "❌ شما مجاز به استفاده از این بخش نیستید.",
+            reply_markup=get_main_menu_keyboard()
+        )
         return
     
     message = (
@@ -689,7 +757,11 @@ async def show_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"_به‌روزرسانی: {format_datetime(profile.updated_at)}_"
     )
     
-    await update.message.reply_text(message, parse_mode='Markdown')
+    await update.message.reply_text(
+        message, 
+        parse_mode='Markdown',
+        reply_markup=get_main_menu_keyboard()
+    )
 
 
 async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -698,13 +770,19 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     is_approved, profile = await UserService.acheck_user_approval_status(telegram_id)
     
     if not profile or not is_approved:
-        await update.message.reply_text("❌ شما مجاز به استفاده از این بخش نیستید.")
+        await update.message.reply_text(
+            "❌ شما مجاز به استفاده از این بخش نیستید.",
+            reply_markup=get_main_menu_keyboard()
+        )
         return
     
     orders = await sync_to_async(TradingService.get_user_recent_orders)(profile, limit=5)
     
     if not orders:
-        await update.message.reply_text("📋 شما هنوز هیچ سفارشی ثبت نکرده‌اید.")
+        await update.message.reply_text(
+            "📋 شما هنوز هیچ سفارشی ثبت نکرده‌اید.",
+            reply_markup=get_main_menu_keyboard()
+        )
         return
     
     message = "📋 *تاریخچه ۵ سفارش آخر*\n\n"
@@ -724,12 +802,15 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         message += f"   مبلغ: {format_number(order.total_amount)} ریال\n"
         message += f"   {status_emoji.get(order.status, '❓')} {order.get_status_display()}\n\n"
     
-    await update.message.reply_text(message, parse_mode='Markdown')
+    await update.message.reply_text(
+        message, 
+        parse_mode='Markdown',
+        reply_markup=get_main_menu_keyboard()
+    )
 
 
 # ==================== Trade Conversation ====================
-# توابع trade_start و trade_product_selected حذف شدند
-# معاملات مستقیماً از دکمه‌های خرید/فروش در بخش قیمت‌ها شروع می‌شوند
+# معاملات مستقیماً از دکمه‌های خرید/فروش در بخش قیمت‌ها انجام می‌شوند
 
 
 async def trade_action_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -784,7 +865,7 @@ async def trade_action_selected(update: Update, context: ContextTypes.DEFAULT_TY
             context.user_data['product_code'] = product_code
         except (Product.DoesNotExist, KeyError):
             await query.edit_message_text("❌ خطا: محصول یافت نشد.")
-        return ConversationHandler.END
+            return ConversationHandler.END
     
     context.user_data['action'] = action
     product = context.user_data.get('product')
@@ -806,13 +887,58 @@ async def trade_action_selected(update: Update, context: ContextTypes.DEFAULT_TY
     # محاسبه زمان باقیمانده
     time_remaining = get_time_remaining(context, product_code)
     
+    # برای سکه و دلار، مستقیم به وارد کردن تعداد می‌رویم
+    if product_code in [PRODUCT_COIN, PRODUCT_DOLLAR]:
+        context.user_data['amount_type'] = 'gram'  # برای سکه و دلار فقط تعداد
+        
+        unit = "عدد"
+        if product_code == PRODUCT_COIN:
+            examples = (
+                f"💡 *راهنما:*\n"
+                f"• برای یک سکه: `1`\n"
+                f"• برای دو سکه: `2`\n"
+                f"• برای ده سکه: `10`\n\n"
+                f"⚠️ *توجه:* فقط اعداد صحیح مثبت مجاز است."
+            )
+        else:  # PRODUCT_DOLLAR
+            examples = (
+                f"💡 *راهنما:*\n"
+                f"• برای ده دلار: `10`\n"
+                f"• برای صد دلار: `100`\n"
+                f"• برای هزار دلار: `1000`\n\n"
+                f"⚠️ *توجه:* فقط اعداد صحیح مثبت مجاز است."
+            )
+        
+        prompt = (
+            f"💎 {action_text} *{product.name}*\n\n"
+            f"⏱ زمان باقیمانده: {time_remaining}\n\n"
+            f"📝 لطفاً تعداد را وارد کنید:\n\n"
+            f"{examples}"
+        )
+        
+        # حذف پیام قبلی
+        await query.delete_message()
+        
+        # ارسال پیام جدید با ForceReply برای باز کردن کیبورد تایپ
+        await query.message.reply_text(
+            prompt,
+            parse_mode='Markdown',
+            reply_markup=ForceReply(
+                input_field_placeholder="تعداد مورد نظر را وارد کنید...",
+                selective=True
+            )
+        )
+        
+        return ENTERING_AMOUNT
+    
+    # برای طلای آبشده، انتخاب روش محاسبه نمایش داده می‌شود
     await query.edit_message_text(
         f"💎 {action_text} *{product.name}*\n\n"
         f"⏱ *زمان باقیمانده:* {time_remaining}\n\n"
         "⚠️ *توجه:* شما یک دقیقه برای تکمیل معامله فرصت دارید.\n"
         "پس از آن باید قیمت را بروزرسانی کنید.\n\n"
         "مقدار را بر اساس چه واحدی وارد می‌کنید؟",
-        reply_markup=get_amount_method_keyboard(),
+        reply_markup=get_amount_method_keyboard(product_code),
         parse_mode='Markdown'
     )
     
@@ -827,16 +953,21 @@ async def trade_method_selected(update: Update, context: ContextTypes.DEFAULT_TY
     product_code = context.user_data.get('product_code')
     if is_price_expired(context, product_code):
         await query.answer("⏰ زمان شما به پایان رسید. لطفاً قیمت را بروزرسانی کنید.", show_alert=True)
-        await query.edit_message_text(
-            "⏰ *زمان معامله به پایان رسید*\n\n"
-            "قیمت‌ها ممکن است تغییر کرده باشند.\n"
-            "برای ادامه، لطفاً به بخش قیمت‌ها بروید و قیمت را بروزرسانی کنید.",
-            parse_mode='Markdown'
-        )
-        # ارسال کیبورد جدید با دکمه قیمت‌ها
+        
+        try:
+            await query.edit_message_text(
+                "⏰ *زمان معامله به پایان رسید*\n\n"
+                "قیمت‌ها ممکن است تغییر کرده باشند.\n"
+                "💡 لطفاً از منوی اصلی استفاده کنید:",
+                parse_mode='Markdown'
+            )
+        except:
+            pass
+        
+        # نمایش منوی اصلی
         await query.message.reply_text(
-            "👇 از دکمه زیر استفاده کنید:",
-            reply_markup=get_back_to_prices_keyboard()
+            "📱 از منوی اصلی می‌توانید استفاده کنید:",
+            reply_markup=get_main_menu_keyboard()
         )
         context.user_data.clear()
         return ConversationHandler.END
@@ -854,15 +985,40 @@ async def trade_method_selected(update: Update, context: ContextTypes.DEFAULT_TY
     time_remaining = get_time_remaining(context, product_code)
     
     if method == "gram":
-        unit = "گرم" if product.product_code != Product.PRODUCT_CODE_DOLLAR else "عدد"
+        # تعیین واحد بر اساس نوع محصول
+        if product.product_code == Product.PRODUCT_CODE_GOLD:
+            unit = "گرم"
+            examples = (
+                f"💡 *راهنما:*\n"
+                f"• برای نیم گرم: `0.5`\n"
+                f"• برای دو و نیم گرم: `2.5`\n"
+                f"• برای ده گرم: `10`"
+            )
+        elif product.product_code == Product.PRODUCT_CODE_COIN:
+            unit = "عدد"
+            examples = (
+                f"💡 *راهنما:*\n"
+                f"• برای یک سکه: `1`\n"
+                f"• برای دو سکه: `2`\n"
+                f"• برای ده سکه: `10`"
+            )
+        elif product.product_code == Product.PRODUCT_CODE_DOLLAR:
+            unit = "عدد"
+            examples = (
+                f"💡 *راهنما:*\n"
+                f"• برای ده دلار: `10`\n"
+                f"• برای صد دلار: `100`\n"
+                f"• برای هزار دلار: `1000`"
+            )
+        else:
+            unit = "واحد"
+            examples = f"💡 *راهنما:* مقدار مورد نظر را وارد کنید"
+        
         prompt = (
             f"💎 {action_text} *{product.name}*\n\n"
             f"⏱ زمان باقیمانده: {time_remaining}\n\n"
             f"📝 لطفاً مقدار را به *{unit}* وارد کنید:\n\n"
-            f"💡 *راهنما:*\n"
-            f"• برای نیم گرم: `0.5`\n"
-            f"• برای دو و نیم گرم: `2.5`\n"
-            f"• برای ده گرم: `10`"
+            f"{examples}"
         )
     else:
         prompt = (
@@ -895,19 +1051,51 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
     """مقدار وارد شد"""
     # بررسی انقضای قیمت
     product_code = context.user_data.get('product_code')
+    product = context.user_data.get('product')
+    
     if is_price_expired(context, product_code):
         await update.message.reply_text(
             "⏰ *زمان معامله به پایان رسید*\n\n"
             "قیمت‌ها ممکن است تغییر کرده باشند.\n"
-            "برای ادامه، لطفاً به بخش قیمت‌ها بروید و قیمت را بروزرسانی کنید.\n\n"
-            "👇 از دکمه زیر استفاده کنید:",
-            reply_markup=get_back_to_prices_keyboard(),
-            parse_mode='Markdown'
+            "💡 لطفاً از منوی اصلی استفاده کنید:",
+            parse_mode='Markdown',
+            reply_markup=get_main_menu_keyboard()
         )
         context.user_data.clear()
         return ConversationHandler.END
     
     amount = parse_decimal(update.message.text)
+    
+    # برای سکه و دلار، بررسی کن که عدد صحیح مثبت باشد
+    if product_code in [PRODUCT_COIN, PRODUCT_DOLLAR]:
+        if amount is None or amount <= 0:
+            time_remaining = get_time_remaining(context, product_code)
+            await update.message.reply_text(
+                f"❌ *مقدار نامعتبر است*\n\n"
+                f"⏱ زمان باقیمانده: {time_remaining}\n\n"
+                f"⚠️ برای {product.name} فقط اعداد صحیح مثبت مجاز است.\n\n"
+                f"💡 *مثال‌ها:*\n"
+                f"• `1` (یک {product.name})\n"
+                f"• `5` (پنج {product.name})\n"
+                f"• `10` (ده {product.name})",
+                parse_mode='Markdown',
+                reply_markup=get_main_menu_keyboard()
+            )
+            return ENTERING_AMOUNT
+        
+        # بررسی که عدد صحیح باشد
+        if amount != int(amount):
+            time_remaining = get_time_remaining(context, product_code)
+            await update.message.reply_text(
+                f"❌ *مقدار باید عدد صحیح باشد*\n\n"
+                f"⏱ زمان باقیمانده: {time_remaining}\n\n"
+                f"⚠️ برای {product.name} فقط اعداد صحیح مثبت مجاز است.\n\n"
+                f"❌ غیرمجاز: `2.5` یا `3.7`\n"
+                f"✅ مجاز: `1` یا `5` یا `10`",
+                parse_mode='Markdown',
+                reply_markup=get_main_menu_keyboard()
+            )
+            return ENTERING_AMOUNT
     
     if amount is None:
         time_remaining = get_time_remaining(context, product_code)
@@ -919,7 +1107,8 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
             f"• `2.5` (دو و نیم)\n"
             f"• `10` (ده)\n"
             f"• `5000000` (پنج میلیون)",
-            parse_mode='Markdown'
+            parse_mode='Markdown',
+            reply_markup=get_main_menu_keyboard()
         )
         return ENTERING_AMOUNT
     
@@ -928,7 +1117,8 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
         time_remaining = get_time_remaining(context, product_code)
         await update.message.reply_text(
             f"{error_msg}\n\n⏱ زمان باقیمانده: {time_remaining}",
-            parse_mode='Markdown'
+            parse_mode='Markdown',
+            reply_markup=get_main_menu_keyboard()
         )
         return ENTERING_AMOUNT
     
@@ -1003,10 +1193,22 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
             "آیا این سفارش را تایید می‌کنید؟"
         )
         
-        await update.message.reply_text(
+        sent_message = await update.message.reply_text(
             invoice,
             reply_markup=get_confirmation_keyboard(),
             parse_mode='Markdown'
+        )
+        
+        # برنامه‌ریزی Job برای حذف خودکار دکمه‌های پیش‌فاکتور پس از 60 ثانیه
+        context.job_queue.run_once(
+            expire_invoice_buttons,
+            60,
+            data={
+                'chat_id': sent_message.chat_id,
+                'message_id': sent_message.message_id,
+                'invoice_text': invoice
+            },
+            name=f'expire_invoice_{sent_message.chat_id}_{sent_message.message_id}'
         )
         
         return CONFIRMING_TRADE
@@ -1020,6 +1222,12 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
 async def trade_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """تایید نهایی"""
     query = update.callback_query
+    
+    # لغو Job انقضای پیش‌فاکتور (اگر وجود دارد)
+    job_name = f'expire_invoice_{query.message.chat_id}_{query.message.message_id}'
+    current_jobs = context.job_queue.get_jobs_by_name(job_name)
+    for job in current_jobs:
+        job.schedule_removal()
     
     # بررسی انقضای قیمت
     product_code = context.user_data.get('product_code')
@@ -1055,21 +1263,17 @@ async def trade_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"و قیمت را بروزرسانی کنید."
         )
         
-        # فقط دکمه لغو را نمایش بده
+        # دکمه انصراف و قیمت‌ها را نمایش بده (بدون دکمه تایید)
         from telegram import InlineKeyboardMarkup, InlineKeyboardButton
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("❌ بستن", callback_data=CALLBACK_CONFIRM_NO)]
+            [InlineKeyboardButton("📊 مشاهده قیمت‌ها", callback_data=CALLBACK_PRICE_ALL)],
+            [InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data=CALLBACK_CONFIRM_NO)]
         ])
         
         await query.edit_message_text(
             expired_invoice,
             parse_mode='Markdown',
             reply_markup=keyboard
-        )
-        # ارسال کیبورد جدید با دکمه قیمت‌ها
-        await query.message.reply_text(
-            "👇 برای ادامه از دکمه زیر استفاده کنید:",
-            reply_markup=get_back_to_prices_keyboard()
         )
         context.user_data.clear()
         return ConversationHandler.END
@@ -1139,15 +1343,45 @@ async def trade_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             parse_mode='Markdown'
         )
         
+        # نمایش منوی اصلی
+        await query.message.reply_text(
+            "📱 از منوی اصلی می‌توانید استفاده کنید:",
+            reply_markup=get_main_menu_keyboard()
+        )
+        
         logger.info(f"سفارش {action_text} ثبت شد: {order.id} - {profile.phone_number}")
     
     except ValidationError as e:
         await query.edit_message_text(f"❌ {str(e)}")
+        # نمایش منوی اصلی
+        await query.message.reply_text(
+            "📱 از منوی اصلی می‌توانید استفاده کنید:",
+            reply_markup=get_main_menu_keyboard()
+        )
     except Exception as e:
         logger.error(f"خطا در ثبت سفارش: {e}")
         await query.edit_message_text("❌ خطایی در ثبت سفارش رخ داد.")
+        # نمایش منوی اصلی
+        await query.message.reply_text(
+            "📱 از منوی اصلی می‌توانید استفاده کنید:",
+            reply_markup=get_main_menu_keyboard()
+        )
     
     context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def show_prices_from_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """نمایش قیمت‌ها و خروج از conversation"""
+    query = update.callback_query
+    await query.answer()
+    
+    # پاکسازی داده‌های conversation
+    context.user_data.clear()
+    
+    # نمایش منوی قیمت‌ها
+    await show_all_prices(update, context)
+    
     return ConversationHandler.END
 
 
@@ -1157,16 +1391,39 @@ async def trade_cancelled(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if update.callback_query:
         query = update.callback_query
         await query.answer()
-        await query.edit_message_text(
-            "❌ *معامله لغو شد*\n\n"
-            "برای شروع معامله جدید، به بخش قیمت‌ها بروید.",
-            parse_mode='Markdown'
+        
+        # لغو Job انقضای پیش‌فاکتور (اگر وجود دارد)
+        job_name = f'expire_invoice_{query.message.chat_id}_{query.message.message_id}'
+        current_jobs = context.job_queue.get_jobs_by_name(job_name)
+        for job in current_jobs:
+            job.schedule_removal()
+        
+        try:
+            await query.edit_message_text(
+                "❌ *معامله لغو شد*\n\n"
+                "از منوی اصلی می‌توانید استفاده کنید.",
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"خطا در ویرایش پیام لغو: {e}")
+            # اگر نتوانست پیام را ویرایش کند، پیام جدید بفرست
+            await query.message.reply_text(
+                "❌ *معامله لغو شد*\n\n"
+                "از منوی اصلی می‌توانید استفاده کنید.",
+                parse_mode='Markdown'
+            )
+        
+        # نمایش منوی اصلی (کیبورد)
+        await query.message.reply_text(
+            "📱 منوی اصلی:",
+            reply_markup=get_main_menu_keyboard()
         )
     else:
         await update.message.reply_text(
             "❌ *معامله لغو شد*\n\n"
-            "برای شروع معامله جدید، به بخش قیمت‌ها بروید.",
-            parse_mode='Markdown'
+            "از منوی اصلی می‌توانید استفاده کنید.",
+            parse_mode='Markdown',
+            reply_markup=get_main_menu_keyboard()
         )
     
     context.user_data.clear()
@@ -1220,6 +1477,7 @@ def get_trade_conversation_handler() -> ConversationHandler:
             CONFIRMING_TRADE: [
                 CallbackQueryHandler(trade_confirmed, pattern=f'^{CALLBACK_CONFIRM_YES}$'),
                 CallbackQueryHandler(trade_cancelled, pattern=f'^{CALLBACK_CONFIRM_NO}$'),
+                CallbackQueryHandler(show_prices_from_conversation, pattern=f'^{CALLBACK_PRICE_ALL}$'),
             ],
         },
         fallbacks=[

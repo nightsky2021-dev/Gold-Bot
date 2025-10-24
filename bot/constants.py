@@ -15,8 +15,8 @@
 ) = range(8)
 
 # متن‌های منو اصلی
-MENU_PRICES = "📊 قیمت‌ها"
-# MENU_TRADE حذف شد - معاملات از طریق بخش قیمت‌ها انجام می‌شوند
+MENU_PRICES = "💰 قیمت و معامله"
+MENU_TRADE = "💎 معامله"
 MENU_PORTFOLIO = "👛 کیف پول"
 MENU_HISTORY = "📋 تاریخچه"
 MENU_REFRESH = "🔄 به‌روزرسانی قیمت‌ها"
