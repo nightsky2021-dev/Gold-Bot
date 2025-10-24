@@ -18,7 +18,8 @@ class UserService:
         phone_number: str,
         telegram_username: Optional[str] = None,
         first_name: str = "",
-        last_name: str = ""
+        last_name: str = "",
+        national_code: Optional[str] = None
     ) -> Tuple[User, Profile, bool]:
         """
         ایجاد کاربر و پروفایل از طریق تلگرام
@@ -47,6 +48,7 @@ class UserService:
             telegram_id=telegram_id,
             telegram_username=telegram_username,
             phone_number=phone_number,
+            national_code=national_code,
             is_approved=False
         )
         

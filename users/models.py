@@ -34,6 +34,14 @@ class Profile(models.Model):
         unique=True,
         verbose_name="شماره تماس"
     )
+    national_code = models.CharField(
+        max_length=10,
+        unique=True,
+        null=True,
+        blank=True,
+        verbose_name="کد ملی",
+        help_text="کد ملی 10 رقمی"
+    )
     is_approved = models.BooleanField(
         default=False,
         help_text="آیا کاربر توسط ادمین تایید شده است؟",

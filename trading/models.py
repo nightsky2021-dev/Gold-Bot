@@ -142,6 +142,14 @@ class Order(models.Model):
         db_index=True,
         verbose_name="وضعیت"
     )
+    invoice_number = models.CharField(
+        max_length=50,
+        unique=True,
+        null=True,
+        blank=True,
+        verbose_name="شماره فاکتور",
+        help_text="شماره یونیک فاکتور"
+    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="تاریخ ثبت"

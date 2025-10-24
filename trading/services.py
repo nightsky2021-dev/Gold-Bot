@@ -88,7 +88,8 @@ class TradingService:
         profile: Profile,
         product: Product,
         quantity_grams: Decimal,
-        total_amount: Decimal
+        total_amount: Decimal,
+        invoice_number: str = None
     ) -> Order:
         """
         ایجاد سفارش خرید (مشتری از ما می‌خرد)
@@ -119,6 +120,7 @@ class TradingService:
             quantity_grams=quantity_grams,
             price_per_gram=product.sell_price,
             total_amount=total_amount,
+            invoice_number=invoice_number,
             status=Order.OrderStatus.PENDING
         )
         
@@ -130,7 +132,8 @@ class TradingService:
         profile: Profile,
         product: Product,
         quantity_grams: Decimal,
-        total_amount: Decimal
+        total_amount: Decimal,
+        invoice_number: str = None
     ) -> Order:
         """
         ایجاد سفارش فروش (مشتری به ما می‌فروشد)
@@ -161,6 +164,7 @@ class TradingService:
             quantity_grams=quantity_grams,
             price_per_gram=product.buy_price,
             total_amount=total_amount,
+            invoice_number=invoice_number,
             status=Order.OrderStatus.PENDING
         )
         
