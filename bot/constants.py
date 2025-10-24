@@ -146,3 +146,8 @@ BTN_METHOD_RIAL: Final[str] = "💰 بر اساس مبلغ (ریال)"
 BTN_CONFIRM: Final[str] = "✅ تایید نهایی"
 BTN_CANCEL: Final[str] = "❌ لغو"
 BTN_BACK_TO_MENU: Final[str] = "🔙 بازگشت به منوی اصلی"
+
+# Rate Limiting Configuration
+MAX_ORDERS_PER_HOUR: Final[int] = 10
+MAX_ORDERS_PER_DAY: Final[int] = 50
+MIN_ORDER_INTERVAL_SECONDS: Final[int] = 30  # Minimum time between orders

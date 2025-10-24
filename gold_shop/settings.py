@@ -89,6 +89,16 @@ DATABASES = {
     'default': env.db('DATABASE_URL', default='sqlite:///db.sqlite3')
 }
 
+# Database connection pooling for PostgreSQL (production)
+if 'postgres' in DATABASES['default']['ENGINE']:
+    DATABASES['default'].update({
+        'CONN_MAX_AGE': env.int('DB_CONN_MAX_AGE', default=60),  # Connection persistence in seconds
+        'OPTIONS': {
+            'connect_timeout': 10,
+            'options': '-c statement_timeout=30000',  # 30 seconds query timeout
+        }
+    })
+
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
@@ -126,7 +136,11 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_DIRS = [BASE_DIR / 'static']
+
+# Only include static directory if it exists
+STATICFILES_DIRS = []
+if (BASE_DIR / 'static').exists():
+    STATICFILES_DIRS.append(BASE_DIR / 'static')
 
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
@@ -139,6 +153,41 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Telegram Bot Configuration
 TELEGRAM_BOT_TOKEN = env('TELEGRAM_BOT_TOKEN')
+
+
+# Security Settings
+# https://docs.djangoproject.com/en/4.2/topics/security/
+
+if not DEBUG:
+    # HTTPS/SSL Settings for Production
+    SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=True)
+    SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE', default=True)
+    CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=True)
+    
+    # HSTS Settings
+    SECURE_HSTS_SECONDS = env.int('SECURE_HSTS_SECONDS', default=31536000)  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    
+    # Content Security
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_BROWSER_XSS_FILTER = True
+    X_FRAME_OPTIONS = 'DENY'
+
+# Session Configuration
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+SESSION_COOKIE_AGE = 86400 * 14  # 2 weeks
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_SAVE_EVERY_REQUEST = False
+
+# CSRF Configuration
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_USE_SESSIONS = False
+
+# Admin Security
+ADMIN_URL = env('ADMIN_URL', default='admin/')  # Can be changed for security
 
 
 # Logging Configuration

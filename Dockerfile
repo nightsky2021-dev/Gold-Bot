@@ -66,9 +66,9 @@ RUN python manage.py collectstatic --noinput || true
 # Expose port for Django admin panel
 EXPOSE 8000
 
-# Health check
+# Health check - using Django management command instead of requests
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/admin/login/')" || exit 1
+    CMD python manage.py check --deploy || exit 1
 
 # Default command (can be overridden)
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "60", "gold_shop.wsgi:application"]
