@@ -1,0 +1,27 @@
+{
+  "include": [
+    "bot",
+    "trading",
+    "users",
+    "gold_shop",
+    "*.py"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/.git",
+    "**/node_modules"
+  ],
+  "ignore": [],
+  "defineConstant": {
+    "DEBUG": true
+  },
+  "stubPath": "",
+  "venvPath": ".",
+  "venv": "venv",
+  "pythonVersion": "3.13",
+  "pythonPlatform": "Windows",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": false,
+  "reportMissingTypeStubs": false
+}
+
