@@ -23,26 +23,31 @@
 
 ```
 gold_shop/
-├── gold_shop/          # تنظیمات اصلی پروژه
+├── gold_shop/          # تنظیمات اصلی پروژه Django
 │   ├── settings.py     # پیکربندی با django-environ
-│   └── urls.py
-├── core/               # اپلیکیشن هسته (مشترک)
+│   ├── urls.py         # URL routing
+│   ├── wsgi.py         # WSGI entry point
+│   └── asgi.py         # ASGI entry point (async)
+│
 ├── users/              # مدیریت کاربران و پروفایل‌ها
 │   ├── models.py       # مدل Profile با signals
+│   ├── services.py     # سرویس‌های کاربری
 │   ├── admin.py        # پنل ادمین کاربران
-│   └── signals.py
+│   └── signals.py      # سیگنال‌های Django
+│
 ├── trading/            # مدیریت معاملات
-│   ├── models.py       # Product, Order
+│   ├── models.py       # مدل‌های Product و Order
 │   ├── services.py     # لایه سرویس (منطق تجاری)
 │   ├── admin.py        # پنل ادمین معاملات
 │   └── management/
 │       └── commands/
-│           └── update_prices.py
+│           └── update_prices.py  # به‌روزرسانی قیمت‌ها
+│
 └── bot/                # ربات تلگرام
-    ├── constants.py    # ثوابت و حالت‌های مکالمه
+    ├── constants.py    # ثوابت، حالت‌ها و پیام‌ها
     └── management/
         └── commands/
-            └── runbot.py  # Entry point ربات
+            └── runbot.py  # Entry point ربات تلگرام
 ```
 
 ## 🚀 نصب و راه‌اندازی
@@ -111,31 +116,14 @@ python manage.py migrate
 python manage.py createsuperuser
 ```
 
-#### 7. ایجاد محصولات اولیه (اختیاری)
+#### 7. ایجاد محصولات و داده‌های نمونه (اختیاری)
 ```bash
-python manage.py shell
+python setup_sample_data.py
 ```
 
-در shell پایتون:
-```python
-from trading.models import Product
-
-Product.objects.create(
-    name="سکه بهار آزادی",
-    buy_price=65000000,
-    sell_price=68000000,
-    is_active=True
-)
-
-Product.objects.create(
-    name="طلای 18 عیار",
-    buy_price=2500000,
-    sell_price=2600000,
-    is_active=True
-)
-
-exit()
-```
+این اسکریپت محصولات نمونه و یک کاربر تست ایجاد می‌کند:
+- محصولات: طلای آبشده، سکه تمام، دلار آمریکا
+- کاربر تست با موجودی اولیه برای آزمایش ربات
 
 #### 8. اجرای سرور Django (برای پنل ادمین)
 ```bash
@@ -196,8 +184,14 @@ python manage.py runbot
 
 ### روش دستی:
 ```bash
-python manage.py update_prices --dry-run  # نمایش تغییرات بدون ذخیره
-python manage.py update_prices            # اعمال تغییرات
+# نمایش تغییرات بدون ذخیره (dry-run)
+python manage.py update_prices --dry-run
+
+# اعمال تغییرات قیمت
+python manage.py update_prices
+
+# استفاده از منبع خاص (mock برای تست)
+python manage.py update_prices --source=mock
 ```
 
 ### زمان‌بندی خودکار (Cron Job):
