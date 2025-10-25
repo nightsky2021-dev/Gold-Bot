@@ -352,3 +352,893 @@ class BalanceService:
             f"Balance updated for {profile.get_display_name()}: "
             f"Rial change: {rial_change}, Gold change: {gold_change}"
         )
+
+
+class WalletService:
+    """Service class for wallet operations."""
+    
+    @staticmethod
+    def get_wallet_balance(profile: Profile) -> dict:
+        """
+        دریافت موجودی‌های کامل کاربر
+        
+        Args:
+            profile: پروفایل کاربر
+        
+        Returns:
+            Dict شامل موجودی‌های آزاد و مسدود شده
+        """
+        return {
+            'rial': profile.rial_balance,
+            'gold': profile.gold_balance_grams,
+            'coin': profile.coin_balance,
+            'dollar': profile.dollar_balance,
+            'frozen_rial': profile.frozen_rial_balance,
+            'frozen_gold': profile.frozen_gold_balance,
+            'frozen_coin': profile.frozen_coin_balance,
+            'frozen_dollar': profile.frozen_dollar_balance,
+            'available_rial': profile.rial_balance - profile.frozen_rial_balance,
+            'available_gold': profile.gold_balance_grams - profile.frozen_gold_balance,
+            'available_coin': profile.coin_balance - profile.frozen_coin_balance,
+            'available_dollar': profile.dollar_balance - profile.frozen_dollar_balance,
+        }
+    
+    @staticmethod
+    @transaction.atomic
+    def freeze_balance(
+        profile: Profile,
+        currency_type: str,
+        amount: Decimal
+    ) -> None:
+        """
+        مسدود کردن موجودی برای تراکنش
+        
+        Args:
+            profile: پروفایل کاربر
+            currency_type: نوع ارز (RIAL, GOLD, COIN, DOLLAR)
+            amount: مقدار
+        
+        Raises:
+            ValidationError: اگر موجودی کافی نباشد
+        """
+        # Lock the row
+        profile = Profile.objects.select_for_update().get(pk=profile.pk)
+        
+        if currency_type == 'RIAL':
+            if profile.rial_balance < amount:
+                raise ValidationError("موجودی ریالی کافی نیست.")
+            profile.rial_balance -= amount
+            profile.frozen_rial_balance += amount
+        elif currency_type == 'GOLD':
+            if profile.gold_balance_grams < amount:
+                raise ValidationError("موجودی طلا کافی نیست.")
+            profile.gold_balance_grams -= amount
+            profile.frozen_gold_balance += amount
+        elif currency_type == 'COIN':
+            if profile.coin_balance < amount:
+                raise ValidationError("موجودی سکه کافی نیست.")
+            profile.coin_balance -= amount
+            profile.frozen_coin_balance += amount
+        elif currency_type == 'DOLLAR':
+            if profile.dollar_balance < amount:
+                raise ValidationError("موجودی دلار کافی نیست.")
+            profile.dollar_balance -= amount
+            profile.frozen_dollar_balance += amount
+        else:
+            raise ValidationError("نوع ارز نامعتبر است.")
+        
+        profile.save()
+        logger.info(f"Froze {amount} {currency_type} for {profile.get_display_name()}")
+    
+    @staticmethod
+    @transaction.atomic
+    def unfreeze_balance(
+        profile: Profile,
+        currency_type: str,
+        amount: Decimal
+    ) -> None:
+        """
+        آزاد کردن موجودی مسدود شده
+        
+        Args:
+            profile: پروفایل کاربر
+            currency_type: نوع ارز
+            amount: مقدار
+        """
+        profile = Profile.objects.select_for_update().get(pk=profile.pk)
+        
+        if currency_type == 'RIAL':
+            profile.frozen_rial_balance -= amount
+            profile.rial_balance += amount
+        elif currency_type == 'GOLD':
+            profile.frozen_gold_balance -= amount
+            profile.gold_balance_grams += amount
+        elif currency_type == 'COIN':
+            profile.frozen_coin_balance -= amount
+            profile.coin_balance += amount
+        elif currency_type == 'DOLLAR':
+            profile.frozen_dollar_balance -= amount
+            profile.dollar_balance += amount
+        
+        profile.save()
+        logger.info(f"Unfroze {amount} {currency_type} for {profile.get_display_name()}")
+    
+    @staticmethod
+    @transaction.atomic
+    def deduct_frozen_balance(
+        profile: Profile,
+        currency_type: str,
+        amount: Decimal
+    ) -> None:
+        """
+        کسر از موجودی مسدود شده (برای تکمیل تراکنش)
+        
+        Args:
+            profile: پروفایل کاربر
+            currency_type: نوع ارز
+            amount: مقدار
+        """
+        profile = Profile.objects.select_for_update().get(pk=profile.pk)
+        
+        if currency_type == 'RIAL':
+            if profile.frozen_rial_balance < amount:
+                raise ValidationError("موجودی مسدود شده کافی نیست.")
+            profile.frozen_rial_balance -= amount
+        elif currency_type == 'GOLD':
+            if profile.frozen_gold_balance < amount:
+                raise ValidationError("موجودی مسدود شده کافی نیست.")
+            profile.frozen_gold_balance -= amount
+        elif currency_type == 'COIN':
+            if profile.frozen_coin_balance < amount:
+                raise ValidationError("موجودی مسدود شده کافی نیست.")
+            profile.frozen_coin_balance -= amount
+        elif currency_type == 'DOLLAR':
+            if profile.frozen_dollar_balance < amount:
+                raise ValidationError("موجودی مسدود شده کافی نیست.")
+            profile.frozen_dollar_balance -= amount
+        
+        profile.save()
+        logger.info(f"Deducted {amount} {currency_type} from frozen balance for {profile.get_display_name()}")
+    
+    @staticmethod
+    @transaction.atomic
+    def add_balance(
+        profile: Profile,
+        currency_type: str,
+        amount: Decimal
+    ) -> None:
+        """
+        افزودن موجودی
+        
+        Args:
+            profile: پروفایل کاربر
+            currency_type: نوع ارز
+            amount: مقدار
+        """
+        profile = Profile.objects.select_for_update().get(pk=profile.pk)
+        
+        if currency_type == 'RIAL':
+            profile.rial_balance += amount
+        elif currency_type == 'GOLD':
+            profile.gold_balance_grams += amount
+        elif currency_type == 'COIN':
+            profile.coin_balance += amount
+        elif currency_type == 'DOLLAR':
+            profile.dollar_balance += amount
+        
+        profile.save()
+        logger.info(f"Added {amount} {currency_type} to {profile.get_display_name()}")
+    
+    @staticmethod
+    def check_sufficient_balance(
+        profile: Profile,
+        currency_type: str,
+        amount: Decimal
+    ) -> bool:
+        """
+        بررسی کفایت موجودی
+        
+        Args:
+            profile: پروفایل کاربر
+            currency_type: نوع ارز
+            amount: مقدار
+        
+        Returns:
+            Boolean
+        """
+        if currency_type == 'RIAL':
+            return (profile.rial_balance - profile.frozen_rial_balance) >= amount
+        elif currency_type == 'GOLD':
+            return (profile.gold_balance_grams - profile.frozen_gold_balance) >= amount
+        elif currency_type == 'COIN':
+            return (profile.coin_balance - profile.frozen_coin_balance) >= amount
+        elif currency_type == 'DOLLAR':
+            return (profile.dollar_balance - profile.frozen_dollar_balance) >= amount
+        
+        return False
+    
+    @staticmethod
+    def format_wallet_display(profile: Profile) -> str:
+        """
+        فرمت کردن موجودی‌ها برای نمایش
+        
+        Args:
+            profile: پروفایل کاربر
+        
+        Returns:
+            متن فرمت شده
+        """
+        balances = WalletService.get_wallet_balance(profile)
+        
+        text = "💼 *کیف پول شما:*\n\n"
+        
+        text += f"💵 *موجودی ریالی:*\n"
+        text += f"├─ آزاد: {balances['available_rial']:,} ریال\n"
+        text += f"└─ مسدود شده: {balances['frozen_rial']:,} ریال\n\n"
+        
+        text += f"🪙 *موجودی طلا:*\n"
+        text += f"├─ آزاد: {balances['available_gold']} گرم\n"
+        text += f"└─ مسدود شده: {balances['frozen_gold']} گرم\n\n"
+        
+        text += f"🥇 *موجودی سکه:*\n"
+        text += f"├─ آزاد: {balances['available_coin']} عدد\n"
+        text += f"└─ مسدود شده: {balances['frozen_coin']} عدد\n\n"
+        
+        text += f"💵 *موجودی دلار:*\n"
+        text += f"├─ آزاد: {balances['available_dollar']} دلار\n"
+        text += f"└─ مسدود شده: {balances['frozen_dollar']} دلار\n"
+        
+        return text
+
+
+class TransactionService:
+    """Service class for transaction operations."""
+    
+    @staticmethod
+    @transaction.atomic
+    def create_transaction(
+        profile: Profile,
+        transaction_type: str,
+        currency_type: str,
+        amount: Decimal,
+        **kwargs
+    ) -> 'Transaction':
+        """
+        ایجاد تراکنش جدید
+        
+        Args:
+            profile: پروفایل کاربر
+            transaction_type: نوع تراکنش
+            currency_type: نوع ارز
+            amount: مقدار
+            **kwargs: سایر فیلدها
+        
+        Returns:
+            Transaction instance
+        """
+        from .models import Transaction
+        
+        # Get current balance
+        balance_before = profile.get_available_balance(currency_type)
+        
+        # Generate transaction number
+        transaction_number = Transaction.generate_transaction_number()
+        
+        # Calculate balance after (for display only, actual update happens later)
+        if transaction_type in ['DEPOSIT', 'TRANSFER_RECEIVE', 'SELL']:
+            balance_after = balance_before + amount
+        elif transaction_type in ['WITHDRAW', 'TRANSFER_SEND', 'BUY']:
+            balance_after = balance_before - amount
+        else:
+            balance_after = balance_before
+        
+        # Create transaction
+        txn = Transaction.objects.create(
+            transaction_number=transaction_number,
+            profile=profile,
+            transaction_type=transaction_type,
+            currency_type=currency_type,
+            amount=amount,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            status='PENDING',
+            **kwargs
+        )
+        
+        logger.info(f"Created transaction {txn.transaction_number} for {profile.get_display_name()}")
+        
+        return txn
+    
+    @staticmethod
+    def get_user_transactions(
+        profile: Profile,
+        currency_type: Optional[str] = None,
+        limit: int = 20,
+        status: Optional[str] = None
+    ) -> List['Transaction']:
+        """
+        دریافت تاریخچه تراکنش‌های کاربر
+        
+        Args:
+            profile: پروفایل کاربر
+            currency_type: فیلتر بر اساس نوع ارز
+            limit: تعداد تراکنش‌ها
+            status: فیلتر بر اساس وضعیت
+        
+        Returns:
+            لیست تراکنش‌ها
+        """
+        from .models import Transaction
+        
+        queryset = Transaction.objects.filter(profile=profile)
+        
+        if currency_type:
+            queryset = queryset.filter(currency_type=currency_type)
+        
+        if status:
+            queryset = queryset.filter(status=status)
+        
+        return list(queryset.order_by('-created_at')[:limit])
+    
+    @staticmethod
+    @transaction.atomic
+    def complete_transaction(
+        transaction_id: int,
+        admin_user: Optional[User] = None
+    ) -> Tuple[bool, str]:
+        """
+        تکمیل تراکنش
+        
+        Args:
+            transaction_id: شناسه تراکنش
+            admin_user: کاربر ادمین
+        
+        Returns:
+            Tuple[bool, str]: موفقیت و پیام
+        """
+        from .models import Transaction
+        
+        try:
+            txn = Transaction.objects.select_related('profile').get(id=transaction_id)
+            
+            if txn.status != 'PENDING':
+                return False, "این تراکنش قبلاً پردازش شده است."
+            
+            # Update transaction status
+            txn.status = 'COMPLETED'
+            txn.completed_at = timezone.now()
+            txn.save()
+            
+            logger.info(f"Completed transaction {txn.transaction_number}")
+            
+            return True, "تراکنش با موفقیت تکمیل شد."
+        except Transaction.DoesNotExist:
+            return False, "تراکنش یافت نشد."
+    
+    @staticmethod
+    @transaction.atomic
+    def cancel_transaction(
+        transaction_id: int,
+        reason: str,
+        admin_user: Optional[User] = None
+    ) -> Tuple[bool, str]:
+        """
+        لغو تراکنش
+        
+        Args:
+            transaction_id: شناسه تراکنش
+            reason: دلیل لغو
+            admin_user: کاربر ادمین
+        
+        Returns:
+            Tuple[bool, str]: موفقیت و پیام
+        """
+        from .models import Transaction
+        
+        try:
+            txn = Transaction.objects.get(id=transaction_id)
+            
+            if txn.status != 'PENDING':
+                return False, "فقط تراکنش‌های در انتظار قابل لغو هستند."
+            
+            txn.status = 'CANCELLED'
+            txn.admin_note = reason
+            txn.save()
+            
+            logger.info(f"Cancelled transaction {txn.transaction_number}: {reason}")
+            
+            return True, "تراکنش لغو شد."
+        except Transaction.DoesNotExist:
+            return False, "تراکنش یافت نشد."
+
+
+class DepositService:
+    """Service class for deposit operations."""
+    
+    @staticmethod
+    @transaction.atomic
+    def create_deposit_request(
+        profile: Profile,
+        currency_type: str,
+        amount: Decimal,
+        bank_account_id: Optional[int] = None,
+        user_note: str = ""
+    ) -> Tuple['Transaction', str]:
+        """
+        ایجاد درخواست واریز
+        
+        Args:
+            profile: پروفایل کاربر
+            currency_type: نوع ارز
+            amount: مقدار
+            bank_account_id: شناسه حساب بانکی (اختیاری)
+            user_note: یادداشت کاربر
+        
+        Returns:
+            Tuple[Transaction, str]: تراکنش و پیام
+        """
+        # Create transaction
+        txn = TransactionService.create_transaction(
+            profile=profile,
+            transaction_type='DEPOSIT',
+            currency_type=currency_type,
+            amount=amount,
+            user_note=user_note
+        )
+        
+        if bank_account_id:
+            from users.models import BankAccount
+            bank_account = BankAccount.objects.get(id=bank_account_id)
+            txn.related_bank_account = bank_account
+            txn.save()
+        
+        logger.info(f"Created deposit request: {txn.transaction_number}")
+        
+        return txn, "درخواست واریز با موفقیت ثبت شد و در انتظار تایید ادمین است."
+    
+    @staticmethod
+    @transaction.atomic
+    def approve_deposit(
+        transaction_id: int,
+        admin_user: Optional[User] = None
+    ) -> Tuple[bool, str]:
+        """
+        تایید واریز توسط ادمین
+        
+        Args:
+            transaction_id: شناسه تراکنش
+            admin_user: کاربر ادمین
+        
+        Returns:
+            Tuple[bool, str]: موفقیت و پیام
+        """
+        from .models import Transaction
+        
+        try:
+            txn = Transaction.objects.select_related('profile').get(id=transaction_id)
+            
+            if txn.transaction_type != 'DEPOSIT':
+                return False, "این تراکنش یک درخواست واریز نیست."
+            
+            if txn.status != 'PENDING':
+                return False, "این تراکنش قبلاً پردازش شده است."
+            
+            # Add balance to user
+            WalletService.add_balance(txn.profile, txn.currency_type, txn.amount)
+            
+            # Complete transaction
+            txn.status = 'COMPLETED'
+            txn.completed_at = timezone.now()
+            txn.save()
+            
+            logger.info(f"Approved deposit {txn.transaction_number}")
+            
+            return True, "واریز تایید شد و به حساب کاربر اضافه گردید."
+        except Transaction.DoesNotExist:
+            return False, "تراکنش یافت نشد."
+    
+    @staticmethod
+    @transaction.atomic
+    def reject_deposit(
+        transaction_id: int,
+        reason: str,
+        admin_user: Optional[User] = None
+    ) -> Tuple[bool, str]:
+        """
+        رد واریز
+        
+        Args:
+            transaction_id: شناسه تراکنش
+            reason: دلیل رد
+            admin_user: کاربر ادمین
+        
+        Returns:
+            Tuple[bool, str]: موفقیت و پیام
+        """
+        return TransactionService.cancel_transaction(transaction_id, reason, admin_user)
+
+
+class WithdrawService:
+    """Service class for withdraw operations."""
+    
+    @staticmethod
+    @transaction.atomic
+    def create_withdraw_request(
+        profile: Profile,
+        currency_type: str,
+        amount: Decimal,
+        bank_account_id: int
+    ) -> Tuple['WithdrawRequest', str]:
+        """
+        ایجاد درخواست برداشت
+        
+        Args:
+            profile: پروفایل کاربر
+            currency_type: نوع ارز
+            amount: مقدار
+            bank_account_id: شناسه حساب بانکی مقصد
+        
+        Returns:
+            Tuple[WithdrawRequest, str]: درخواست برداشت و پیام
+        """
+        from .models import WithdrawRequest
+        from users.models import BankAccount
+        
+        # Check balance
+        if not WalletService.check_sufficient_balance(profile, currency_type, amount):
+            raise ValidationError("موجودی کافی نیست.")
+        
+        # Check bank account
+        bank_account = BankAccount.objects.get(id=bank_account_id, profile=profile)
+        if not bank_account.can_be_used_for_transactions():
+            raise ValidationError("این حساب بانکی تایید نشده یا غیرفعال است.")
+        
+        # Freeze balance
+        WalletService.freeze_balance(profile, currency_type, amount)
+        
+        # Create transaction
+        txn = TransactionService.create_transaction(
+            profile=profile,
+            transaction_type='WITHDRAW',
+            currency_type=currency_type,
+            amount=amount,
+            related_bank_account_id=bank_account_id
+        )
+        
+        # Create withdraw request
+        request_number = WithdrawRequest.generate_request_number()
+        withdraw_request = WithdrawRequest.objects.create(
+            request_number=request_number,
+            profile=profile,
+            bank_account=bank_account,
+            currency_type=currency_type,
+            amount=amount,
+            status='PENDING',
+            related_transaction=txn
+        )
+        
+        logger.info(f"Created withdraw request: {request_number}")
+        
+        return withdraw_request, "درخواست برداشت ثبت شد و موجودی مسدود گردید. در انتظار تایید ادمین."
+    
+    @staticmethod
+    @transaction.atomic
+    def approve_withdraw(
+        withdraw_request_id: int,
+        admin_user: Optional[User] = None
+    ) -> Tuple[bool, str]:
+        """
+        تایید برداشت
+        
+        Args:
+            withdraw_request_id: شناسه درخواست برداشت
+            admin_user: کاربر ادمین
+        
+        Returns:
+            Tuple[bool, str]: موفقیت و پیام
+        """
+        from .models import WithdrawRequest
+        
+        try:
+            withdraw_request = WithdrawRequest.objects.select_related('profile', 'related_transaction').get(
+                id=withdraw_request_id
+            )
+            
+            if withdraw_request.status != 'PENDING':
+                return False, "این درخواست قبلاً پردازش شده است."
+            
+            # Deduct from frozen balance
+            WalletService.deduct_frozen_balance(
+                withdraw_request.profile,
+                withdraw_request.currency_type,
+                withdraw_request.amount
+            )
+            
+            # Update withdraw request
+            withdraw_request.status = 'COMPLETED'
+            withdraw_request.processed_at = timezone.now()
+            withdraw_request.completed_at = timezone.now()
+            withdraw_request.save()
+            
+            # Complete transaction
+            if withdraw_request.related_transaction:
+                withdraw_request.related_transaction.status = 'COMPLETED'
+                withdraw_request.related_transaction.completed_at = timezone.now()
+                withdraw_request.related_transaction.save()
+            
+            logger.info(f"Approved withdraw request: {withdraw_request.request_number}")
+            
+            return True, "درخواست برداشت تایید شد."
+        except WithdrawRequest.DoesNotExist:
+            return False, "درخواست برداشت یافت نشد."
+    
+    @staticmethod
+    @transaction.atomic
+    def reject_withdraw(
+        withdraw_request_id: int,
+        reason: str,
+        admin_user: Optional[User] = None
+    ) -> Tuple[bool, str]:
+        """
+        رد برداشت
+        
+        Args:
+            withdraw_request_id: شناسه درخواست برداشت
+            reason: دلیل رد
+            admin_user: کاربر ادمین
+        
+        Returns:
+            Tuple[bool, str]: موفقیت و پیام
+        """
+        from .models import WithdrawRequest
+        
+        try:
+            withdraw_request = WithdrawRequest.objects.select_related('profile', 'related_transaction').get(
+                id=withdraw_request_id
+            )
+            
+            if withdraw_request.status != 'PENDING':
+                return False, "این درخواست قبلاً پردازش شده است."
+            
+            # Unfreeze balance
+            WalletService.unfreeze_balance(
+                withdraw_request.profile,
+                withdraw_request.currency_type,
+                withdraw_request.amount
+            )
+            
+            # Update withdraw request
+            withdraw_request.status = 'REJECTED'
+            withdraw_request.admin_note = reason
+            withdraw_request.processed_at = timezone.now()
+            withdraw_request.save()
+            
+            # Cancel transaction
+            if withdraw_request.related_transaction:
+                withdraw_request.related_transaction.status = 'CANCELLED'
+                withdraw_request.related_transaction.admin_note = reason
+                withdraw_request.related_transaction.save()
+            
+            logger.info(f"Rejected withdraw request: {withdraw_request.request_number} - {reason}")
+            
+            return True, "درخواست برداشت رد شد و موجودی آزاد گردید."
+        except WithdrawRequest.DoesNotExist:
+            return False, "درخواست برداشت یافت نشد."
+
+
+class TransferService:
+    """Service class for transfer operations."""
+    
+    @staticmethod
+    def search_user_by_phone(phone_number: str) -> Optional[Profile]:
+        """
+        جستجوی کاربر بر اساس شماره تلفن
+        
+        Args:
+            phone_number: شماره تلفن
+        
+        Returns:
+            Profile یا None
+        """
+        try:
+            profile = Profile.objects.get(phone_number=phone_number, is_approved=True)
+            return profile
+        except Profile.DoesNotExist:
+            return None
+    
+    @staticmethod
+    @transaction.atomic
+    def create_transfer_request(
+        sender_profile: Profile,
+        receiver_phone: str,
+        currency_type: str,
+        amount: Decimal,
+        description: str = ""
+    ) -> Tuple['TransferRequest', str]:
+        """
+        ایجاد درخواست انتقال وجه
+        
+        Args:
+            sender_profile: پروفایل فرستنده
+            receiver_phone: شماره تلفن گیرنده
+            currency_type: نوع ارز
+            amount: مقدار
+            description: توضیحات
+        
+        Returns:
+            Tuple[TransferRequest, str]: درخواست انتقال و پیام
+        """
+        from .models import TransferRequest
+        
+        # Find receiver
+        receiver_profile = TransferService.search_user_by_phone(receiver_phone)
+        if not receiver_profile:
+            raise ValidationError("کاربری با این شماره تلفن یافت نشد.")
+        
+        # Check not sending to self
+        if sender_profile.id == receiver_profile.id:
+            raise ValidationError("نمی‌توانید به خودتان وجه منتقل کنید.")
+        
+        # Check balance
+        if not WalletService.check_sufficient_balance(sender_profile, currency_type, amount):
+            raise ValidationError("موجودی کافی نیست.")
+        
+        # Freeze sender's balance
+        WalletService.freeze_balance(sender_profile, currency_type, amount)
+        
+        # Create sender transaction
+        sender_txn = TransactionService.create_transaction(
+            profile=sender_profile,
+            transaction_type='TRANSFER_SEND',
+            currency_type=currency_type,
+            amount=amount,
+            related_user=receiver_profile,
+            user_note=description
+        )
+        
+        # Create receiver transaction
+        receiver_txn = TransactionService.create_transaction(
+            profile=receiver_profile,
+            transaction_type='TRANSFER_RECEIVE',
+            currency_type=currency_type,
+            amount=amount,
+            related_user=sender_profile,
+            user_note=description
+        )
+        
+        # Create transfer request
+        request_number = TransferRequest.generate_request_number()
+        transfer_request = TransferRequest.objects.create(
+            request_number=request_number,
+            sender_profile=sender_profile,
+            receiver_profile=receiver_profile,
+            receiver_phone=receiver_phone,
+            currency_type=currency_type,
+            amount=amount,
+            status='PENDING',
+            sender_transaction=sender_txn,
+            receiver_transaction=receiver_txn,
+            description=description
+        )
+        
+        # Auto-complete transfer (no admin approval needed for transfers)
+        success, message = TransferService.complete_transfer(transfer_request.id)
+        
+        if not success:
+            raise ValidationError(message)
+        
+        logger.info(f"Created and completed transfer request: {request_number}")
+        
+        return transfer_request, "انتقال وجه با موفقیت انجام شد."
+    
+    @staticmethod
+    @transaction.atomic
+    def complete_transfer(transfer_request_id: int) -> Tuple[bool, str]:
+        """
+        تکمیل انتقال
+        
+        Args:
+            transfer_request_id: شناسه درخواست انتقال
+        
+        Returns:
+            Tuple[bool, str]: موفقیت و پیام
+        """
+        from .models import TransferRequest
+        
+        try:
+            transfer_request = TransferRequest.objects.select_related(
+                'sender_profile', 'receiver_profile', 'sender_transaction', 'receiver_transaction'
+            ).get(id=transfer_request_id)
+            
+            if transfer_request.status != 'PENDING':
+                return False, "این انتقال قبلاً پردازش شده است."
+            
+            # Deduct from sender's frozen balance
+            WalletService.deduct_frozen_balance(
+                transfer_request.sender_profile,
+                transfer_request.currency_type,
+                transfer_request.amount
+            )
+            
+            # Add to receiver's balance
+            WalletService.add_balance(
+                transfer_request.receiver_profile,
+                transfer_request.currency_type,
+                transfer_request.amount
+            )
+            
+            # Complete transfer request
+            transfer_request.status = 'COMPLETED'
+            transfer_request.completed_at = timezone.now()
+            transfer_request.save()
+            
+            # Complete transactions
+            if transfer_request.sender_transaction:
+                transfer_request.sender_transaction.status = 'COMPLETED'
+                transfer_request.sender_transaction.completed_at = timezone.now()
+                transfer_request.sender_transaction.save()
+            
+            if transfer_request.receiver_transaction:
+                transfer_request.receiver_transaction.status = 'COMPLETED'
+                transfer_request.receiver_transaction.completed_at = timezone.now()
+                transfer_request.receiver_transaction.save()
+            
+            logger.info(f"Completed transfer request: {transfer_request.request_number}")
+            
+            return True, "انتقال وجه با موفقیت انجام شد."
+        except TransferRequest.DoesNotExist:
+            return False, "درخواست انتقال یافت نشد."
+    
+    @staticmethod
+    @transaction.atomic
+    def cancel_transfer(
+        transfer_request_id: int,
+        reason: str
+    ) -> Tuple[bool, str]:
+        """
+        لغو انتقال
+        
+        Args:
+            transfer_request_id: شناسه درخواست انتقال
+            reason: دلیل لغو
+        
+        Returns:
+            Tuple[bool, str]: موفقیت و پیام
+        """
+        from .models import TransferRequest
+        
+        try:
+            transfer_request = TransferRequest.objects.select_related(
+                'sender_profile', 'sender_transaction', 'receiver_transaction'
+            ).get(id=transfer_request_id)
+            
+            if transfer_request.status != 'PENDING':
+                return False, "فقط انتقال‌های در انتظار قابل لغو هستند."
+            
+            # Unfreeze sender's balance
+            WalletService.unfreeze_balance(
+                transfer_request.sender_profile,
+                transfer_request.currency_type,
+                transfer_request.amount
+            )
+            
+            # Cancel transfer request
+            transfer_request.status = 'CANCELLED'
+            transfer_request.save()
+            
+            # Cancel transactions
+            if transfer_request.sender_transaction:
+                transfer_request.sender_transaction.status = 'CANCELLED'
+                transfer_request.sender_transaction.admin_note = reason
+                transfer_request.sender_transaction.save()
+            
+            if transfer_request.receiver_transaction:
+                transfer_request.receiver_transaction.status = 'CANCELLED'
+                transfer_request.receiver_transaction.admin_note = reason
+                transfer_request.receiver_transaction.save()
+            
+            logger.info(f"Cancelled transfer request: {transfer_request.request_number} - {reason}")
+            
+            return True, "انتقال لغو شد."
+        except TransferRequest.DoesNotExist:
+            return False, "درخواست انتقال یافت نشد."

@@ -11,7 +11,7 @@ from django.utils.html import format_html
 from django.db.models import Q
 from typing import Optional
 
-from .models import Profile
+from .models import Profile, BankAccount
 
 
 class ProfileInline(admin.StackedInline):
@@ -22,7 +22,9 @@ class ProfileInline(admin.StackedInline):
     verbose_name_plural = 'پروفایل‌ها'
     fields = (
         'telegram_id', 'telegram_username', 'phone_number',
-        'is_approved', 'rial_balance', 'gold_balance_grams'
+        'is_approved', 
+        'rial_balance', 'gold_balance_grams', 'coin_balance', 'dollar_balance',
+        'frozen_rial_balance', 'frozen_gold_balance', 'frozen_coin_balance', 'frozen_dollar_balance'
     )
     readonly_fields = ('telegram_id', 'telegram_username', 'phone_number')
 
@@ -94,9 +96,13 @@ class ProfileAdmin(admin.ModelAdmin):
         ('وضعیت حساب', {
             'fields': ('is_approved',)
         }),
-        ('موجودی‌ها', {
-            'fields': ('rial_balance', 'gold_balance_grams'),
+        ('موجودی‌های آزاد', {
+            'fields': ('rial_balance', 'gold_balance_grams', 'coin_balance', 'dollar_balance'),
             'classes': ('wide',)
+        }),
+        ('موجودی‌های مسدود شده', {
+            'fields': ('frozen_rial_balance', 'frozen_gold_balance', 'frozen_coin_balance', 'frozen_dollar_balance'),
+            'classes': ('collapse',)
         }),
         ('آمار', {
             'fields': ('get_total_orders', 'get_pending_orders'),
@@ -168,3 +174,95 @@ class ProfileAdmin(admin.ModelAdmin):
             f'تأیید {updated} کاربر لغو شد.'
         )
     disapprove_users.short_description = 'لغو تأیید کاربران انتخاب شده'
+
+
+@admin.register(BankAccount)
+class BankAccountAdmin(admin.ModelAdmin):
+    """Admin interface for BankAccount model."""
+    
+    list_display = (
+        'get_user_display',
+        'bank_name',
+        'get_masked_account',
+        'account_holder_name',
+        'verification_status',
+        'active_status',
+        'created_at'
+    )
+    
+    list_filter = (
+        'is_verified',
+        'is_active',
+        'bank_name',
+        'created_at'
+    )
+    
+    search_fields = (
+        'profile__user__first_name',
+        'profile__user__last_name',
+        'profile__phone_number',
+        'account_holder_name',
+        'account_number'
+    )
+    
+    list_editable = ('is_verified', 'is_active')
+    
+    readonly_fields = ('created_at', 'updated_at')
+    
+    fieldsets = (
+        ('اطلاعات کاربر', {
+            'fields': ('profile',)
+        }),
+        ('اطلاعات بانکی', {
+            'fields': ('bank_name', 'account_number', 'account_holder_name')
+        }),
+        ('وضعیت', {
+            'fields': ('is_verified', 'is_active')
+        }),
+        ('تاریخچه', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    actions = ['verify_accounts', 'reject_accounts']
+    
+    def get_user_display(self, obj: BankAccount) -> str:
+        """Display user name."""
+        return obj.profile.get_display_name()
+    get_user_display.short_description = 'کاربر'
+    
+    def get_masked_account(self, obj: BankAccount) -> str:
+        """Display masked account number."""
+        return obj.get_masked_account_number()
+    get_masked_account.short_description = 'شماره حساب'
+    
+    def verification_status(self, obj: BankAccount) -> str:
+        """Display verification status with color."""
+        if obj.is_verified:
+            return format_html(
+                '<span style="color: green; font-weight: bold;">✓ تایید شده</span>'
+            )
+        return format_html(
+            '<span style="color: orange; font-weight: bold;">⏳ در انتظار تایید</span>'
+        )
+    verification_status.short_description = 'وضعیت تایید'
+    
+    def active_status(self, obj: BankAccount) -> str:
+        """Display active status."""
+        if obj.is_active:
+            return format_html('<span style="color: green;">✓ فعال</span>')
+        return format_html('<span style="color: gray;">✗ غیرفعال</span>')
+    active_status.short_description = 'وضعیت'
+    
+    def verify_accounts(self, request, queryset):
+        """Bulk action to verify bank accounts."""
+        updated = queryset.update(is_verified=True)
+        self.message_user(request, f'{updated} حساب بانکی تایید شد.')
+    verify_accounts.short_description = 'تایید حساب‌های انتخاب شده'
+    
+    def reject_accounts(self, request, queryset):
+        """Bulk action to reject/deactivate bank accounts."""
+        updated = queryset.update(is_verified=False, is_active=False)
+        self.message_user(request, f'{updated} حساب بانکی رد شد.')
+    reject_accounts.short_description = 'رد حساب‌های انتخاب شده'
