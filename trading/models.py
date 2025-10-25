@@ -264,3 +264,387 @@ class Order(models.Model):
     def can_be_cancelled(self) -> bool:
         """Check if order can be cancelled (only pending orders)."""
         return self.is_pending()
+
+
+class Transaction(models.Model):
+    """Financial transaction model for tracking all monetary movements."""
+    
+    class TransactionType(models.TextChoices):
+        DEPOSIT = 'DEPOSIT', 'واریز وجه'
+        WITHDRAW = 'WITHDRAW', 'برداشت وجه'
+        TRANSFER_SEND = 'TRANSFER_SEND', 'انتقال ارسالی'
+        TRANSFER_RECEIVE = 'TRANSFER_RECEIVE', 'انتقال دریافتی'
+        BUY = 'BUY', 'خرید'
+        SELL = 'SELL', 'فروش'
+    
+    class CurrencyType(models.TextChoices):
+        RIAL = 'RIAL', 'ریال'
+        GOLD = 'GOLD', 'طلا'
+        COIN = 'COIN', 'سکه'
+        DOLLAR = 'DOLLAR', 'دلار'
+    
+    class TransactionStatus(models.TextChoices):
+        PENDING = 'PENDING', 'در انتظار بررسی'
+        COMPLETED = 'COMPLETED', 'تکمیل شده'
+        CANCELLED = 'CANCELLED', 'لغو شده'
+        FAILED = 'FAILED', 'ناموفق'
+    
+    transaction_number = models.CharField(
+        max_length=50,
+        unique=True,
+        db_index=True,
+        verbose_name="شماره تراکنش",
+        help_text="شماره یونیک تراکنش"
+    )
+    
+    profile = models.ForeignKey(
+        Profile,
+        on_delete=models.PROTECT,
+        related_name='transactions',
+        verbose_name="پروفایل کاربر"
+    )
+    
+    transaction_type = models.CharField(
+        max_length=20,
+        choices=TransactionType.choices,
+        db_index=True,
+        verbose_name="نوع تراکنش"
+    )
+    
+    currency_type = models.CharField(
+        max_length=10,
+        choices=CurrencyType.choices,
+        db_index=True,
+        verbose_name="نوع ارز"
+    )
+    
+    amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="مقدار"
+    )
+    
+    balance_before = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        verbose_name="موجودی قبل از تراکنش"
+    )
+    
+    balance_after = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        verbose_name="موجودی بعد از تراکنش"
+    )
+    
+    status = models.CharField(
+        max_length=10,
+        choices=TransactionStatus.choices,
+        default=TransactionStatus.PENDING,
+        db_index=True,
+        verbose_name="وضعیت"
+    )
+    
+    related_bank_account = models.ForeignKey(
+        'users.BankAccount',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transactions',
+        verbose_name="حساب بانکی مرتبط"
+    )
+    
+    related_user = models.ForeignKey(
+        Profile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='related_transactions',
+        verbose_name="کاربر مرتبط",
+        help_text="برای انتقال وجه: فرستنده یا گیرنده"
+    )
+    
+    related_order = models.ForeignKey(
+        Order,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transactions',
+        verbose_name="سفارش مرتبط"
+    )
+    
+    admin_note = models.TextField(
+        blank=True,
+        verbose_name="یادداشت ادمین"
+    )
+    
+    user_note = models.TextField(
+        blank=True,
+        verbose_name="یادداشت کاربر"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="تاریخ ایجاد"
+    )
+    
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="تاریخ تکمیل"
+    )
+    
+    class Meta:
+        verbose_name = "تراکنش"
+        verbose_name_plural = "تراکنش‌ها"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['transaction_number']),
+            models.Index(fields=['profile', '-created_at']),
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['transaction_type', 'currency_type']),
+        ]
+    
+    def __str__(self) -> str:
+        """Return string representation."""
+        return f"{self.transaction_number} - {self.get_transaction_type_display()} - {self.profile.get_display_name()}"
+    
+    def is_pending(self) -> bool:
+        """Check if transaction is pending."""
+        return self.status == self.TransactionStatus.PENDING
+    
+    def is_completed(self) -> bool:
+        """Check if transaction is completed."""
+        return self.status == self.TransactionStatus.COMPLETED
+    
+    @staticmethod
+    def generate_transaction_number() -> str:
+        """Generate unique transaction number."""
+        from django.utils import timezone
+        timestamp = timezone.now().strftime('%Y%m%d%H%M%S')
+        import random
+        random_part = random.randint(1000, 9999)
+        return f"TXN-{timestamp}-{random_part}"
+
+
+class WithdrawRequest(models.Model):
+    """Withdrawal request model."""
+    
+    class WithdrawStatus(models.TextChoices):
+        PENDING = 'PENDING', 'در انتظار بررسی'
+        APPROVED = 'APPROVED', 'تایید شده'
+        REJECTED = 'REJECTED', 'رد شده'
+        COMPLETED = 'COMPLETED', 'تکمیل شده'
+    
+    request_number = models.CharField(
+        max_length=50,
+        unique=True,
+        db_index=True,
+        verbose_name="شماره درخواست"
+    )
+    
+    profile = models.ForeignKey(
+        Profile,
+        on_delete=models.PROTECT,
+        related_name='withdraw_requests',
+        verbose_name="پروفایل کاربر"
+    )
+    
+    bank_account = models.ForeignKey(
+        'users.BankAccount',
+        on_delete=models.PROTECT,
+        related_name='withdraw_requests',
+        verbose_name="حساب بانکی مقصد"
+    )
+    
+    currency_type = models.CharField(
+        max_length=10,
+        choices=Transaction.CurrencyType.choices,
+        verbose_name="نوع ارز"
+    )
+    
+    amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="مقدار درخواستی"
+    )
+    
+    status = models.CharField(
+        max_length=10,
+        choices=WithdrawStatus.choices,
+        default=WithdrawStatus.PENDING,
+        db_index=True,
+        verbose_name="وضعیت"
+    )
+    
+    related_transaction = models.OneToOneField(
+        Transaction,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='withdraw_request',
+        verbose_name="تراکنش مرتبط"
+    )
+    
+    admin_note = models.TextField(
+        blank=True,
+        verbose_name="یادداشت ادمین",
+        help_text="دلیل رد یا توضیحات"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="تاریخ ثبت"
+    )
+    
+    processed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="تاریخ پردازش"
+    )
+    
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="تاریخ تکمیل"
+    )
+    
+    class Meta:
+        verbose_name = "درخواست برداشت"
+        verbose_name_plural = "درخواست‌های برداشت"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['profile', '-created_at']),
+        ]
+    
+    def __str__(self) -> str:
+        """Return string representation."""
+        return f"{self.request_number} - {self.profile.get_display_name()} - {self.amount} {self.get_currency_type_display()}"
+    
+    @staticmethod
+    def generate_request_number() -> str:
+        """Generate unique request number."""
+        from django.utils import timezone
+        timestamp = timezone.now().strftime('%Y%m%d%H%M%S')
+        import random
+        random_part = random.randint(1000, 9999)
+        return f"WD-{timestamp}-{random_part}"
+
+
+class TransferRequest(models.Model):
+    """Transfer request model for money transfers between users."""
+    
+    class TransferStatus(models.TextChoices):
+        PENDING = 'PENDING', 'در انتظار بررسی'
+        COMPLETED = 'COMPLETED', 'تکمیل شده'
+        CANCELLED = 'CANCELLED', 'لغو شده'
+    
+    request_number = models.CharField(
+        max_length=50,
+        unique=True,
+        db_index=True,
+        verbose_name="شماره درخواست"
+    )
+    
+    sender_profile = models.ForeignKey(
+        Profile,
+        on_delete=models.PROTECT,
+        related_name='sent_transfers',
+        verbose_name="فرستنده"
+    )
+    
+    receiver_profile = models.ForeignKey(
+        Profile,
+        on_delete=models.PROTECT,
+        related_name='received_transfers',
+        verbose_name="گیرنده"
+    )
+    
+    receiver_phone = models.CharField(
+        max_length=15,
+        verbose_name="شماره تلفن گیرنده",
+        help_text="برای جستجو"
+    )
+    
+    currency_type = models.CharField(
+        max_length=10,
+        choices=Transaction.CurrencyType.choices,
+        verbose_name="نوع ارز"
+    )
+    
+    amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="مقدار"
+    )
+    
+    status = models.CharField(
+        max_length=10,
+        choices=TransferStatus.choices,
+        default=TransferStatus.PENDING,
+        db_index=True,
+        verbose_name="وضعیت"
+    )
+    
+    sender_transaction = models.ForeignKey(
+        Transaction,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transfer_send',
+        verbose_name="تراکنش فرستنده"
+    )
+    
+    receiver_transaction = models.ForeignKey(
+        Transaction,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transfer_receive',
+        verbose_name="تراکنش گیرنده"
+    )
+    
+    description = models.TextField(
+        blank=True,
+        verbose_name="توضیحات"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="تاریخ ثبت"
+    )
+    
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="تاریخ تکمیل"
+    )
+    
+    class Meta:
+        verbose_name = "درخواست انتقال وجه"
+        verbose_name_plural = "درخواست‌های انتقال وجه"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['sender_profile', '-created_at']),
+            models.Index(fields=['receiver_profile', '-created_at']),
+        ]
+    
+    def __str__(self) -> str:
+        """Return string representation."""
+        return f"{self.request_number} - {self.sender_profile.get_display_name()} به {self.receiver_profile.get_display_name()}"
+    
+    @staticmethod
+    def generate_request_number() -> str:
+        """Generate unique request number."""
+        from django.utils import timezone
+        timestamp = timezone.now().strftime('%Y%m%d%H%M%S')
+        import random
+        random_part = random.randint(1000, 9999)
+        return f"TR-{timestamp}-{random_part}"

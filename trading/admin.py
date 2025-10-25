@@ -11,7 +11,8 @@ from django.utils import timezone
 from typing import Optional
 from decimal import Decimal
 
-from .models import Product, Order
+from .models import Product, Order, Transaction, WithdrawRequest, TransferRequest
+from .services import DepositService, WithdrawService
 
 
 @admin.register(Product)
@@ -272,3 +273,328 @@ class OrderAdmin(admin.ModelAdmin):
             f'{updated} سفارش لغو شد.'
         )
     cancel_orders.short_description = 'لغو سفارشات انتخاب شده'
+
+
+@admin.register(Transaction)
+class TransactionAdmin(admin.ModelAdmin):
+    """Admin interface for Transaction model."""
+    
+    list_display = (
+        'transaction_number',
+        'get_user_display',
+        'transaction_type',
+        'currency_type',
+        'formatted_amount',
+        'status_display',
+        'created_at'
+    )
+    
+    list_filter = (
+        'status',
+        'transaction_type',
+        'currency_type',
+        'created_at'
+    )
+    
+    search_fields = (
+        'transaction_number',
+        'profile__user__first_name',
+        'profile__user__last_name',
+        'profile__phone_number'
+    )
+    
+    readonly_fields = (
+        'transaction_number',
+        'balance_before',
+        'balance_after',
+        'created_at',
+        'completed_at'
+    )
+    
+    fieldsets = (
+        ('اطلاعات تراکنش', {
+            'fields': ('transaction_number', 'profile', 'transaction_type', 'currency_type', 'amount')
+        }),
+        ('موجودی‌ها', {
+            'fields': ('balance_before', 'balance_after')
+        }),
+        ('روابط', {
+            'fields': ('related_bank_account', 'related_user', 'related_order'),
+            'classes': ('collapse',)
+        }),
+        ('یادداشت‌ها', {
+            'fields': ('admin_note', 'user_note')
+        }),
+        ('وضعیت', {
+            'fields': ('status',)
+        }),
+        ('تاریخچه', {
+            'fields': ('created_at', 'completed_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    actions = ['complete_transactions', 'cancel_transactions']
+    date_hierarchy = 'created_at'
+    
+    def get_user_display(self, obj: Transaction) -> str:
+        """Display user name."""
+        return obj.profile.get_display_name()
+    get_user_display.short_description = 'کاربر'
+    
+    def formatted_amount(self, obj: Transaction) -> str:
+        """Format amount."""
+        currency_map = {'RIAL': 'ریال', 'GOLD': 'گرم', 'COIN': 'عدد', 'DOLLAR': 'دلار'}
+        unit = currency_map.get(obj.currency_type, '')
+        return f"{obj.amount:,.4f} {unit}"
+    formatted_amount.short_description = 'مقدار'
+    
+    def status_display(self, obj: Transaction) -> str:
+        """Display status with color."""
+        colors = {
+            'PENDING': 'orange',
+            'COMPLETED': 'green',
+            'CANCELLED': 'red',
+            'FAILED': 'darkred',
+        }
+        color = colors.get(obj.status, 'black')
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{}</span>',
+            color,
+            obj.get_status_display()
+        )
+    status_display.short_description = 'وضعیت'
+    
+    def complete_transactions(self, request, queryset):
+        """Bulk action to complete transactions."""
+        pending = queryset.filter(status='PENDING', transaction_type='DEPOSIT')
+        completed_count = 0
+        
+        for txn in pending:
+            success, msg = DepositService.approve_deposit(txn.id, request.user)
+            if success:
+                completed_count += 1
+        
+        self.message_user(request, f'{completed_count} تراکنش تکمیل شد.')
+    complete_transactions.short_description = 'تکمیل واریزهای انتخاب شده'
+    
+    def cancel_transactions(self, request, queryset):
+        """Bulk action to cancel transactions."""
+        from .services import TransactionService
+        pending = queryset.filter(status='PENDING')
+        cancelled_count = 0
+        
+        for txn in pending:
+            success, msg = TransactionService.cancel_transaction(txn.id, 'لغو توسط ادمین', request.user)
+            if success:
+                cancelled_count += 1
+        
+        self.message_user(request, f'{cancelled_count} تراکنش لغو شد.')
+    cancel_transactions.short_description = 'لغو تراکنش‌های انتخاب شده'
+
+
+@admin.register(WithdrawRequest)
+class WithdrawRequestAdmin(admin.ModelAdmin):
+    """Admin interface for WithdrawRequest model."""
+    
+    list_display = (
+        'request_number',
+        'get_user_display',
+        'currency_type',
+        'formatted_amount',
+        'get_bank_info',
+        'status_display',
+        'created_at'
+    )
+    
+    list_filter = (
+        'status',
+        'currency_type',
+        'created_at'
+    )
+    
+    search_fields = (
+        'request_number',
+        'profile__user__first_name',
+        'profile__user__last_name',
+        'profile__phone_number'
+    )
+    
+    readonly_fields = (
+        'request_number',
+        'created_at',
+        'processed_at',
+        'completed_at'
+    )
+    
+    fieldsets = (
+        ('اطلاعات درخواست', {
+            'fields': ('request_number', 'profile', 'currency_type', 'amount')
+        }),
+        ('حساب بانکی مقصد', {
+            'fields': ('bank_account',)
+        }),
+        ('وضعیت', {
+            'fields': ('status', 'admin_note')
+        }),
+        ('تراکنش مرتبط', {
+            'fields': ('related_transaction',),
+            'classes': ('collapse',)
+        }),
+        ('تاریخچه', {
+            'fields': ('created_at', 'processed_at', 'completed_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    actions = ['approve_withdraws', 'reject_withdraws']
+    date_hierarchy = 'created_at'
+    
+    def get_user_display(self, obj: WithdrawRequest) -> str:
+        """Display user name."""
+        return obj.profile.get_display_name()
+    get_user_display.short_description = 'کاربر'
+    
+    def formatted_amount(self, obj: WithdrawRequest) -> str:
+        """Format amount."""
+        currency_map = {'RIAL': 'ریال', 'GOLD': 'گرم', 'COIN': 'عدد', 'DOLLAR': 'دلار'}
+        unit = currency_map.get(obj.currency_type, '')
+        return f"{obj.amount:,.4f} {unit}"
+    formatted_amount.short_description = 'مقدار'
+    
+    def get_bank_info(self, obj: WithdrawRequest) -> str:
+        """Display bank account info."""
+        return f"{obj.bank_account.bank_name} - {obj.bank_account.get_masked_account_number()}"
+    get_bank_info.short_description = 'حساب بانکی'
+    
+    def status_display(self, obj: WithdrawRequest) -> str:
+        """Display status with color."""
+        colors = {
+            'PENDING': 'orange',
+            'APPROVED': 'blue',
+            'COMPLETED': 'green',
+            'REJECTED': 'red',
+        }
+        color = colors.get(obj.status, 'black')
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{}</span>',
+            color,
+            obj.get_status_display()
+        )
+    status_display.short_description = 'وضعیت'
+    
+    def approve_withdraws(self, request, queryset):
+        """Bulk action to approve withdrawals."""
+        pending = queryset.filter(status='PENDING')
+        approved_count = 0
+        
+        for wd in pending:
+            success, msg = WithdrawService.approve_withdraw(wd.id, request.user)
+            if success:
+                approved_count += 1
+        
+        self.message_user(request, f'{approved_count} درخواست برداشت تایید شد.')
+    approve_withdraws.short_description = 'تایید برداشت‌های انتخاب شده'
+    
+    def reject_withdraws(self, request, queryset):
+        """Bulk action to reject withdrawals."""
+        pending = queryset.filter(status='PENDING')
+        rejected_count = 0
+        
+        for wd in pending:
+            success, msg = WithdrawService.reject_withdraw(wd.id, 'رد توسط ادمین', request.user)
+            if success:
+                rejected_count += 1
+        
+        self.message_user(request, f'{rejected_count} درخواست برداشت رد شد.')
+    reject_withdraws.short_description = 'رد برداشت‌های انتخاب شده'
+
+
+@admin.register(TransferRequest)
+class TransferRequestAdmin(admin.ModelAdmin):
+    """Admin interface for TransferRequest model."""
+    
+    list_display = (
+        'request_number',
+        'get_sender_display',
+        'get_receiver_display',
+        'currency_type',
+        'formatted_amount',
+        'status_display',
+        'created_at'
+    )
+    
+    list_filter = (
+        'status',
+        'currency_type',
+        'created_at'
+    )
+    
+    search_fields = (
+        'request_number',
+        'sender_profile__user__first_name',
+        'sender_profile__user__last_name',
+        'receiver_profile__user__first_name',
+        'receiver_profile__user__last_name',
+        'receiver_phone'
+    )
+    
+    readonly_fields = (
+        'request_number',
+        'created_at',
+        'completed_at'
+    )
+    
+    fieldsets = (
+        ('اطلاعات انتقال', {
+            'fields': ('request_number', 'currency_type', 'amount', 'description')
+        }),
+        ('فرستنده و گیرنده', {
+            'fields': ('sender_profile', 'receiver_profile', 'receiver_phone')
+        }),
+        ('وضعیت', {
+            'fields': ('status',)
+        }),
+        ('تراکنش‌های مرتبط', {
+            'fields': ('sender_transaction', 'receiver_transaction'),
+            'classes': ('collapse',)
+        }),
+        ('تاریخچه', {
+            'fields': ('created_at', 'completed_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    date_hierarchy = 'created_at'
+    
+    def get_sender_display(self, obj: TransferRequest) -> str:
+        """Display sender name."""
+        return obj.sender_profile.get_display_name()
+    get_sender_display.short_description = 'فرستنده'
+    
+    def get_receiver_display(self, obj: TransferRequest) -> str:
+        """Display receiver name."""
+        return obj.receiver_profile.get_display_name()
+    get_receiver_display.short_description = 'گیرنده'
+    
+    def formatted_amount(self, obj: TransferRequest) -> str:
+        """Format amount."""
+        currency_map = {'RIAL': 'ریال', 'GOLD': 'گرم', 'COIN': 'عدد', 'DOLLAR': 'دلار'}
+        unit = currency_map.get(obj.currency_type, '')
+        return f"{obj.amount:,.4f} {unit}"
+    formatted_amount.short_description = 'مقدار'
+    
+    def status_display(self, obj: TransferRequest) -> str:
+        """Display status with color."""
+        colors = {
+            'PENDING': 'orange',
+            'COMPLETED': 'green',
+            'CANCELLED': 'red',
+        }
+        color = colors.get(obj.status, 'black')
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{}</span>',
+            color,
+            obj.get_status_display()
+        )
+    status_display.short_description = 'وضعیت'
