@@ -146,9 +146,10 @@ class TelegramBotCommand(BaseCommand):
 def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     """Generate main menu keyboard."""
     keyboard = [
-        [MENU_PRICE, MENU_BUY],
-        [MENU_SELL, MENU_PORTFOLIO],
-        [MENU_HISTORY]
+        [MENU_PRICE],
+        [MENU_BUY, MENU_SELL],
+        [MENU_PORTFOLIO, MENU_HISTORY],
+        [MENU_ACCOUNT, MENU_WALLET]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 

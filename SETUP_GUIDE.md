@@ -167,4 +167,3 @@ tail -f logs/gold_shop.log
 ---
 
 **نکته**: این راهنما برای محیط توسعه (Development) است. برای استقرار Production به [DEPLOYMENT.md](DEPLOYMENT.md) مراجعه کنید.
-

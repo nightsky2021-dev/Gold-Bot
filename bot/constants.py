@@ -14,6 +14,34 @@ ENTERING_AMOUNT: Final[int] = 2
 CONFIRMING_BUY: Final[int] = 3
 CONFIRMING_SELL: Final[int] = 4
 
+# States for Account Management
+VIEWING_PROFILE: Final[int] = 10
+MANAGING_BANK_ACCOUNTS: Final[int] = 11
+ADDING_BANK_ACCOUNT: Final[int] = 12
+ENTERING_BANK_NAME: Final[int] = 13
+ENTERING_ACCOUNT_NUMBER: Final[int] = 14
+ENTERING_ACCOUNT_HOLDER: Final[int] = 15
+
+# States for Wallet - Deposit
+SELECTING_DEPOSIT_CURRENCY: Final[int] = 20
+ENTERING_DEPOSIT_AMOUNT: Final[int] = 21
+SELECTING_DEPOSIT_BANK: Final[int] = 22
+UPLOADING_RECEIPT: Final[int] = 23
+CONFIRMING_DEPOSIT: Final[int] = 24
+
+# States for Wallet - Withdraw
+SELECTING_WITHDRAW_CURRENCY: Final[int] = 30
+ENTERING_WITHDRAW_AMOUNT: Final[int] = 31
+SELECTING_WITHDRAW_BANK: Final[int] = 32
+CONFIRMING_WITHDRAW: Final[int] = 33
+
+# States for Wallet - Transfer
+SELECTING_TRANSFER_CURRENCY: Final[int] = 40
+ENTERING_RECEIVER_PHONE: Final[int] = 41
+ENTERING_TRANSFER_AMOUNT: Final[int] = 42
+ENTERING_TRANSFER_DESCRIPTION: Final[int] = 43
+CONFIRMING_TRANSFER: Final[int] = 44
+
 # ==================== Callback Data Prefixes ====================
 PRODUCT_PREFIX: Final[str] = "product_"
 METHOD_PREFIX: Final[str] = "method_"
@@ -30,6 +58,8 @@ MENU_BUY: Final[str] = "💰 خرید طلا"
 MENU_SELL: Final[str] = "🛒 فروش طلا"
 MENU_PORTFOLIO: Final[str] = "📊 کیف پول من"
 MENU_HISTORY: Final[str] = "📜 تاریخچه سفارشات"
+MENU_ACCOUNT: Final[str] = "👤 حساب کاربری"
+MENU_WALLET: Final[str] = "💼 کیف پول"
 MENU_CANCEL: Final[str] = "❌ لغو"
 
 # ==================== Validation Limits ====================
@@ -178,6 +208,154 @@ BTN_METHOD_RIAL: Final[str] = "💰 بر اساس مبلغ (ریال)"
 BTN_CONFIRM: Final[str] = "✅ تایید نهایی"
 BTN_CANCEL: Final[str] = "❌ لغو"
 BTN_BACK_TO_MENU: Final[str] = "🔙 بازگشت به منوی اصلی"
+
+# ==================== Callback Data for Account & Wallet ====================
+CALLBACK_ACCOUNT_PROFILE: Final[str] = "account_profile"
+CALLBACK_ACCOUNT_BANKCARDS: Final[str] = "account_bankcards"
+CALLBACK_ACCOUNT_BALANCES: Final[str] = "account_balances"
+CALLBACK_ACCOUNT_TRANSACTIONS: Final[str] = "account_transactions"
+
+CALLBACK_WALLET_DEPOSIT: Final[str] = "wallet_deposit"
+CALLBACK_WALLET_WITHDRAW: Final[str] = "wallet_withdraw"
+CALLBACK_WALLET_TRANSFER: Final[str] = "wallet_transfer"
+CALLBACK_WALLET_BALANCES: Final[str] = "wallet_balances"
+CALLBACK_WALLET_TRANSACTIONS: Final[str] = "wallet_transactions"
+
+# Currency selection callbacks
+CALLBACK_CURRENCY_RIAL: Final[str] = "currency_rial"
+CALLBACK_CURRENCY_GOLD: Final[str] = "currency_gold"
+CALLBACK_CURRENCY_COIN: Final[str] = "currency_coin"
+CALLBACK_CURRENCY_DOLLAR: Final[str] = "currency_dollar"
+
+# Bank account callbacks
+CALLBACK_SELECT_BANK_PREFIX: Final[str] = "select_bank_"
+CALLBACK_ADD_BANK_ACCOUNT: Final[str] = "add_bank_account"
+CALLBACK_REMOVE_BANK_PREFIX: Final[str] = "remove_bank_"
+
+# Back navigation
+CALLBACK_BACK_TO_MAIN: Final[str] = "back_to_main"
+CALLBACK_BACK_TO_WALLET: Final[str] = "back_to_wallet"
+CALLBACK_BACK_TO_ACCOUNT: Final[str] = "back_to_account"
+
+# Confirm callbacks
+CALLBACK_CONFIRM_YES: Final[str] = "confirm_yes"
+CALLBACK_CONFIRM_NO: Final[str] = "confirm_no"
+
+# ==================== Currency Types ====================
+CURRENCY_TYPES: Final[dict] = {
+    'RIAL': 'ریال',
+    'GOLD': 'طلا',
+    'COIN': 'سکه',
+    'DOLLAR': 'دلار',
+}
+
+# ==================== Iranian Banks ====================
+IRANIAN_BANKS: Final[list] = [
+    'ملی ایران', 'ملت', 'تجارت', 'صادرات', 'سپه',
+    'رفاه', 'پاسارگاد', 'پارسیان', 'اقتصاد نوین', 'سامان',
+    'سینا', 'کارآفرین', 'آینده', 'شهر', 'دی',
+    'صنعت و معدن', 'توسعه تعاون', 'قوامین', 'مهر اقتصاد', 'حکمت ایرانیان'
+]
+
+# ==================== Wallet Messages ====================
+MSG_WALLET_MENU: Final[str] = (
+    "💼 *منوی کیف پول*\n\n"
+    "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:"
+)
+
+MSG_ACCOUNT_MENU: Final[str] = (
+    "👤 *منوی حساب کاربری*\n\n"
+    "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:"
+)
+
+MSG_SELECT_CURRENCY: Final[str] = (
+    "💱 لطفاً نوع ارز را انتخاب کنید:"
+)
+
+MSG_ENTER_AMOUNT: Final[str] = (
+    "💰 لطفاً مقدار را وارد کنید:\n\n"
+    "مثال: 1000000 (برای ریال) یا 2.5 (برای طلا)"
+)
+
+MSG_SELECT_BANK_ACCOUNT: Final[str] = (
+    "💳 لطفاً حساب بانکی خود را انتخاب کنید:"
+)
+
+MSG_NO_BANK_ACCOUNTS: Final[str] = (
+    "❌ شما هیچ حساب بانکی تایید شده ندارید.\n\n"
+    "لطفاً ابتدا از منوی حساب کاربری، حساب بانکی خود را اضافه کنید."
+)
+
+MSG_DEPOSIT_SUCCESS: Final[str] = (
+    "✅ درخواست واریز شما ثبت شد!\n\n"
+    "شماره تراکنش: {transaction_number}\n\n"
+    "درخواست شما در صف بررسی قرار گرفت.\n"
+    "پس از تایید مدیر، موجودی به حساب شما اضافه خواهد شد."
+)
+
+MSG_WITHDRAW_SUCCESS: Final[str] = (
+    "✅ درخواست برداشت شما ثبت شد!\n\n"
+    "شماره درخواست: {request_number}\n\n"
+    "موجودی شما مسدود شد و در صف بررسی قرار گرفت.\n"
+    "پس از تایید مدیر، مبلغ به حساب شما واریز می‌شود."
+)
+
+MSG_TRANSFER_SUCCESS: Final[str] = (
+    "✅ انتقال وجه با موفقیت انجام شد!\n\n"
+    "شماره درخواست: {request_number}\n"
+    "به: {receiver_name}\n"
+    "مبلغ: {amount} {currency}\n\n"
+    "موجودی جدید: {new_balance}"
+)
+
+MSG_INSUFFICIENT_BALANCE: Final[str] = (
+    "❌ موجودی کافی نیست.\n\n"
+    "موجودی فعلی: {balance}\n"
+    "مورد نیاز: {required}"
+)
+
+MSG_ENTER_RECEIVER_PHONE: Final[str] = (
+    "📱 لطفاً شماره تلفن گیرنده را وارد کنید:\n\n"
+    "مثال: 09123456789"
+)
+
+MSG_RECEIVER_NOT_FOUND: Final[str] = (
+    "❌ کاربری با این شماره تلفن یافت نشد.\n\n"
+    "لطفاً مطمئن شوید شماره تلفن صحیح است و کاربر در سیستم ثبت‌نام کرده است."
+)
+
+MSG_BANK_ACCOUNT_INFO: Final[str] = (
+    "💳 اطلاعات حساب بانکی:\n\n"
+    "🏦 بانک: {bank_name}\n"
+    "👤 صاحب حساب: {holder_name}\n"
+    "🔢 شماره: {account_number}\n"
+    "✅ وضعیت: {status}\n"
+    "📅 تاریخ ثبت: {created_at}"
+)
+
+MSG_ADD_BANK_ACCOUNT_START: Final[str] = (
+    "💳 *افزودن حساب بانکی جدید*\n\n"
+    "لطفاً نام بانک خود را وارد کنید:\n\n"
+    "مثال: ملی ایران، ملت، سامان"
+)
+
+MSG_ENTER_ACCOUNT_NUMBER: Final[str] = (
+    "🔢 لطفاً شماره کارت یا شبا خود را وارد کنید:\n\n"
+    "مثال:\n"
+    "• شماره کارت: 6037997512345678\n"
+    "• شماره شبا: IR123456789012345678901234"
+)
+
+MSG_ENTER_ACCOUNT_HOLDER: Final[str] = (
+    "👤 لطفاً نام و نام خانوادگی صاحب حساب را وارد کنید:\n\n"
+    "مثال: علی احمدی"
+)
+
+MSG_BANK_ACCOUNT_ADDED: Final[str] = (
+    "✅ حساب بانکی با موفقیت اضافه شد!\n\n"
+    "درخواست شما در صف بررسی قرار گرفت.\n"
+    "پس از تایید مدیر، می‌توانید از این حساب برای واریز و برداشت استفاده کنید."
+)
 
 # Import Decimal for validation constants
 from decimal import Decimal
