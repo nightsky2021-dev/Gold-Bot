@@ -83,7 +83,7 @@ class Command(BaseCommand):
         application.add_handler(CallbackQueryHandler(show_all_prices, pattern=f'^{CALLBACK_PRICE_ALL}$'))
         
         # Price refresh callbacks
-        application.add_handler(CallbackQueryHandler(refresh_price, pattern=f'^{CALLBACK_PRICE_REFRESH}(gold|coin|dollar)$'))
+        application.add_handler(CallbackQueryHandler(refresh_price, pattern=f'^{CALLBACK_PRICE_REFRESH}(GOLD_ABSHODEH|COIN_FULL|DOLLAR)$'))
         
         # Back to prices menu callback
         application.add_handler(CallbackQueryHandler(back_to_prices_menu, pattern='^back_to_prices_menu$'))
@@ -673,15 +673,8 @@ async def refresh_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     callback_data = query.data
     product_code = callback_data.replace(CALLBACK_PRICE_REFRESH, "")
     
-    # Map short codes to full codes
-    product_code_map = {
-        PRODUCT_GOLD: Product.PRODUCT_CODE_GOLD,
-        PRODUCT_COIN: Product.PRODUCT_CODE_COIN,
-        PRODUCT_DOLLAR: Product.PRODUCT_CODE_DOLLAR,
-    }
-    
-    full_product_code = product_code_map.get(product_code)
-    if not full_product_code:
+    # بررسی معتبر بودن product_code
+    if product_code not in [PRODUCT_GOLD, PRODUCT_COIN, PRODUCT_DOLLAR]:
         await query.edit_message_text("❌ محصول نامعتبر.")
         return
     
@@ -690,7 +683,7 @@ async def refresh_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await sync_to_async(TradingService.update_all_prices)()
         
         # دریافت قیمت جدید
-        product = await sync_to_async(Product.get_by_code)(full_product_code)
+        product = await sync_to_async(Product.get_by_code)(product_code)
         
         # ریست timestamp
         set_price_timestamp(context, product_code)
@@ -821,9 +814,18 @@ async def trade_action_selected(update: Update, context: ContextTypes.DEFAULT_TY
     logger.info(f"Action callback: {callback_data}")
     
     # استخراج product_code و action از callback
-    # فرمت: trade_gold_action_buy یا trade_gold_action_sell
-    parts = callback_data.replace(CALLBACK_TRADE_PRODUCT_PREFIX, "").split("_")
-    product_code = parts[0]
+    # فرمت: trade_GOLD_ABSHODEH_action_buy یا trade_COIN_FULL_action_sell
+    # حذف پیشوند trade_
+    data_without_prefix = callback_data.replace(CALLBACK_TRADE_PRODUCT_PREFIX, "")
+    
+    # استخراج action و product_code
+    if CALLBACK_ACTION_BUY in data_without_prefix:
+        product_code = data_without_prefix.replace(f"_{CALLBACK_ACTION_BUY}", "")
+    elif CALLBACK_ACTION_SELL in data_without_prefix:
+        product_code = data_without_prefix.replace(f"_{CALLBACK_ACTION_SELL}", "")
+    else:
+        await query.edit_message_text("❌ عملیات نامعتبر.")
+        return ConversationHandler.END
     
     # اگر profile ذخیره نشده باشد، از دیتابیس دریافت کن
     if not context.user_data.get('profile'):
@@ -839,8 +841,7 @@ async def trade_action_selected(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer("⏰ قیمت منقضی شده است. لطفاً ابتدا قیمت را بروزرسانی کنید.", show_alert=True)
         return ConversationHandler.END
     
-    await query.answer()
-    
+    # تعیین نوع عملیات
     if CALLBACK_ACTION_BUY in callback_data:
         action = "buy"
         action_text = "خرید"
@@ -851,19 +852,15 @@ async def trade_action_selected(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("❌ عملیات نامعتبر.")
         return ConversationHandler.END
     
+    await query.answer()
+    
     # اگر محصول ذخیره نشده باشد، دریافت کن
     if not context.user_data.get('product'):
-        product_code_map = {
-            PRODUCT_GOLD: Product.PRODUCT_CODE_GOLD,
-            PRODUCT_COIN: Product.PRODUCT_CODE_COIN,
-            PRODUCT_DOLLAR: Product.PRODUCT_CODE_DOLLAR,
-        }
-        
         try:
-            product = await sync_to_async(Product.get_by_code)(product_code_map[product_code])
+            product = await sync_to_async(Product.get_by_code)(product_code)
             context.user_data['product'] = product
             context.user_data['product_code'] = product_code
-        except (Product.DoesNotExist, KeyError):
+        except Product.DoesNotExist:
             await query.edit_message_text("❌ خطا: محصول یافت نشد.")
             return ConversationHandler.END
     
@@ -1457,11 +1454,11 @@ def get_trade_conversation_handler() -> ConversationHandler:
             # ورود مستقیم از دکمه‌های خرید/فروش در بخش قیمت‌ها
             CallbackQueryHandler(
                 trade_action_selected,
-                pattern=f'^{CALLBACK_TRADE_PRODUCT_PREFIX}(gold|coin|dollar)_{CALLBACK_ACTION_BUY}$'
+                pattern=f'^{CALLBACK_TRADE_PRODUCT_PREFIX}(GOLD_ABSHODEH|COIN_FULL|DOLLAR)_{CALLBACK_ACTION_BUY}$'
             ),
             CallbackQueryHandler(
                 trade_action_selected,
-                pattern=f'^{CALLBACK_TRADE_PRODUCT_PREFIX}(gold|coin|dollar)_{CALLBACK_ACTION_SELL}$'
+                pattern=f'^{CALLBACK_TRADE_PRODUCT_PREFIX}(GOLD_ABSHODEH|COIN_FULL|DOLLAR)_{CALLBACK_ACTION_SELL}$'
             ),
         ],
         states={

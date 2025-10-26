@@ -39,8 +39,8 @@ CALLBACK_METHOD_RIAL = "method_rial"
 CALLBACK_CONFIRM_YES = "confirm_yes"
 CALLBACK_CONFIRM_NO = "confirm_no"
 
-# Product Codes (for callbacks)
-PRODUCT_GOLD = "gold"
-PRODUCT_COIN = "coin"
-PRODUCT_DOLLAR = "dollar"
+# Product Codes (for callbacks) - Must match trading.models.Product constants
+PRODUCT_GOLD = "GOLD_ABSHODEH"
+PRODUCT_COIN = "COIN_FULL"
+PRODUCT_DOLLAR = "DOLLAR"
 
