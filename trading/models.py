@@ -5,11 +5,19 @@ from django.db import models
 from django.utils.text import slugify
 from django.core.validators import MinValueValidator
 from decimal import Decimal
-from typing import List
+from typing import List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from django.db.models import Manager
+    from datetime import datetime
 
 
 class Product(models.Model):
     """مدل محصول (انواع طلا)"""
+    
+    if TYPE_CHECKING:
+        objects: 'Manager'
+        DoesNotExist: type[Exception]
     
     # کدهای محصول برای شناسایی خودکار
     PRODUCT_CODE_GOLD = 'GOLD_ABSHODEH'
@@ -31,7 +39,7 @@ class Product(models.Model):
         verbose_name="کد محصول",
         help_text="کد یکتا برای شناسایی خودکار محصول"
     )
-    name = models.CharField(
+    name = models.CharField(  # pyright: ignore
         max_length=100,
         unique=True,
         verbose_name="نام محصول"
@@ -42,14 +50,14 @@ class Product(models.Model):
         help_text="به صورت خودکار از روی نام ساخته می‌شود.",
         verbose_name="اسلاگ"
     )
-    buy_price = models.DecimalField(
+    buy_price = models.DecimalField(  # pyright: ignore
         max_digits=12,
         decimal_places=0,
         validators=[MinValueValidator(0)],
         verbose_name="قیمت خرید ما از مشتری",
         help_text="قیمتی که ما طلا را از مشتری می‌خریم (به ریال)"
     )
-    sell_price = models.DecimalField(
+    sell_price = models.DecimalField(  # pyright: ignore
         max_digits=12,
         decimal_places=0,
         validators=[MinValueValidator(0)],
@@ -57,10 +65,10 @@ class Product(models.Model):
         help_text="قیمتی که ما طلا را به مشتری می‌فروشیم (به ریال)"
     )
     is_active = models.BooleanField(
-        default=True,
+        default=True,  # pyright: ignore
         verbose_name="فعال برای معامله"
     )
-    updated_at = models.DateTimeField(
+    updated_at = models.DateTimeField(  # pyright: ignore
         auto_now=True,
         verbose_name="آخرین به‌روزرسانی قیمت"
     )
@@ -77,7 +85,7 @@ class Product(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:
-        return self.name
+        return self.name  # pyright: ignore
     
     @classmethod
     def get_active_products(cls) -> List['Product']:
@@ -93,6 +101,22 @@ class Product(models.Model):
 class Order(models.Model):
     """مدل سفارش خرید/فروش"""
     
+    if TYPE_CHECKING:
+        from users.models import Profile
+        
+        objects: 'Manager'
+        DoesNotExist: type[Exception]
+        # Type hints for fields accessed in methods
+        id: int
+        profile: 'Profile'
+        quantity_grams: Decimal
+        price_per_gram: Decimal
+        total_amount: Decimal
+        
+        # Django auto-generated methods
+        def get_order_type_display(self) -> str: ...
+        def get_status_display(self) -> str: ...
+    
     class OrderType(models.TextChoices):
         BUY = 'BUY', 'خرید از ما'
         SELL = 'SELL', 'فروش به ما'
@@ -102,7 +126,7 @@ class Order(models.Model):
         COMPLETED = 'COMPLETED', 'تکمیل شده'
         CANCELLED = 'CANCELLED', 'لغو شده'
 
-    profile = models.ForeignKey(
+    profile = models.ForeignKey(  # pyright: ignore
         'users.Profile',
         on_delete=models.PROTECT,
         related_name='orders',
@@ -119,18 +143,18 @@ class Order(models.Model):
         choices=OrderType.choices,
         verbose_name="نوع سفارش"
     )
-    quantity_grams = models.DecimalField(
+    quantity_grams = models.DecimalField(  # pyright: ignore
         max_digits=10,
         decimal_places=4,
         validators=[MinValueValidator(Decimal('0.0001'))],
         verbose_name="مقدار (گرم)"
     )
-    price_per_gram = models.DecimalField(
+    price_per_gram = models.DecimalField(  # pyright: ignore
         max_digits=12,
         decimal_places=0,
         verbose_name="قیمت هر گرم (لحظه ثبت)"
     )
-    total_amount = models.DecimalField(
+    total_amount = models.DecimalField(  # pyright: ignore
         max_digits=15,
         decimal_places=0,
         verbose_name="مبلغ کل (ریال)"

@@ -5,7 +5,7 @@ from telegram import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardBu
 from .constants import (
     MENU_PRICES, MENU_PORTFOLIO, MENU_HISTORY, MENU_CANCEL,
     CALLBACK_PRICE_GOLD, CALLBACK_PRICE_COIN, CALLBACK_PRICE_DOLLAR, CALLBACK_PRICE_ALL,
-    CALLBACK_PRICE_REFRESH,
+    CALLBACK_PRICE_REFRESH, CALLBACK_BACK_TO_PRICES_MENU,
     CALLBACK_TRADE_PRODUCT_PREFIX, CALLBACK_ACTION_BUY, CALLBACK_ACTION_SELL,
     CALLBACK_METHOD_GRAM, CALLBACK_METHOD_RIAL, CALLBACK_CONFIRM_YES, CALLBACK_CONFIRM_NO,
     CALLBACK_BACK_TO_MAIN, PRODUCT_GOLD, PRODUCT_COIN, PRODUCT_DOLLAR
@@ -30,13 +30,14 @@ def get_contact_keyboard() -> ReplyKeyboardMarkup:
 
 
 def get_prices_menu_keyboard() -> InlineKeyboardMarkup:
-    """کیبورد منوی قیمت‌ها با دکمه‌های اینلاین"""
+    """کیبورد منوی قیمت‌ها با دکمه‌های اینلاین بهینه شده"""
     keyboard = [
-        [InlineKeyboardButton("🪙 طلای آبشده", callback_data=CALLBACK_PRICE_GOLD)],
-        [InlineKeyboardButton("🥇 سکه تمام", callback_data=CALLBACK_PRICE_COIN)],
+        [
+            InlineKeyboardButton("🪙 طلای آبشده", callback_data=CALLBACK_PRICE_GOLD),
+            InlineKeyboardButton("🥇 سکه تمام", callback_data=CALLBACK_PRICE_COIN),
+        ],
         [InlineKeyboardButton("💵 دلار", callback_data=CALLBACK_PRICE_DOLLAR)],
-        [InlineKeyboardButton("📊 همه قیمت‌ها", callback_data=CALLBACK_PRICE_ALL)],
-        [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data=CALLBACK_PRICE_ALL)],
+        [InlineKeyboardButton("📊 مشاهده همه قیمت‌ها", callback_data=CALLBACK_PRICE_ALL)],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -67,7 +68,7 @@ def get_product_detail_keyboard(product_code: str, can_trade: bool = True, is_ex
             InlineKeyboardButton("🔄 بروزرسانی قیمت", callback_data=f"{CALLBACK_PRICE_REFRESH}{product_code}")
         ])
     
-    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data=CALLBACK_PRICE_ALL)])
+    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data=CALLBACK_BACK_TO_PRICES_MENU)])
     
     return InlineKeyboardMarkup(keyboard)
 

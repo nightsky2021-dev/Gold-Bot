@@ -5,14 +5,25 @@ from django.contrib.auth.models import User
 from django.db import models
 from asgiref.sync import sync_to_async
 from django.core.validators import MinValueValidator
-from typing import Optional
+from typing import Optional, TYPE_CHECKING, cast
+from decimal import Decimal
+
+if TYPE_CHECKING:
+    from django.db.models import Manager
+    from datetime import datetime
 
 
 class Profile(models.Model):
     """
     پروفایل کاربر شامل اطلاعات تکمیلی و موجودی‌ها
     """
-    user = models.OneToOneField(
+    
+    if TYPE_CHECKING:
+        objects: 'Manager'
+        DoesNotExist: type[Exception]
+        user: User  # Type hint for field accessed in methods
+    
+    user = models.OneToOneField(  # type: ignore[assignment]
         User,
         on_delete=models.CASCADE,
         related_name="profile",
@@ -43,7 +54,7 @@ class Profile(models.Model):
         help_text="کد ملی 10 رقمی"
     )
     is_approved = models.BooleanField(
-        default=False,
+        default=False,  # type: ignore[arg-type]
         help_text="آیا کاربر توسط ادمین تایید شده است؟",
         verbose_name="تأیید شده"
     )
@@ -79,8 +90,10 @@ class Profile(models.Model):
         ]
 
     def __str__(self) -> str:
-        full_name = self.user.get_full_name()
-        return f"{full_name} ({self.phone_number})" if full_name else self.phone_number
+        user: User = cast(User, self.user)
+        full_name = user.get_full_name()
+        phone: str = cast(str, self.phone_number)
+        return f"{full_name} ({phone})" if full_name else phone
     
     @classmethod
     def get_by_telegram_id(cls, telegram_id: str) -> Optional['Profile']:

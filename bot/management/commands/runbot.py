@@ -5,7 +5,7 @@ import logging
 import os
 import django
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, cast, Any
 from datetime import datetime, timedelta
 import hashlib
 import time
@@ -19,7 +19,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from asgiref.sync import sync_to_async
 
-from telegram import Update, ReplyKeyboardRemove, ForceReply
+from telegram import Update, ReplyKeyboardRemove, ForceReply, Message
 import telegram.error
 from telegram.ext import (
     Application,
@@ -55,9 +55,7 @@ class Command(BaseCommand):
         token = settings.TELEGRAM_BOT_TOKEN
         
         if not token:
-            self.stdout.write(
-                self.style.ERROR('❌ توکن تلگرام تنظیم نشده است.')
-            )
+            self.stderr.write('❌ توکن تلگرام تنظیم نشده است.')
             return
         
         # Create application
@@ -88,11 +86,11 @@ class Command(BaseCommand):
         # Back to prices menu callback
         application.add_handler(CallbackQueryHandler(back_to_prices_menu, pattern='^back_to_prices_menu$'))
         
-        # Error handler
+        # Error handler (handles all unhandled exceptions)
         application.add_error_handler(handle_error)
         
         # Start bot
-        self.stdout.write(self.style.SUCCESS('✅ ربات تلگرام شروع به کار کرد...'))
+        self.stdout.write('✅ ربات تلگرام شروع به کار کرد...')
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
@@ -101,9 +99,18 @@ class Command(BaseCommand):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command"""
     user = update.effective_user
+    
+    if not user:
+        logger.warning("start command called but no effective_user found")
+        return
+    
     telegram_id = str(user.id)
     
     is_approved, profile = await UserService.acheck_user_approval_status(telegram_id)
+    
+    if not update.message:
+        logger.warning("start command called but no message found")
+        return
     
     if profile is None:
         await update.message.reply_text(
@@ -119,8 +126,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             reply_markup=ReplyKeyboardRemove()
         )
     else:
+        from django.contrib.auth.models import User
+        full_name = "کاربر"
+        if profile and profile.user:
+            user_obj = cast(User, profile.user)
+            full_name = user_obj.get_full_name() or "کاربر"
         await update.message.reply_text(
-            f"👋 سلام {profile.user.get_full_name()}!\n\n"
+            f"👋 سلام {full_name}!\n\n"
             "به ربات معاملات طلا و ارز خوش آمدید.\n\n"
             "💰 *قیمت و معامله:* مشاهده قیمت‌های لحظه‌ای و خرید/فروش\n"
             "👛 *کیف پول:* مشاهده موجودی\n"
@@ -130,10 +142,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
 
-async def handle_error(update: Optional[Update], context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Log errors"""
     logger.exception("خطا:", exc_info=context.error)
-    if update and update.effective_message:
+    if isinstance(update, Update) and update.effective_message:
         try:
             await update.effective_message.reply_text(
                 "❌ خطایی رخ داد. لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.",
@@ -147,8 +159,16 @@ async def handle_error(update: Optional[Update], context: ContextTypes.DEFAULT_T
 
 async def registration_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """شروع فرآیند ثبت نام با دریافت شماره تلگرام"""
-    contact = update.message.contact
+    if not update.message or not update.message.contact:
+        logger.warning("registration_start called but no message or contact found")
+        return ConversationHandler.END
+    
     user = update.effective_user
+    if not user:
+        logger.warning("registration_start called but no effective_user found")
+        return ConversationHandler.END
+    
+    contact = update.message.contact
     telegram_id = str(user.id)
     
     if str(contact.user_id) != telegram_id:
@@ -159,9 +179,11 @@ async def registration_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ConversationHandler.END
     
     # ذخیره اطلاعات اولیه
-    context.user_data['telegram_id'] = telegram_id
-    context.user_data['phone_number'] = contact.phone_number
-    context.user_data['telegram_username'] = user.username
+    user_data = context.user_data
+    if user_data is not None:
+        user_data['telegram_id'] = telegram_id
+        user_data['phone_number'] = contact.phone_number
+        user_data['telegram_username'] = user.username
     
     await update.message.reply_text(
         "📝 *ثبت نام*\n\n"
@@ -175,6 +197,10 @@ async def registration_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def registration_first_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """دریافت نام"""
+    if not update.message or not update.message.text:
+        logger.warning("registration_first_name called but no message or text found")
+        return ConversationHandler.END
+    
     first_name = update.message.text.strip()
     
     if not first_name or len(first_name) < 2:
@@ -184,7 +210,9 @@ async def registration_first_name(update: Update, context: ContextTypes.DEFAULT_
         )
         return ENTERING_FIRST_NAME
     
-    context.user_data['first_name'] = first_name
+    user_data = context.user_data
+    if user_data is not None:
+        user_data['first_name'] = first_name
     
     await update.message.reply_text(
         f"✅ نام: *{first_name}*\n\n"
@@ -197,6 +225,10 @@ async def registration_first_name(update: Update, context: ContextTypes.DEFAULT_
 
 async def registration_last_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """دریافت نام خانوادگی"""
+    if not update.message or not update.message.text:
+        logger.warning("registration_last_name called but no message or text found")
+        return ConversationHandler.END
+    
     last_name = update.message.text.strip()
     
     if not last_name or len(last_name) < 2:
@@ -206,7 +238,9 @@ async def registration_last_name(update: Update, context: ContextTypes.DEFAULT_T
         )
         return ENTERING_LAST_NAME
     
-    context.user_data['last_name'] = last_name
+    user_data = context.user_data
+    if user_data is not None:
+        user_data['last_name'] = last_name
     
     await update.message.reply_text(
         f"✅ نام خانوادگی: *{last_name}*\n\n"
@@ -219,6 +253,10 @@ async def registration_last_name(update: Update, context: ContextTypes.DEFAULT_T
 
 async def registration_national_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """دریافت کد ملی و تکمیل ثبت نام"""
+    if not update.message or not update.message.text:
+        logger.warning("registration_national_code called but no message or text found")
+        return ConversationHandler.END
+    
     national_code = update.message.text.strip()
     
     # اعتبارسنجی کد ملی
@@ -229,31 +267,40 @@ async def registration_national_code(update: Update, context: ContextTypes.DEFAU
         )
         return ENTERING_NATIONAL_CODE
     
-    context.user_data['national_code'] = national_code
+    user_data = context.user_data
+    if user_data is None:
+        logger.error("registration_national_code: user_data is None")
+        return ConversationHandler.END
+    
+    user_data['national_code'] = national_code
     
     # ثبت کاربر در دیتابیس
     try:
-        user_obj, profile, created = await sync_to_async(UserService.create_user_from_telegram)(
-            telegram_id=context.user_data['telegram_id'],
-            phone_number=context.user_data['phone_number'],
-            telegram_username=context.user_data.get('telegram_username'),
-            first_name=context.user_data['first_name'],
-            last_name=context.user_data['last_name'],
-            national_code=national_code
+        # Create async wrapper - type checker can't infer wrapped function signature
+        user_obj, profile, created = await sync_to_async(  # type: ignore[misc,call-arg]
+            UserService.create_user_from_telegram,
+            thread_sensitive=True
+        )(
+            telegram_id=user_data.get('telegram_id', ''),  # type: ignore[arg-type]
+            phone_number=user_data.get('phone_number', ''),  # type: ignore[arg-type]
+            telegram_username=user_data.get('telegram_username'),  # type: ignore[arg-type]
+            first_name=user_data.get('first_name', ''),  # type: ignore[arg-type]
+            last_name=user_data.get('last_name', ''),  # type: ignore[arg-type]
+            national_code=national_code  # type: ignore[arg-type]
         )
         
         if created:
             await update.message.reply_text(
                 "✅ *ثبت‌نام شما با موفقیت انجام شد!*\n\n"
-                f"👤 نام: {context.user_data['first_name']} {context.user_data['last_name']}\n"
-                f"📱 شماره تماس: {context.user_data['phone_number']}\n"
+                f"👤 نام: {user_data.get('first_name', '')} {user_data.get('last_name', '')}\n"
+                f"📱 شماره تماس: {user_data.get('phone_number', '')}\n"
                 f"🆔 کد ملی: {national_code}\n\n"
                 "⏳ حساب شما در انتظار تایید مدیر است.\n"
                 "پس از تایید، از منوی ربات استفاده کنید. 🙏",
                 parse_mode='Markdown',
                 reply_markup=ReplyKeyboardRemove()
             )
-            logger.info(f"کاربر جدید: {context.user_data['first_name']} {context.user_data['last_name']} - {context.user_data['phone_number']} ({context.user_data['telegram_id']})")
+            logger.info(f"کاربر جدید: {user_data.get('first_name', '')} {user_data.get('last_name', '')} - {user_data.get('phone_number', '')} ({user_data.get('telegram_id', '')})")
         else:
             await update.message.reply_text(
                 "ℹ️ شما قبلاً ثبت‌نام کرده‌اید.",
@@ -268,7 +315,7 @@ async def registration_national_code(update: Update, context: ContextTypes.DEFAU
             reply_markup=ReplyKeyboardRemove()
         )
     
-    context.user_data.clear()
+    user_data.clear()
     return ConversationHandler.END
 
 
@@ -302,7 +349,11 @@ def get_registration_conversation_handler() -> ConversationHandler:
 async def expire_price_buttons(context: ContextTypes.DEFAULT_TYPE) -> None:
     """حذف خودکار دکمه‌های خرید/فروش پس از 60 ثانیه"""
     job = context.job
-    data = job.data
+    if not job or not job.data:
+        logger.warning("expire_price_buttons called but no job or job data found")
+        return
+    
+    data = cast(dict[str, Any], job.data)
     
     try:
         # نمایش پیام با دکمه بروزرسانی فقط
@@ -333,7 +384,11 @@ async def expire_price_buttons(context: ContextTypes.DEFAULT_TYPE) -> None:
 async def expire_invoice_buttons(context: ContextTypes.DEFAULT_TYPE) -> None:
     """حذف خودکار دکمه‌های پیش‌فاکتور پس از 60 ثانیه"""
     job = context.job
-    data = job.data
+    if not job or not job.data:
+        logger.warning("expire_invoice_buttons called but no job or job data found")
+        return
+    
+    data = cast(dict[str, Any], job.data)
     
     try:
         # حذف تمام دکمه‌های inline و نمایش پیام منقضی شده
@@ -368,6 +423,9 @@ async def expire_invoice_buttons(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 def is_price_expired(context: ContextTypes.DEFAULT_TYPE, product_code: str) -> bool:
     """بررسی اینکه آیا قیمت منقضی شده است (بیش از 1 دقیقه)"""
+    if context.user_data is None:
+        return True
+    
     price_timestamp_key = f'price_timestamp_{product_code}'
     timestamp = context.user_data.get(price_timestamp_key)
     
@@ -380,12 +438,18 @@ def is_price_expired(context: ContextTypes.DEFAULT_TYPE, product_code: str) -> b
 
 def set_price_timestamp(context: ContextTypes.DEFAULT_TYPE, product_code: str) -> None:
     """ذخیره timestamp نمایش قیمت"""
+    if context.user_data is None:
+        return
+    
     price_timestamp_key = f'price_timestamp_{product_code}'
     context.user_data[price_timestamp_key] = datetime.now()
 
 
 def get_time_remaining(context: ContextTypes.DEFAULT_TYPE, product_code: str) -> str:
     """دریافت زمان باقیمانده تا انقضای قیمت"""
+    if context.user_data is None:
+        return "منقضی شده"
+    
     price_timestamp_key = f'price_timestamp_{product_code}'
     timestamp = context.user_data.get(price_timestamp_key)
     
@@ -414,6 +478,10 @@ def generate_invoice_number(user_id: int) -> str:
 
 async def show_prices_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """نمایش منوی قیمت‌ها"""
+    if not update.effective_user or not update.message:
+        logger.warning("show_prices_menu called but no effective_user or message found")
+        return
+    
     telegram_id = str(update.effective_user.id)
     is_approved, profile = await UserService.acheck_user_approval_status(telegram_id)
     
@@ -435,10 +503,15 @@ async def show_prices_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def show_price_gold(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """نمایش قیمت طلای آبشده"""
     query = update.callback_query
+    if not query:
+        logger.warning("show_price_gold called but no callback_query found")
+        return
+    
     await query.answer()
     
     try:
-        product = await sync_to_async(Product.get_by_code)(Product.PRODUCT_CODE_GOLD)
+        get_product_async = sync_to_async(Product.get_by_code)
+        product = await get_product_async(Product.PRODUCT_CODE_GOLD)
         
         # ثبت timestamp برای تایم‌اوت 1 دقیقه
         set_price_timestamp(context, PRODUCT_GOLD)
@@ -455,12 +528,12 @@ async def show_price_gold(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         message = (
             "🪙 *طلای آبشده (هر گرم)*\n\n"
             f"💰 *قیمت خرید از شما:*\n"
-            f"   `{format_number(product.buy_price)}` ریال\n\n"
+            f"   `{format_number(cast(Decimal, product.buy_price))}` ریال\n\n"
             f"💵 *قیمت فروش به شما:*\n"
-            f"   `{format_number(product.sell_price)}` ریال"
+            f"   `{format_number(cast(Decimal, product.sell_price))}` ریال"
             f"{warning}\n"
             f"─────────────────\n"
-            f"_به‌روزرسانی: {format_datetime(product.updated_at)}_"
+            f"_به‌روزرسانی: {format_datetime(cast(datetime, product.updated_at))}_"
         )
         
         await safe_edit_message_text(
@@ -471,7 +544,7 @@ async def show_price_gold(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         
         # برنامه‌ریزی Job برای حذف خودکار دکمه‌ها پس از 60 ثانیه
-        if not is_expired:
+        if not is_expired and context.job_queue and isinstance(query.message, Message):
             context.job_queue.run_once(
                 expire_price_buttons,
                 60,
@@ -493,10 +566,15 @@ async def show_price_gold(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def show_price_coin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """نمایش قیمت سکه"""
     query = update.callback_query
+    if not query:
+        logger.warning("show_price_coin called but no callback_query found")
+        return
+    
     await query.answer()
     
     try:
-        product = await sync_to_async(Product.get_by_code)(Product.PRODUCT_CODE_COIN)
+        get_product_async = sync_to_async(Product.get_by_code)
+        product = await get_product_async(Product.PRODUCT_CODE_COIN)
         
         # ثبت timestamp برای تایم‌اوت 1 دقیقه
         set_price_timestamp(context, PRODUCT_COIN)
@@ -513,12 +591,12 @@ async def show_price_coin(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         message = (
             "🥇 *سکه تمام غیربانکی*\n\n"
             f"💰 *قیمت خرید از شما:*\n"
-            f"   `{format_number(product.buy_price)}` ریال\n\n"
+            f"   `{format_number(cast(Decimal, product.buy_price))}` ریال\n\n"
             f"💵 *قیمت فروش به شما:*\n"
-            f"   `{format_number(product.sell_price)}` ریال"
+            f"   `{format_number(cast(Decimal, product.sell_price))}` ریال"
             f"{warning}\n"
             f"─────────────────\n"
-            f"_به‌روزرسانی: {format_datetime(product.updated_at)}_"
+            f"_به‌روزرسانی: {format_datetime(cast(datetime, product.updated_at))}_"
         )
         
         await safe_edit_message_text(
@@ -529,7 +607,7 @@ async def show_price_coin(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         
         # برنامه‌ریزی Job برای حذف خودکار دکمه‌ها پس از 60 ثانیه
-        if not is_expired:
+        if not is_expired and context.job_queue and isinstance(query.message, Message):
             context.job_queue.run_once(
                 expire_price_buttons,
                 60,
@@ -551,10 +629,15 @@ async def show_price_coin(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def show_price_dollar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """نمایش قیمت دلار"""
     query = update.callback_query
+    if not query:
+        logger.warning("show_price_dollar called but no callback_query found")
+        return
+    
     await query.answer()
     
     try:
-        product = await sync_to_async(Product.get_by_code)(Product.PRODUCT_CODE_DOLLAR)
+        get_product_async = sync_to_async(Product.get_by_code)
+        product = await get_product_async(Product.PRODUCT_CODE_DOLLAR)
         
         # ثبت timestamp برای تایم‌اوت 1 دقیقه
         set_price_timestamp(context, PRODUCT_DOLLAR)
@@ -571,12 +654,12 @@ async def show_price_dollar(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         message = (
             "💵 *دلار آمریکا*\n\n"
             f"💰 *قیمت خرید از شما:*\n"
-            f"   `{format_number(product.buy_price)}` ریال\n\n"
+            f"   `{format_number(cast(Decimal, product.buy_price))}` ریال\n\n"
             f"💵 *قیمت فروش به شما:*\n"
-            f"   `{format_number(product.sell_price)}` ریال"
+            f"   `{format_number(cast(Decimal, product.sell_price))}` ریال"
             f"{warning}\n"
             f"─────────────────\n"
-            f"_به‌روزرسانی: {format_datetime(product.updated_at)}_"
+            f"_به‌روزرسانی: {format_datetime(cast(datetime, product.updated_at))}_"
         )
         
         await safe_edit_message_text(
@@ -587,7 +670,7 @@ async def show_price_dollar(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         
         # برنامه‌ریزی Job برای حذف خودکار دکمه‌ها پس از 60 ثانیه
-        if not is_expired:
+        if not is_expired and context.job_queue and isinstance(query.message, Message):
             context.job_queue.run_once(
                 expire_price_buttons,
                 60,
@@ -609,9 +692,14 @@ async def show_price_dollar(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def show_all_prices(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """نمایش تمام قیمت‌ها"""
     query = update.callback_query
+    if not query:
+        logger.warning("show_all_prices called but no callback_query found")
+        return
+    
     await query.answer()
     
-    products = await sync_to_async(TradingService.get_active_products)()
+    get_products_async = sync_to_async(TradingService.get_active_products)
+    products = await get_products_async()
     
     if not products:
         await query.edit_message_text("❌ هیچ محصولی فعال نیست.")
@@ -631,11 +719,11 @@ async def show_all_prices(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             emoji = "🔸"
         
         message += f"{emoji} *{product.name}*\n"
-        message += f"   💰 خرید: `{format_number(product.buy_price)}` ریال\n"
-        message += f"   💵 فروش: `{format_number(product.sell_price)}` ریال\n\n"
+        message += f"   💰 خرید: `{format_number(cast(Decimal, product.buy_price))}` ریال\n"
+        message += f"   💵 فروش: `{format_number(cast(Decimal, product.sell_price))}` ریال\n\n"
     
     message += f"─────────────────\n"
-    message += f"_به‌روزرسانی: {format_datetime(products[0].updated_at)}_"
+    message += f"_به‌روزرسانی: {format_datetime(cast(datetime, products[0].updated_at))}_"
     
     # کیبورد با فقط دکمه بازگشت
     from telegram import InlineKeyboardMarkup, InlineKeyboardButton
@@ -654,6 +742,10 @@ async def show_all_prices(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def back_to_prices_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """بازگشت به منوی قیمت‌ها"""
     query = update.callback_query
+    if not query:
+        logger.warning("back_to_prices_menu called but no callback_query found")
+        return
+    
     await query.answer()
     
     await query.edit_message_text(
@@ -667,6 +759,10 @@ async def back_to_prices_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def refresh_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """بروزرسانی قیمت و ریست تایمر"""
     query = update.callback_query
+    if not query or not query.data:
+        logger.warning("refresh_price called but no callback_query or data found")
+        return
+    
     await query.answer("🔄 در حال بروزرسانی...")
     
     # استخراج product_code از callback
@@ -680,10 +776,11 @@ async def refresh_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     
     try:
         # بروزرسانی قیمت‌ها از API
-        await sync_to_async(TradingService.update_all_prices)()
+        await sync_to_async(TradingService.update_all_prices, thread_sensitive=True)()  # type: ignore[misc]
         
         # دریافت قیمت جدید
-        product = await sync_to_async(Product.get_by_code)(product_code)
+        get_product_async = sync_to_async(Product.get_by_code)
+        product = await get_product_async(product_code)
         
         # ریست timestamp
         set_price_timestamp(context, product_code)
@@ -709,12 +806,12 @@ async def refresh_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         message = (
             f"{emoji} *{name}*\n\n"
             f"💰 *قیمت خرید از شما:*\n"
-            f"   `{format_number(product.buy_price)}` ریال\n\n"
+            f"   `{format_number(cast(Decimal, product.buy_price))}` ریال\n\n"
             f"💵 *قیمت فروش به شما:*\n"
-            f"   `{format_number(product.sell_price)}` ریال\n\n"
+            f"   `{format_number(cast(Decimal, product.sell_price))}` ریال\n\n"
             f"⏱ *زمان باقیمانده:* {time_remaining}\n"
             f"─────────────────\n"
-            f"_به‌روزرسانی: {format_datetime(product.updated_at)}_"
+            f"_به‌روزرسانی: {format_datetime(cast(datetime, product.updated_at))}_"
         )
         
         await safe_edit_message_text(
@@ -732,6 +829,10 @@ async def refresh_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def show_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """نمایش پورتفولیو"""
+    if not update.effective_user or not update.message:
+        logger.warning("show_portfolio called but no effective_user or message found")
+        return
+    
     telegram_id = str(update.effective_user.id)
     is_approved, profile = await UserService.acheck_user_approval_status(telegram_id)
     
@@ -744,10 +845,10 @@ async def show_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     message = (
         "👛 *کیف پول شما*\n\n"
-        f"💰 *موجودی ریالی:*\n   {format_number(profile.rial_balance)} ریال\n\n"
-        f"⚖️ *موجودی طلا:*\n   {format_number(profile.gold_balance_grams, 4)} گرم\n\n"
+        f"💰 *موجودی ریالی:*\n   {format_number(Decimal(str(profile.rial_balance)))} ریال\n\n"
+        f"⚖️ *موجودی طلا:*\n   {format_number(Decimal(str(profile.gold_balance_grams)), 4)} گرم\n\n"
         f"─────────────────\n"
-        f"_به‌روزرسانی: {format_datetime(profile.updated_at)}_"
+        f"_به‌روزرسانی: {format_datetime(cast(datetime, profile.updated_at))}_"
     )
     
     await update.message.reply_text(
@@ -759,6 +860,10 @@ async def show_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """نمایش تاریخچه"""
+    if not update.effective_user or not update.message:
+        logger.warning("show_history called but no effective_user or message found")
+        return
+    
     telegram_id = str(update.effective_user.id)
     is_approved, profile = await UserService.acheck_user_approval_status(telegram_id)
     
@@ -769,7 +874,8 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
     
-    orders = await sync_to_async(TradingService.get_user_recent_orders)(profile, limit=5)
+    get_orders_async = sync_to_async(TradingService.get_user_recent_orders)
+    orders = await get_orders_async(profile, limit=5)
     
     if not orders:
         await update.message.reply_text(
@@ -781,10 +887,10 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     message = "📋 *تاریخچه ۵ سفارش آخر*\n\n"
     
     for order in orders:
-        status_emoji = {
-            Order.OrderStatus.PENDING: "⏳",
-            Order.OrderStatus.COMPLETED: "✅",
-            Order.OrderStatus.CANCELLED: "❌"
+        status_emoji: dict[str, str] = {
+            Order.OrderStatus.PENDING.value: "⏳",
+            Order.OrderStatus.COMPLETED.value: "✅",
+            Order.OrderStatus.CANCELLED.value: "❌"
         }
         
         type_emoji = "🟢" if order.order_type == Order.OrderType.BUY else "🔴"
@@ -793,7 +899,7 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         message += f"   {order.get_order_type_display()} | {order.product.name}\n"
         message += f"   مقدار: {format_number(order.quantity_grams, 4)} گرم\n"
         message += f"   مبلغ: {format_number(order.total_amount)} ریال\n"
-        message += f"   {status_emoji.get(order.status, '❓')} {order.get_status_display()}\n\n"
+        message += f"   {status_emoji.get(str(order.status), '❓')} {order.get_status_display()}\n\n"
     
     await update.message.reply_text(
         message, 
@@ -809,6 +915,13 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def trade_action_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """خرید یا فروش انتخاب شد"""
     query = update.callback_query
+    if not query or not query.data:
+        logger.warning("trade_action_selected called but no callback_query or data found")
+        return ConversationHandler.END
+    
+    if not update.effective_user:
+        logger.warning("trade_action_selected called but no effective_user found")
+        return ConversationHandler.END
     
     callback_data = query.data
     logger.info(f"Action callback: {callback_data}")
@@ -828,12 +941,14 @@ async def trade_action_selected(update: Update, context: ContextTypes.DEFAULT_TY
         return ConversationHandler.END
     
     # اگر profile ذخیره نشده باشد، از دیتابیس دریافت کن
-    if not context.user_data.get('profile'):
+    if context.user_data is None or not context.user_data.get('profile'):
         telegram_id = str(update.effective_user.id)
         is_approved, profile = await UserService.acheck_user_approval_status(telegram_id)
         if not profile or not is_approved:
             await query.answer("❌ شما مجاز به استفاده از این بخش نیستید.", show_alert=True)
             return ConversationHandler.END
+        if context.user_data is None:
+            context.user_data = {}
         context.user_data['profile'] = profile
     
     # بررسی انقضای قیمت
@@ -855,14 +970,20 @@ async def trade_action_selected(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
     
     # اگر محصول ذخیره نشده باشد، دریافت کن
-    if not context.user_data.get('product'):
+    if context.user_data is None or not context.user_data.get('product'):
         try:
-            product = await sync_to_async(Product.get_by_code)(product_code)
+            get_product_async = sync_to_async(Product.get_by_code)
+            product = await get_product_async(product_code)
+            if context.user_data is None:
+                context.user_data = {}
             context.user_data['product'] = product
             context.user_data['product_code'] = product_code
         except Product.DoesNotExist:
             await query.edit_message_text("❌ خطا: محصول یافت نشد.")
             return ConversationHandler.END
+    
+    if context.user_data is None:
+        context.user_data = {}
     
     context.user_data['action'] = action
     product = context.user_data.get('product')
@@ -874,7 +995,7 @@ async def trade_action_selected(update: Update, context: ContextTypes.DEFAULT_TY
     # بررسی موجودی برای فروش
     if action == "sell":
         profile = context.user_data.get('profile')
-        if profile.gold_balance_grams == 0:
+        if profile and profile.gold_balance_grams == 0:
             await query.edit_message_text(
                 "❌ موجودی طلای شما صفر است.\n"
                 "ابتدا باید طلا خریداری کنید."
@@ -917,14 +1038,15 @@ async def trade_action_selected(update: Update, context: ContextTypes.DEFAULT_TY
         await query.delete_message()
         
         # ارسال پیام جدید با ForceReply برای باز کردن کیبورد تایپ
-        await query.message.reply_text(
-            prompt,
-            parse_mode='Markdown',
-            reply_markup=ForceReply(
-                input_field_placeholder="تعداد مورد نظر را وارد کنید...",
-                selective=True
+        if query.message and isinstance(query.message, Message):
+            await query.message.reply_text(
+                prompt,
+                parse_mode='Markdown',
+                reply_markup=ForceReply(
+                    input_field_placeholder="تعداد مورد نظر را وارد کنید...",
+                    selective=True
+                )
             )
-        )
         
         return ENTERING_AMOUNT
     
@@ -945,10 +1067,19 @@ async def trade_action_selected(update: Update, context: ContextTypes.DEFAULT_TY
 async def trade_method_selected(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """روش محاسبه انتخاب شد"""
     query = update.callback_query
+    if not query or not query.data:
+        logger.warning("trade_method_selected called but no callback_query or data found")
+        return ConversationHandler.END
+    
+    # بررسی وجود user_data
+    if context.user_data is None:
+        logger.warning("trade_method_selected called but user_data is None")
+        await query.answer("❌ خطا: اطلاعات جلسه یافت نشد.", show_alert=True)
+        return ConversationHandler.END
     
     # بررسی انقضای قیمت
     product_code = context.user_data.get('product_code')
-    if is_price_expired(context, product_code):
+    if not product_code or is_price_expired(context, product_code):
         await query.answer("⏰ زمان شما به پایان رسید. لطفاً قیمت را بروزرسانی کنید.", show_alert=True)
         
         try:
@@ -962,11 +1093,13 @@ async def trade_method_selected(update: Update, context: ContextTypes.DEFAULT_TY
             pass
         
         # نمایش منوی اصلی
-        await query.message.reply_text(
-            "📱 از منوی اصلی می‌توانید استفاده کنید:",
-            reply_markup=get_main_menu_keyboard()
-        )
-        context.user_data.clear()
+        if query.message and isinstance(query.message, Message):
+            await query.message.reply_text(
+                "📱 از منوی اصلی می‌توانید استفاده کنید:",
+                reply_markup=get_main_menu_keyboard()
+            )
+        if context.user_data is not None:
+            context.user_data.clear()
         return ConversationHandler.END
     
     await query.answer()
@@ -983,7 +1116,7 @@ async def trade_method_selected(update: Update, context: ContextTypes.DEFAULT_TY
     
     if method == "gram":
         # تعیین واحد بر اساس نوع محصول
-        if product.product_code == Product.PRODUCT_CODE_GOLD:
+        if product and product.product_code == Product.PRODUCT_CODE_GOLD:
             unit = "گرم"
             examples = (
                 f"💡 *راهنما:*\n"
@@ -991,7 +1124,7 @@ async def trade_method_selected(update: Update, context: ContextTypes.DEFAULT_TY
                 f"• برای دو و نیم گرم: `2.5`\n"
                 f"• برای ده گرم: `10`"
             )
-        elif product.product_code == Product.PRODUCT_CODE_COIN:
+        elif product and product.product_code == Product.PRODUCT_CODE_COIN:
             unit = "عدد"
             examples = (
                 f"💡 *راهنما:*\n"
@@ -999,7 +1132,7 @@ async def trade_method_selected(update: Update, context: ContextTypes.DEFAULT_TY
                 f"• برای دو سکه: `2`\n"
                 f"• برای ده سکه: `10`"
             )
-        elif product.product_code == Product.PRODUCT_CODE_DOLLAR:
+        elif product and product.product_code == Product.PRODUCT_CODE_DOLLAR:
             unit = "عدد"
             examples = (
                 f"💡 *راهنما:*\n"
@@ -1011,15 +1144,17 @@ async def trade_method_selected(update: Update, context: ContextTypes.DEFAULT_TY
             unit = "واحد"
             examples = f"💡 *راهنما:* مقدار مورد نظر را وارد کنید"
         
+        product_name = product.name if product else "محصول"
         prompt = (
-            f"💎 {action_text} *{product.name}*\n\n"
+            f"💎 {action_text} *{product_name}*\n\n"
             f"⏱ زمان باقیمانده: {time_remaining}\n\n"
             f"📝 لطفاً مقدار را به *{unit}* وارد کنید:\n\n"
             f"{examples}"
         )
     else:
+        product_name = product.name if product else "محصول"
         prompt = (
-            f"💎 {action_text} *{product.name}*\n\n"
+            f"💎 {action_text} *{product_name}*\n\n"
             f"⏱ زمان باقیمانده: {time_remaining}\n\n"
             f"💰 لطفاً مبلغ را به *ریال* وارد کنید:\n\n"
             f"💡 *راهنما:*\n"
@@ -1032,25 +1167,43 @@ async def trade_method_selected(update: Update, context: ContextTypes.DEFAULT_TY
     await query.delete_message()
     
     # ارسال پیام جدید با ForceReply برای باز کردن کیبورد تایپ
-    await query.message.reply_text(
-        prompt,
-        parse_mode='Markdown',
-        reply_markup=ForceReply(
-            input_field_placeholder="عدد مورد نظر را وارد کنید...",
-            selective=True
+    if query.message and isinstance(query.message, Message):
+        await query.message.reply_text(
+            prompt,
+            parse_mode='Markdown',
+            reply_markup=ForceReply(
+                input_field_placeholder="عدد مورد نظر را وارد کنید...",
+                selective=True
+            )
         )
-    )
     
     return ENTERING_AMOUNT
 
 
 async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """مقدار وارد شد"""
+    if not update.message or not update.message.text:
+        logger.warning("trade_amount_entered called but no message or text found")
+        return ConversationHandler.END
+    
+    if not update.effective_user:
+        logger.warning("trade_amount_entered called but no effective_user found")
+        return ConversationHandler.END
+    
+    # بررسی وجود user_data
+    if context.user_data is None:
+        logger.error("trade_amount_entered: user_data is None")
+        await update.message.reply_text(
+            "❌ خطا: اطلاعات جلسه یافت نشد.",
+            reply_markup=get_main_menu_keyboard()
+        )
+        return ConversationHandler.END
+    
     # بررسی انقضای قیمت
     product_code = context.user_data.get('product_code')
     product = context.user_data.get('product')
     
-    if is_price_expired(context, product_code):
+    if not product_code or is_price_expired(context, product_code):
         await update.message.reply_text(
             "⏰ *زمان معامله به پایان رسید*\n\n"
             "قیمت‌ها ممکن است تغییر کرده باشند.\n"
@@ -1064,17 +1217,18 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
     amount = parse_decimal(update.message.text)
     
     # برای سکه و دلار، بررسی کن که عدد صحیح مثبت باشد
+    product_name = product.name if product else "محصول"
     if product_code in [PRODUCT_COIN, PRODUCT_DOLLAR]:
         if amount is None or amount <= 0:
             time_remaining = get_time_remaining(context, product_code)
             await update.message.reply_text(
                 f"❌ *مقدار نامعتبر است*\n\n"
                 f"⏱ زمان باقیمانده: {time_remaining}\n\n"
-                f"⚠️ برای {product.name} فقط اعداد صحیح مثبت مجاز است.\n\n"
+                f"⚠️ برای {product_name} فقط اعداد صحیح مثبت مجاز است.\n\n"
                 f"💡 *مثال‌ها:*\n"
-                f"• `1` (یک {product.name})\n"
-                f"• `5` (پنج {product.name})\n"
-                f"• `10` (ده {product.name})",
+                f"• `1` (یک {product_name})\n"
+                f"• `5` (پنج {product_name})\n"
+                f"• `10` (ده {product_name})",
                 parse_mode='Markdown',
                 reply_markup=get_main_menu_keyboard()
             )
@@ -1086,7 +1240,7 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text(
                 f"❌ *مقدار باید عدد صحیح باشد*\n\n"
                 f"⏱ زمان باقیمانده: {time_remaining}\n\n"
-                f"⚠️ برای {product.name} فقط اعداد صحیح مثبت مجاز است.\n\n"
+                f"⚠️ برای {product_name} فقط اعداد صحیح مثبت مجاز است.\n\n"
                 f"❌ غیرمجاز: `2.5` یا `3.7`\n"
                 f"✅ مجاز: `1` یا `5` یا `10`",
                 parse_mode='Markdown',
@@ -1159,9 +1313,9 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
         time_remaining = get_time_remaining(context, product_code)
         
         # دریافت نام کامل کاربر از دیتابیس
-        full_name = profile.user.get_full_name()
-        if not full_name:
-            full_name = "کاربر"
+        full_name = "کاربر"
+        if profile and profile.user:
+            full_name = profile.user.get_full_name() or "کاربر"
         
         # تاریخ و زمان فعلی
         now = datetime.now()
@@ -1169,7 +1323,9 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
         persian_time = now.strftime("%H:%M:%S")
         
         # دریافت کدملی
-        national_code = profile.national_code or "ثبت نشده"
+        national_code = "ثبت نشده"
+        if profile:
+            national_code = profile.national_code or "ثبت نشده"
         
         # نمایش پیش‌فاکتور
         invoice = (
@@ -1180,10 +1336,10 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
             f"📅 تاریخ: {persian_date}\n"
             f"🕐 ساعت: {persian_time}\n"
             f"─────────────────\n"
-            f"📦 محصول: *{product.name}*\n"
-            f"⚖️ مقدار: *{format_number(quantity_grams, 4)}* گرم\n"
+            f"📦 محصول: *{product_name}*\n"
+            f"⚖️ مقدار: *{format_number(quantity_grams if quantity_grams else Decimal('0'), 4)}* گرم\n"
             f"💵 قیمت واحد: *{format_number(price)}* ریال\n"
-            f"💰 *مبلغ کل: {format_number(total_amount)} ریال*\n\n"
+            f"💰 *مبلغ کل: {format_number(total_amount if total_amount else Decimal('0'))} ریال*\n\n"
             f"⏱ زمان باقیمانده: {time_remaining}\n"
             "─────────────────\n"
             "⚠️ لطفاً سریع تصمیم بگیرید!\n"
@@ -1197,16 +1353,17 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         
         # برنامه‌ریزی Job برای حذف خودکار دکمه‌های پیش‌فاکتور پس از 60 ثانیه
-        context.job_queue.run_once(
-            expire_invoice_buttons,
-            60,
-            data={
-                'chat_id': sent_message.chat_id,
-                'message_id': sent_message.message_id,
-                'invoice_text': invoice
-            },
-            name=f'expire_invoice_{sent_message.chat_id}_{sent_message.message_id}'
-        )
+        if context.job_queue:
+            context.job_queue.run_once(
+                expire_invoice_buttons,
+                60,
+                data={
+                    'chat_id': sent_message.chat_id,
+                    'message_id': sent_message.message_id,
+                    'invoice_text': invoice
+                },
+                name=f'expire_invoice_{sent_message.chat_id}_{sent_message.message_id}'
+            )
         
         return CONFIRMING_TRADE
     
@@ -1219,16 +1376,26 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
 async def trade_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """تایید نهایی"""
     query = update.callback_query
+    if not query or not query.message:
+        logger.warning("trade_confirmed called but no callback_query or message found")
+        return ConversationHandler.END
+    
+    # بررسی وجود user_data
+    if context.user_data is None:
+        logger.error("trade_confirmed: user_data is None")
+        await query.answer("❌ خطا: اطلاعات جلسه یافت نشد.", show_alert=True)
+        return ConversationHandler.END
     
     # لغو Job انقضای پیش‌فاکتور (اگر وجود دارد)
-    job_name = f'expire_invoice_{query.message.chat_id}_{query.message.message_id}'
-    current_jobs = context.job_queue.get_jobs_by_name(job_name)
-    for job in current_jobs:
-        job.schedule_removal()
+    if context.job_queue and isinstance(query.message, Message):
+        job_name = f'expire_invoice_{query.message.chat_id}_{query.message.message_id}'
+        current_jobs = context.job_queue.get_jobs_by_name(job_name)
+        for job in current_jobs:
+            job.schedule_removal()
     
     # بررسی انقضای قیمت
     product_code = context.user_data.get('product_code')
-    if is_price_expired(context, product_code):
+    if not product_code or is_price_expired(context, product_code):
         await query.answer("⏰ زمان شما به پایان رسید!", show_alert=True)
         
         # دریافت اطلاعات برای نمایش پیش‌فاکتور منقضی شده
@@ -1285,39 +1452,45 @@ async def trade_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     if not all([profile, product, quantity_grams, total_amount, action]):
         await query.edit_message_text("❌ خطا: اطلاعات ناقص است.")
-        context.user_data.clear()
+        if context.user_data is not None:
+            context.user_data.clear()
         return ConversationHandler.END
     
     try:
         invoice_number = context.user_data.get('invoice_number')
         
         if action == "buy":
-            order = await sync_to_async(TradingService.create_buy_order)(
-                profile=profile,
-                product=product,
-                quantity_grams=quantity_grams,
-                total_amount=total_amount,
-                invoice_number=invoice_number
+            order = await sync_to_async(TradingService.create_buy_order, thread_sensitive=True)(  # type: ignore[misc,call-arg]
+                profile=profile,  # type: ignore[arg-type]
+                product=product,  # type: ignore[arg-type]
+                quantity_grams=quantity_grams,  # type: ignore[arg-type]
+                total_amount=total_amount,  # type: ignore[arg-type]
+                invoice_number=invoice_number  # type: ignore[arg-type]
             )
             action_text = "خرید"
         else:
-            order = await sync_to_async(TradingService.create_sell_order)(
-                profile=profile,
-                product=product,
-                quantity_grams=quantity_grams,
-                total_amount=total_amount,
-                invoice_number=invoice_number
+            order = await sync_to_async(TradingService.create_sell_order, thread_sensitive=True)(  # type: ignore[misc,call-arg]
+                profile=profile,  # type: ignore[arg-type]
+                product=product,  # type: ignore[arg-type]
+                quantity_grams=quantity_grams,  # type: ignore[arg-type]
+                total_amount=total_amount,  # type: ignore[arg-type]
+                invoice_number=invoice_number  # type: ignore[arg-type]
             )
             action_text = "فروش"
         
         # دریافت اطلاعات برای فاکتور نهایی
         invoice_number = context.user_data.get('invoice_number', 'N/A')
-        full_name = profile.user.get_full_name()
-        if not full_name:
-            full_name = "کاربر"
+        full_name = "کاربر"
+        if profile and profile.user:
+            full_name = profile.user.get_full_name() or "کاربر"
         
         # دریافت کدملی
-        national_code = profile.national_code or "ثبت نشده"
+        national_code = "ثبت نشده"
+        if profile:
+            national_code = profile.national_code or "ثبت نشده"
+        
+        # دریافت نام محصول
+        product_name = product.name if product else "محصول"
         
         now = datetime.now()
         persian_date = now.strftime("%Y/%m/%d")
@@ -1332,49 +1505,65 @@ async def trade_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"📅 تاریخ: {persian_date}\n"
             f"🕐 ساعت: {persian_time}\n"
             f"─────────────────\n"
-            f"📦 محصول: *{product.name}*\n"
-            f"⚖️ مقدار: *{format_number(quantity_grams, 4)}* گرم\n"
-            f"💰 مبلغ: *{format_number(total_amount)}* ریال\n\n"
+            f"📦 محصول: *{product_name}*\n"
+            f"⚖️ مقدار: *{format_number(quantity_grams if quantity_grams else Decimal('0'), 4)}* گرم\n"
+            f"💰 مبلغ: *{format_number(total_amount if total_amount else Decimal('0'))}* ریال\n\n"
             f"⏳ *وضعیت:* در انتظار تایید مدیر\n"
             f"پس از تایید، موجودی شما به‌روزرسانی خواهد شد.",
             parse_mode='Markdown'
         )
         
         # نمایش منوی اصلی
-        await query.message.reply_text(
-            "📱 از منوی اصلی می‌توانید استفاده کنید:",
-            reply_markup=get_main_menu_keyboard()
-        )
+        if query.message and isinstance(query.message, Message):
+            await query.message.reply_text(
+                "📱 از منوی اصلی می‌توانید استفاده کنید:",
+                reply_markup=get_main_menu_keyboard()
+            )
         
-        logger.info(f"سفارش {action_text} ثبت شد: {order.id} - {profile.phone_number}")
+        # پاکسازی user_data پس از موفقیت
+        if context.user_data is not None:
+            # Log order info before clearing
+            phone = context.user_data.get('profile', {})
+            if hasattr(phone, 'phone_number'):
+                logger.info(f"سفارش {action_text} ثبت شد: {order.id} - {phone.phone_number}")
+            else:
+                logger.info(f"سفارش {action_text} ثبت شد: {order.id}")
     
     except ValidationError as e:
         await query.edit_message_text(f"❌ {str(e)}")
         # نمایش منوی اصلی
-        await query.message.reply_text(
-            "📱 از منوی اصلی می‌توانید استفاده کنید:",
-            reply_markup=get_main_menu_keyboard()
-        )
+        if query.message and isinstance(query.message, Message):
+            await query.message.reply_text(
+                "📱 از منوی اصلی می‌توانید استفاده کنید:",
+                reply_markup=get_main_menu_keyboard()
+            )
     except Exception as e:
         logger.error(f"خطا در ثبت سفارش: {e}")
         await query.edit_message_text("❌ خطایی در ثبت سفارش رخ داد.")
         # نمایش منوی اصلی
-        await query.message.reply_text(
-            "📱 از منوی اصلی می‌توانید استفاده کنید:",
-            reply_markup=get_main_menu_keyboard()
-        )
+        if query.message and isinstance(query.message, Message):
+            await query.message.reply_text(
+                "📱 از منوی اصلی می‌توانید استفاده کنید:",
+                reply_markup=get_main_menu_keyboard()
+            )
     
-    context.user_data.clear()
+    if context.user_data is not None:
+        context.user_data.clear()
     return ConversationHandler.END
 
 
 async def show_prices_from_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """نمایش قیمت‌ها و خروج از conversation"""
     query = update.callback_query
+    if not query:
+        logger.warning("show_prices_from_conversation called but no callback_query found")
+        return ConversationHandler.END
+    
     await query.answer()
     
     # پاکسازی داده‌های conversation
-    context.user_data.clear()
+    if context.user_data is not None:
+        context.user_data.clear()
     
     # نمایش منوی قیمت‌ها
     await show_all_prices(update, context)
@@ -1384,16 +1573,21 @@ async def show_prices_from_conversation(update: Update, context: ContextTypes.DE
 
 async def trade_cancelled(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """لغو معامله"""
+    # پاکسازی user_data
+    if context.user_data is not None:
+        context.user_data.clear()
+    
     # ممکن است از callback query یا message عادی باشد
     if update.callback_query:
         query = update.callback_query
         await query.answer()
         
         # لغو Job انقضای پیش‌فاکتور (اگر وجود دارد)
-        job_name = f'expire_invoice_{query.message.chat_id}_{query.message.message_id}'
-        current_jobs = context.job_queue.get_jobs_by_name(job_name)
-        for job in current_jobs:
-            job.schedule_removal()
+        if context.job_queue and isinstance(query.message, Message):
+            job_name = f'expire_invoice_{query.message.chat_id}_{query.message.message_id}'
+            current_jobs = context.job_queue.get_jobs_by_name(job_name)
+            for job in current_jobs:
+                job.schedule_removal()
         
         try:
             await query.edit_message_text(
@@ -1404,26 +1598,30 @@ async def trade_cancelled(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         except Exception as e:
             logger.error(f"خطا در ویرایش پیام لغو: {e}")
             # اگر نتوانست پیام را ویرایش کند، پیام جدید بفرست
-            await query.message.reply_text(
-                "❌ *معامله لغو شد*\n\n"
-                "از منوی اصلی می‌توانید استفاده کنید.",
-                parse_mode='Markdown'
-            )
+            if query.message and isinstance(query.message, Message):
+                await query.message.reply_text(
+                    "❌ *معامله لغو شد*\n\n"
+                    "از منوی اصلی می‌توانید استفاده کنید.",
+                    parse_mode='Markdown'
+                )
         
         # نمایش منوی اصلی (کیبورد)
-        await query.message.reply_text(
-            "📱 منوی اصلی:",
-            reply_markup=get_main_menu_keyboard()
-        )
+        if query.message and isinstance(query.message, Message):
+            await query.message.reply_text(
+                "📱 منوی اصلی:",
+                reply_markup=get_main_menu_keyboard()
+            )
     else:
-        await update.message.reply_text(
-            "❌ *معامله لغو شد*\n\n"
-            "از منوی اصلی می‌توانید استفاده کنید.",
-            parse_mode='Markdown',
-            reply_markup=get_main_menu_keyboard()
-        )
+        if update.message:
+            await update.message.reply_text(
+                "❌ *معامله لغو شد*\n\n"
+                "از منوی اصلی می‌توانید استفاده کنید.",
+                parse_mode='Markdown',
+                reply_markup=get_main_menu_keyboard()
+            )
     
-    context.user_data.clear()
+    if context.user_data is not None:
+        context.user_data.clear()
     return ConversationHandler.END
 
 
