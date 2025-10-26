@@ -181,3 +181,72 @@ BTN_BACK_TO_MENU: Final[str] = "🔙 بازگشت به منوی اصلی"
 
 # Import Decimal for validation constants
 from decimal import Decimal
+
+# ==================== Account & Wallet Management States ====================
+# Account Management States
+VIEWING_PROFILE: Final[str] = "viewing_profile"
+MANAGING_BANK_ACCOUNTS: Final[str] = "managing_bank_accounts"
+ADDING_BANK_ACCOUNT: Final[str] = "adding_bank_account"
+ENTERING_BANK_NAME: Final[str] = "entering_bank_name"
+ENTERING_ACCOUNT_NUMBER: Final[str] = "entering_account_number"
+ENTERING_ACCOUNT_HOLDER: Final[str] = "entering_account_holder"
+ENTERING_ACCOUNT_TYPE: Final[str] = "entering_account_type"
+
+# Deposit States
+SELECTING_DEPOSIT_CURRENCY: Final[str] = "selecting_deposit_currency"
+ENTERING_DEPOSIT_AMOUNT: Final[str] = "entering_deposit_amount"
+SELECTING_DEPOSIT_BANK: Final[str] = "selecting_deposit_bank"
+UPLOADING_RECEIPT: Final[str] = "uploading_receipt"
+CONFIRMING_DEPOSIT: Final[str] = "confirming_deposit"
+
+# Withdraw States
+SELECTING_WITHDRAW_CURRENCY: Final[str] = "selecting_withdraw_currency"
+ENTERING_WITHDRAW_AMOUNT: Final[str] = "entering_withdraw_amount"
+SELECTING_WITHDRAW_BANK: Final[str] = "selecting_withdraw_bank"
+CONFIRMING_WITHDRAW: Final[str] = "confirming_withdraw"
+
+# ==================== Callback Data for Account & Wallet ====================
+CALLBACK_ACCOUNT_PROFILE: Final[str] = "account_profile"
+CALLBACK_ACCOUNT_BANKCARDS: Final[str] = "account_bankcards"
+CALLBACK_ACCOUNT_BALANCES: Final[str] = "account_balances"
+CALLBACK_ACCOUNT_TRANSACTIONS: Final[str] = "account_transactions"
+
+CALLBACK_WALLET_DEPOSIT: Final[str] = "wallet_deposit"
+CALLBACK_WALLET_WITHDRAW: Final[str] = "wallet_withdraw"
+CALLBACK_WALLET_BALANCES: Final[str] = "wallet_balances"
+CALLBACK_WALLET_TRANSACTIONS: Final[str] = "wallet_transactions"
+
+CALLBACK_CURRENCY_RIAL: Final[str] = "currency_rial"
+CALLBACK_CURRENCY_GOLD: Final[str] = "currency_gold"
+CALLBACK_CURRENCY_COIN: Final[str] = "currency_coin"
+CALLBACK_CURRENCY_DOLLAR: Final[str] = "currency_dollar"
+
+CALLBACK_SELECT_BANK_PREFIX: Final[str] = "select_bank_"
+CALLBACK_ADD_BANK_ACCOUNT: Final[str] = "add_bank_account"
+CALLBACK_REMOVE_BANK_PREFIX: Final[str] = "remove_bank_"
+
+# Generic callback data
+CALLBACK_BACK_TO_MAIN: Final[str] = "back_to_main"
+CALLBACK_CONFIRM_YES: Final[str] = "confirm_yes"
+CALLBACK_CONFIRM_NO: Final[str] = "confirm_no"
+
+# ==================== Menu Buttons ====================
+MENU_ACCOUNT: Final[str] = "👤 حساب کاربری"
+MENU_WALLET: Final[str] = "💼 کیف پول"
+MENU_PRICES: Final[str] = "📈 قیمت‌ها"
+
+# ==================== Currency Types ====================
+CURRENCY_TYPES: Final[dict] = {
+    'RIAL': 'ریال',
+    'GOLD': 'طلا',
+    'COIN': 'سکه',
+    'DOLLAR': 'دلار',
+}
+
+# ==================== Iranian Banks ====================
+IRANIAN_BANKS: Final[list] = [
+    'ملی ایران', 'ملت', 'تجارت', 'صادرات', 'سپه',
+    'رفاه', 'پاسارگاد', 'پارسیان', 'اقتصاد نوین', 'سامان',
+    'سینا', 'کارآفرین', 'آینده', 'شهر', 'دی',
+    'صنعت و معدن', 'توسعه تعاون', 'قوامین', 'مهر اقتصاد', 'حکمت ایرانیان'
+]

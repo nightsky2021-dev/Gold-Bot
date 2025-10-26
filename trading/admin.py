@@ -11,7 +11,7 @@ from django.utils import timezone
 from typing import Optional
 from decimal import Decimal
 
-from .models import Product, Order
+from .models import Product, Order, Transaction, WithdrawRequest
 
 
 @admin.register(Product)
@@ -272,3 +272,7 @@ class OrderAdmin(admin.ModelAdmin):
             f'{updated} سفارش لغو شد.'
         )
     cancel_orders.short_description = 'لغو سفارشات انتخاب شده'
+
+
+# Import extended admin registrations
+from .admin_extensions import TransactionAdmin, WithdrawRequestAdmin
