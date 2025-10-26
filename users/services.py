@@ -1,10 +1,15 @@
 """
 Business logic services for users app
 """
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
+from decimal import Decimal
 from django.contrib.auth.models import User
 from django.db import transaction
-from .models import Profile
+from django.core.exceptions import ValidationError
+from .models import Profile, BankAccount
+import logging
+
+logger = logging.getLogger('users')
 
 
 def get_or_create_profile_by_telegram(
@@ -123,3 +128,228 @@ def update_user_balance(
     profile.save(update_fields=['rial_balance', 'gold_balance_grams'])
     
     return profile
+
+
+class BankAccountService:
+    """Service class for managing user bank accounts."""
+    
+    @staticmethod
+    @transaction.atomic
+    def add_bank_account(
+        profile: Profile,
+        account_holder_name: str,
+        bank_name: str,
+        account_number: str,
+        account_type: str
+    ) -> BankAccount:
+        """
+        Add a new bank account for user.
+        
+        Args:
+            profile: User profile
+            account_holder_name: Name of account holder
+            bank_name: Bank name
+            account_number: Account/card number
+            account_type: Account type (CARD or IBAN)
+            
+        Returns:
+            BankAccount instance
+            
+        Raises:
+            ValidationError: If validation fails
+        """
+        # Check for duplicate account number
+        if BankAccount.objects.filter(
+            profile=profile,
+            account_number=account_number
+        ).exists():
+            raise ValidationError("این شماره حساب قبلاً ثبت شده است.")
+        
+        # Create bank account (validation happens in model's clean method)
+        bank_account = BankAccount(
+            profile=profile,
+            account_holder_name=account_holder_name.strip(),
+            bank_name=bank_name,
+            account_number=account_number.strip(),
+            account_type=account_type,
+            is_verified=False,
+            is_active=True
+        )
+        
+        # This will trigger validation
+        bank_account.save()
+        
+        logger.info(
+            f"Bank account added for {profile.get_display_name()}: "
+            f"{bank_name} - {bank_account.get_masked_account_number()}"
+        )
+        
+        return bank_account
+    
+    @staticmethod
+    def get_user_bank_accounts(
+        profile: Profile,
+        only_verified: bool = False,
+        only_active: bool = False
+    ) -> List[BankAccount]:
+        """
+        Get user's bank accounts.
+        
+        Args:
+            profile: User profile
+            only_verified: Filter only verified accounts
+            only_active: Filter only active accounts
+            
+        Returns:
+            List of BankAccount instances
+        """
+        queryset = profile.bank_accounts.all()
+        
+        if only_verified:
+            queryset = queryset.filter(is_verified=True)
+        
+        if only_active:
+            queryset = queryset.filter(is_active=True)
+        
+        return list(queryset)
+    
+    @staticmethod
+    @transaction.atomic
+    def verify_bank_account(
+        bank_account_id: int,
+        admin_user: Optional[User] = None
+    ) -> BankAccount:
+        """
+        Verify a bank account (admin action).
+        
+        Args:
+            bank_account_id: Bank account ID
+            admin_user: Admin user performing verification
+            
+        Returns:
+            Verified BankAccount instance
+            
+        Raises:
+            BankAccount.DoesNotExist: If account not found
+        """
+        bank_account = BankAccount.objects.select_related('profile', 'profile__user').get(
+            id=bank_account_id
+        )
+        
+        bank_account.is_verified = True
+        bank_account.save(update_fields=['is_verified', 'updated_at'])
+        
+        logger.info(
+            f"Bank account {bank_account.id} verified for "
+            f"{bank_account.profile.get_display_name()} "
+            f"by admin {admin_user.username if admin_user else 'system'}"
+        )
+        
+        # TODO: Send notification to user via Telegram
+        
+        return bank_account
+    
+    @staticmethod
+    @transaction.atomic
+    def reject_bank_account(
+        bank_account_id: int,
+        reason: str,
+        admin_user: Optional[User] = None
+    ) -> BankAccount:
+        """
+        Reject and deactivate a bank account (admin action).
+        
+        Args:
+            bank_account_id: Bank account ID
+            reason: Reason for rejection
+            admin_user: Admin user performing rejection
+            
+        Returns:
+            Rejected BankAccount instance
+            
+        Raises:
+            BankAccount.DoesNotExist: If account not found
+        """
+        bank_account = BankAccount.objects.select_related('profile', 'profile__user').get(
+            id=bank_account_id
+        )
+        
+        bank_account.is_verified = False
+        bank_account.is_active = False
+        bank_account.save(update_fields=['is_verified', 'is_active', 'updated_at'])
+        
+        logger.info(
+            f"Bank account {bank_account.id} rejected for "
+            f"{bank_account.profile.get_display_name()} "
+            f"by admin {admin_user.username if admin_user else 'system'}. "
+            f"Reason: {reason}"
+        )
+        
+        # TODO: Send notification to user via Telegram with reason
+        
+        return bank_account
+    
+    @staticmethod
+    @transaction.atomic
+    def remove_bank_account(
+        bank_account_id: int,
+        profile: Profile
+    ) -> None:
+        """
+        Remove a bank account (user action).
+        
+        Args:
+            bank_account_id: Bank account ID
+            profile: User profile (for authorization)
+            
+        Raises:
+            ValidationError: If account has pending transactions
+            BankAccount.DoesNotExist: If account not found or not owned by user
+        """
+        bank_account = BankAccount.objects.get(
+            id=bank_account_id,
+            profile=profile
+        )
+        
+        # Check for pending transactions
+        if bank_account.transactions.filter(status='PENDING').exists():
+            raise ValidationError(
+                "این حساب دارای تراکنش در حال انجام است و نمی‌توان آن را حذف کرد."
+            )
+        
+        if bank_account.withdraw_requests.filter(status='PENDING').exists():
+            raise ValidationError(
+                "این حساب دارای درخواست برداشت در حال انجام است و نمی‌توان آن را حذف کرد."
+            )
+        
+        logger.info(
+            f"Bank account {bank_account.id} removed by "
+            f"{profile.get_display_name()}"
+        )
+        
+        bank_account.delete()
+    
+    @staticmethod
+    def get_bank_account_by_id(
+        bank_account_id: int,
+        profile: Optional[Profile] = None
+    ) -> Optional[BankAccount]:
+        """
+        Get a bank account by ID.
+        
+        Args:
+            bank_account_id: Bank account ID
+            profile: Optional profile to filter by (for authorization)
+            
+        Returns:
+            BankAccount instance or None
+        """
+        try:
+            queryset = BankAccount.objects.select_related('profile', 'profile__user')
+            
+            if profile:
+                return queryset.get(id=bank_account_id, profile=profile)
+            else:
+                return queryset.get(id=bank_account_id)
+        except BankAccount.DoesNotExist:
+            return None
