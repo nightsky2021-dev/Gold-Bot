@@ -13,7 +13,7 @@ from django.utils.text import slugify
 from django.core.validators import MinValueValidator
 from django.utils import timezone
 
-from users.models import Profile
+from users.models import Profile, BankAccount
 
 
 class Product(models.Model):
@@ -263,4 +263,350 @@ class Order(models.Model):
     
     def can_be_cancelled(self) -> bool:
         """Check if order can be cancelled (only pending orders)."""
+        return self.is_pending()
+
+
+class Transaction(models.Model):
+    """
+    Financial transaction model for tracking all money movements.
+    
+    Records deposits, withdrawals, transfers, and trading transactions
+    with complete audit trail and balance tracking.
+    """
+    
+    class TransactionType(models.TextChoices):
+        DEPOSIT = 'DEPOSIT', 'واریز وجه'
+        WITHDRAW = 'WITHDRAW', 'برداشت وجه'
+        TRANSFER_SEND = 'TRANSFER_SEND', 'انتقال وجه (ارسال)'
+        TRANSFER_RECEIVE = 'TRANSFER_RECEIVE', 'انتقال وجه (دریافت)'
+        BUY = 'BUY', 'خرید محصول'
+        SELL = 'SELL', 'فروش محصول'
+    
+    class CurrencyType(models.TextChoices):
+        RIAL = 'RIAL', 'ریال'
+        GOLD = 'GOLD', 'طلا'
+        COIN = 'COIN', 'سکه'
+        DOLLAR = 'DOLLAR', 'دلار'
+    
+    class TransactionStatus(models.TextChoices):
+        PENDING = 'PENDING', 'در انتظار'
+        COMPLETED = 'COMPLETED', 'تکمیل شده'
+        CANCELLED = 'CANCELLED', 'لغو شده'
+        FAILED = 'FAILED', 'ناموفق'
+    
+    transaction_number = models.CharField(
+        max_length=20,
+        unique=True,
+        db_index=True,
+        verbose_name="شماره تراکنش",
+        help_text="شماره یکتای تراکنش (مثل: TXN-20241024-001)"
+    )
+    
+    profile = models.ForeignKey(
+        Profile,
+        on_delete=models.CASCADE,
+        related_name='transactions',
+        verbose_name="پروفایل",
+        help_text="کاربر صاحب تراکنش"
+    )
+    
+    transaction_type = models.CharField(
+        max_length=15,
+        choices=TransactionType.choices,
+        verbose_name="نوع تراکنش",
+        help_text="نوع عملیات مالی"
+    )
+    
+    currency_type = models.CharField(
+        max_length=6,
+        choices=CurrencyType.choices,
+        verbose_name="نوع ارز",
+        help_text="نوع ارز مورد معامله"
+    )
+    
+    amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        validators=[MinValueValidator(Decimal('0.0001'))],
+        verbose_name="مقدار",
+        help_text="مقدار تراکنش"
+    )
+    
+    balance_before = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        verbose_name="موجودی قبل",
+        help_text="موجودی قبل از تراکنش"
+    )
+    
+    balance_after = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        verbose_name="موجودی بعد",
+        help_text="موجودی بعد از تراکنش"
+    )
+    
+    status = models.CharField(
+        max_length=10,
+        choices=TransactionStatus.choices,
+        default=TransactionStatus.PENDING,
+        db_index=True,
+        verbose_name="وضعیت",
+        help_text="وضعیت فعلی تراکنش"
+    )
+    
+    related_bank_account = models.ForeignKey(
+        BankAccount,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transactions',
+        verbose_name="حساب بانکی مرتبط",
+        help_text="حساب بانکی مربوط به واریز/برداشت"
+    )
+    
+    related_order = models.ForeignKey(
+        Order,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transactions',
+        verbose_name="سفارش مرتبط",
+        help_text="سفارش مربوط به خرید/فروش"
+    )
+    
+    admin_note = models.TextField(
+        blank=True,
+        verbose_name="یادداشت ادمین",
+        help_text="یادداشت‌های ادمین"
+    )
+    
+    user_note = models.TextField(
+        blank=True,
+        verbose_name="یادداشت کاربر",
+        help_text="یادداشت‌های کاربر"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="تاریخ ایجاد"
+    )
+    
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="تاریخ تکمیل",
+        help_text="زمان تکمیل تراکنش"
+    )
+
+    class Meta:
+        verbose_name = "تراکنش"
+        verbose_name_plural = "تراکنش‌ها"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['profile', '-created_at']),
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['transaction_type', 'status']),
+            models.Index(fields=['currency_type', '-created_at']),
+        ]
+
+    def __str__(self) -> str:
+        """Return string representation of the transaction."""
+        return f"{self.transaction_number} - {self.get_transaction_type_display()} - {self.amount} {self.get_currency_type_display()}"
+    
+    def save(self, *args, **kwargs):
+        """Override save to generate transaction number if not provided."""
+        if not self.transaction_number:
+            self.transaction_number = self.generate_transaction_number()
+        super().save(*args, **kwargs)
+    
+    def generate_transaction_number(self) -> str:
+        """Generate unique transaction number."""
+        from datetime import datetime
+        now = datetime.now()
+        date_str = now.strftime('%Y%m%d')
+        
+        # Get count of transactions today
+        today_count = Transaction.objects.filter(
+            created_at__date=now.date()
+        ).count()
+        
+        return f"TXN-{date_str}-{today_count + 1:03d}"
+    
+    def is_pending(self) -> bool:
+        """Check if transaction is pending."""
+        return self.status == self.TransactionStatus.PENDING
+    
+    def is_completed(self) -> bool:
+        """Check if transaction is completed."""
+        return self.status == self.TransactionStatus.COMPLETED
+    
+    def is_cancelled(self) -> bool:
+        """Check if transaction is cancelled."""
+        return self.status == self.TransactionStatus.CANCELLED
+    
+    def can_be_cancelled(self) -> bool:
+        """Check if transaction can be cancelled."""
+        return self.is_pending()
+
+
+class WithdrawRequest(models.Model):
+    """
+    Withdraw request model for managing user withdrawal requests.
+    
+    Handles the complete withdrawal workflow from request to completion.
+    """
+    
+    class CurrencyType(models.TextChoices):
+        RIAL = 'RIAL', 'ریال'
+        GOLD = 'GOLD', 'طلا'
+        COIN = 'COIN', 'سکه'
+        DOLLAR = 'DOLLAR', 'دلار'
+    
+    class WithdrawStatus(models.TextChoices):
+        PENDING = 'PENDING', 'در انتظار بررسی'
+        APPROVED = 'APPROVED', 'تایید شده'
+        REJECTED = 'REJECTED', 'رد شده'
+        COMPLETED = 'COMPLETED', 'تکمیل شده'
+    
+    request_number = models.CharField(
+        max_length=20,
+        unique=True,
+        db_index=True,
+        verbose_name="شماره درخواست",
+        help_text="شماره یکتای درخواست برداشت"
+    )
+    
+    profile = models.ForeignKey(
+        Profile,
+        on_delete=models.CASCADE,
+        related_name='withdraw_requests',
+        verbose_name="پروفایل",
+        help_text="کاربر درخواست‌دهنده"
+    )
+    
+    bank_account = models.ForeignKey(
+        BankAccount,
+        on_delete=models.CASCADE,
+        related_name='withdraw_requests',
+        verbose_name="حساب بانکی مقصد",
+        help_text="حساب بانکی برای واریز وجه"
+    )
+    
+    currency_type = models.CharField(
+        max_length=6,
+        choices=CurrencyType.choices,
+        verbose_name="نوع ارز",
+        help_text="نوع ارز مورد برداشت"
+    )
+    
+    amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        validators=[MinValueValidator(Decimal('0.0001'))],
+        verbose_name="مقدار",
+        help_text="مقدار درخواستی برای برداشت"
+    )
+    
+    status = models.CharField(
+        max_length=10,
+        choices=WithdrawStatus.choices,
+        default=WithdrawStatus.PENDING,
+        db_index=True,
+        verbose_name="وضعیت",
+        help_text="وضعیت فعلی درخواست"
+    )
+    
+    related_transaction = models.OneToOneField(
+        Transaction,
+        on_delete=models.CASCADE,
+        related_name='withdraw_request',
+        null=True,
+        blank=True,
+        verbose_name="تراکنش مرتبط",
+        help_text="تراکنش مربوط به این درخواست"
+    )
+    
+    admin_note = models.TextField(
+        blank=True,
+        verbose_name="یادداشت ادمین",
+        help_text="دلیل رد یا توضیحات ادمین"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="تاریخ ایجاد"
+    )
+    
+    processed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="تاریخ پردازش",
+        help_text="زمان پردازش توسط ادمین"
+    )
+    
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="تاریخ تکمیل",
+        help_text="زمان تکمیل برداشت"
+    )
+
+    class Meta:
+        verbose_name = "درخواست برداشت"
+        verbose_name_plural = "درخواست‌های برداشت"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['profile', '-created_at']),
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['currency_type', 'status']),
+        ]
+
+    def __str__(self) -> str:
+        """Return string representation of the withdraw request."""
+        return f"{self.request_number} - {self.profile.get_display_name()} - {self.amount} {self.get_currency_type_display()}"
+    
+    def save(self, *args, **kwargs):
+        """Override save to generate request number if not provided."""
+        if not self.request_number:
+            self.request_number = self.generate_request_number()
+        super().save(*args, **kwargs)
+    
+    def generate_request_number(self) -> str:
+        """Generate unique request number."""
+        from datetime import datetime
+        now = datetime.now()
+        date_str = now.strftime('%Y%m%d')
+        
+        # Get count of requests today
+        today_count = WithdrawRequest.objects.filter(
+            created_at__date=now.date()
+        ).count()
+        
+        return f"WDR-{date_str}-{today_count + 1:03d}"
+    
+    def is_pending(self) -> bool:
+        """Check if request is pending."""
+        return self.status == self.WithdrawStatus.PENDING
+    
+    def is_approved(self) -> bool:
+        """Check if request is approved."""
+        return self.status == self.WithdrawStatus.APPROVED
+    
+    def is_rejected(self) -> bool:
+        """Check if request is rejected."""
+        return self.status == self.WithdrawStatus.REJECTED
+    
+    def is_completed(self) -> bool:
+        """Check if request is completed."""
+        return self.status == self.WithdrawStatus.COMPLETED
+    
+    def can_be_approved(self) -> bool:
+        """Check if request can be approved."""
+        return self.is_pending()
+    
+    def can_be_rejected(self) -> bool:
+        """Check if request can be rejected."""
         return self.is_pending()

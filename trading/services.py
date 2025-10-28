@@ -13,8 +13,9 @@ from django.db import transaction
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 
-from .models import Product, Order
-from users.models import Profile
+from .models import Product, Order, Transaction, WithdrawRequest
+from users.models import Profile, BankAccount
+from users.wallet_services import WalletService
 
 logger = logging.getLogger('trading')
 
@@ -352,3 +353,435 @@ class BalanceService:
             f"Balance updated for {profile.get_display_name()}: "
             f"Rial change: {rial_change}, Gold change: {gold_change}"
         )
+
+
+class TransactionService:
+    """Service class for transaction operations."""
+    
+    @staticmethod
+    @transaction.atomic
+    def create_transaction(
+        profile: Profile,
+        transaction_type: str,
+        currency_type: str,
+        amount: Decimal,
+        **kwargs
+    ) -> Transaction:
+        """
+        Create a new transaction.
+        
+        Args:
+            profile: User profile.
+            transaction_type: Type of transaction.
+            currency_type: Type of currency.
+            amount: Transaction amount.
+            **kwargs: Additional fields (related_bank_account, related_order, etc.).
+            
+        Returns:
+            Created Transaction instance.
+        """
+        # Get current balance
+        balance_before = WalletService.get_available_balance(profile, currency_type)
+        
+        # Create transaction
+        transaction_obj = Transaction.objects.create(
+            profile=profile,
+            transaction_type=transaction_type,
+            currency_type=currency_type,
+            amount=amount,
+            balance_before=balance_before,
+            balance_after=balance_before,  # Will be updated when completed
+            **kwargs
+        )
+        
+        logger.info(
+            f"Transaction {transaction_obj.transaction_number} created: "
+            f"{transaction_type} {amount} {currency_type} for {profile.get_display_name()}"
+        )
+        
+        return transaction_obj
+    
+    @staticmethod
+    def get_user_transactions(
+        profile: Profile,
+        currency_type: Optional[str] = None,
+        limit: int = 20,
+        status: Optional[str] = None
+    ) -> List[Transaction]:
+        """
+        Get user's transactions with filtering.
+        
+        Args:
+            profile: User profile.
+            currency_type: Filter by currency type.
+            limit: Maximum number of transactions to return.
+            status: Filter by status.
+            
+        Returns:
+            List of Transaction instances.
+        """
+        queryset = profile.transactions.all()
+        
+        if currency_type:
+            queryset = queryset.filter(currency_type=currency_type)
+        
+        if status:
+            queryset = queryset.filter(status=status)
+        
+        return list(queryset[:limit])
+    
+    @staticmethod
+    @transaction.atomic
+    def complete_transaction(transaction_id: int, admin_user=None) -> Transaction:
+        """
+        Complete a transaction.
+        
+        Args:
+            transaction_id: ID of the transaction.
+            admin_user: Admin user completing the transaction.
+            
+        Returns:
+            Updated Transaction instance.
+        """
+        transaction_obj = Transaction.objects.get(id=transaction_id)
+        
+        if not transaction_obj.is_pending():
+            raise ValidationError("تراکنش در وضعیت نامناسب برای تکمیل است.")
+        
+        # Update balance based on transaction type
+        if transaction_obj.transaction_type in ['DEPOSIT', 'SELL', 'TRANSFER_RECEIVE']:
+            WalletService.add_balance(
+                transaction_obj.profile,
+                transaction_obj.currency_type,
+                transaction_obj.amount
+            )
+        elif transaction_obj.transaction_type in ['WITHDRAW', 'BUY', 'TRANSFER_SEND']:
+            WalletService.deduct_balance(
+                transaction_obj.profile,
+                transaction_obj.currency_type,
+                transaction_obj.amount
+            )
+        
+        # Update transaction
+        transaction_obj.status = Transaction.TransactionStatus.COMPLETED
+        transaction_obj.completed_at = timezone.now()
+        transaction_obj.balance_after = WalletService.get_available_balance(
+            transaction_obj.profile,
+            transaction_obj.currency_type
+        )
+        transaction_obj.save()
+        
+        logger.info(
+            f"Transaction {transaction_obj.transaction_number} completed by {admin_user}"
+        )
+        
+        return transaction_obj
+    
+    @staticmethod
+    @transaction.atomic
+    def cancel_transaction(transaction_id: int, reason: str, admin_user=None) -> Transaction:
+        """
+        Cancel a transaction.
+        
+        Args:
+            transaction_id: ID of the transaction.
+            reason: Reason for cancellation.
+            admin_user: Admin user cancelling the transaction.
+            
+        Returns:
+            Updated Transaction instance.
+        """
+        transaction_obj = Transaction.objects.get(id=transaction_id)
+        
+        if not transaction_obj.can_be_cancelled():
+            raise ValidationError("تراکنش قابل لغو نیست.")
+        
+        # If it's a withdraw transaction, unfreeze the balance
+        if transaction_obj.transaction_type == 'WITHDRAW':
+            WalletService.unfreeze_balance(
+                transaction_obj.profile,
+                transaction_obj.currency_type,
+                transaction_obj.amount
+            )
+        
+        # Update transaction
+        transaction_obj.status = Transaction.TransactionStatus.CANCELLED
+        transaction_obj.admin_note = reason
+        transaction_obj.save()
+        
+        logger.info(
+            f"Transaction {transaction_obj.transaction_number} cancelled: {reason}"
+        )
+        
+        return transaction_obj
+    
+    @staticmethod
+    def format_transaction_for_display(transaction_obj: Transaction) -> str:
+        """
+        Format transaction for display in Telegram.
+        
+        Args:
+            transaction_obj: Transaction instance.
+            
+        Returns:
+            Formatted string.
+        """
+        status_emoji = {
+            Transaction.TransactionStatus.PENDING: "🕐",
+            Transaction.TransactionStatus.COMPLETED: "✅",
+            Transaction.TransactionStatus.CANCELLED: "❌",
+            Transaction.TransactionStatus.FAILED: "⚠️",
+        }
+        
+        type_emoji = {
+            Transaction.TransactionType.DEPOSIT: "💰",
+            Transaction.TransactionType.WITHDRAW: "💸",
+            Transaction.TransactionType.BUY: "📈",
+            Transaction.TransactionType.SELL: "📉",
+            Transaction.TransactionType.TRANSFER_SEND: "📤",
+            Transaction.TransactionType.TRANSFER_RECEIVE: "📥",
+        }
+        
+        emoji = type_emoji.get(transaction_obj.transaction_type, "💳")
+        status_icon = status_emoji.get(transaction_obj.status, "")
+        
+        text = f"┌─────────────────────────\n"
+        text += f"│ {emoji} {transaction_obj.get_transaction_type_display()}\n"
+        text += f"│ 💰 مبلغ: {transaction_obj.amount:,.4f} {transaction_obj.get_currency_type_display()}\n"
+        text += f"│ 📅 {transaction_obj.created_at.strftime('%Y/%m/%d - %H:%M')}\n"
+        text += f"│ {status_icon} {transaction_obj.get_status_display()}\n"
+        text += f"│ 🔢 {transaction_obj.transaction_number}\n"
+        text += f"└─────────────────────────"
+        
+        return text
+
+
+class DepositService:
+    """Service class for deposit operations."""
+    
+    @staticmethod
+    @transaction.atomic
+    def create_deposit_request(
+        profile: Profile,
+        currency_type: str,
+        amount: Decimal,
+        bank_account_id: int,
+        receipt_image=None
+    ) -> Transaction:
+        """
+        Create a deposit request.
+        
+        Args:
+            profile: User profile.
+            currency_type: Type of currency to deposit.
+            amount: Amount to deposit.
+            bank_account_id: ID of source bank account.
+            receipt_image: Optional receipt image.
+            
+        Returns:
+            Created Transaction instance.
+            
+        Raises:
+            ValidationError: If validation fails.
+        """
+        # Validate bank account
+        try:
+            bank_account = BankAccount.objects.get(
+                id=bank_account_id,
+                profile=profile,
+                is_verified=True,
+                is_active=True
+            )
+        except BankAccount.DoesNotExist:
+            raise ValidationError("حساب بانکی تایید شده یافت نشد.")
+        
+        # Create transaction
+        transaction_obj = TransactionService.create_transaction(
+            profile=profile,
+            transaction_type=Transaction.TransactionType.DEPOSIT,
+            currency_type=currency_type,
+            amount=amount,
+            related_bank_account=bank_account,
+            user_note=f"واریز از حساب {bank_account.bank_name}"
+        )
+        
+        # TODO: Send notification to admin
+        
+        return transaction_obj
+    
+    @staticmethod
+    @transaction.atomic
+    def approve_deposit(transaction_id: int, admin_user) -> Transaction:
+        """
+        Approve a deposit request.
+        
+        Args:
+            transaction_id: ID of the deposit transaction.
+            admin_user: Admin user approving the deposit.
+            
+        Returns:
+            Updated Transaction instance.
+        """
+        return TransactionService.complete_transaction(transaction_id, admin_user)
+    
+    @staticmethod
+    def reject_deposit(transaction_id: int, reason: str, admin_user) -> Transaction:
+        """
+        Reject a deposit request.
+        
+        Args:
+            transaction_id: ID of the deposit transaction.
+            reason: Reason for rejection.
+            admin_user: Admin user rejecting the deposit.
+            
+        Returns:
+            Updated Transaction instance.
+        """
+        return TransactionService.cancel_transaction(transaction_id, reason, admin_user)
+
+
+class WithdrawService:
+    """Service class for withdrawal operations."""
+    
+    @staticmethod
+    @transaction.atomic
+    def create_withdraw_request(
+        profile: Profile,
+        currency_type: str,
+        amount: Decimal,
+        bank_account_id: int
+    ) -> WithdrawRequest:
+        """
+        Create a withdrawal request.
+        
+        Args:
+            profile: User profile.
+            currency_type: Type of currency to withdraw.
+            amount: Amount to withdraw.
+            bank_account_id: ID of destination bank account.
+            
+        Returns:
+            Created WithdrawRequest instance.
+            
+        Raises:
+            ValidationError: If validation fails.
+        """
+        # Validate bank account
+        try:
+            bank_account = BankAccount.objects.get(
+                id=bank_account_id,
+                profile=profile,
+                is_verified=True,
+                is_active=True
+            )
+        except BankAccount.DoesNotExist:
+            raise ValidationError("حساب بانکی تایید شده یافت نشد.")
+        
+        # Check sufficient balance
+        if not WalletService.check_sufficient_balance(profile, currency_type, amount):
+            raise ValidationError(f"موجودی {currency_type} کافی نیست.")
+        
+        # Freeze the balance
+        WalletService.freeze_balance(profile, currency_type, amount)
+        
+        # Create withdraw request
+        withdraw_request = WithdrawRequest.objects.create(
+            profile=profile,
+            bank_account=bank_account,
+            currency_type=currency_type,
+            amount=amount
+        )
+        
+        # Create related transaction
+        transaction_obj = TransactionService.create_transaction(
+            profile=profile,
+            transaction_type=Transaction.TransactionType.WITHDRAW,
+            currency_type=currency_type,
+            amount=amount,
+            related_bank_account=bank_account
+        )
+        
+        # Link transaction to withdraw request
+        withdraw_request.related_transaction = transaction_obj
+        withdraw_request.save()
+        
+        # TODO: Send notification to admin
+        
+        return withdraw_request
+    
+    @staticmethod
+    @transaction.atomic
+    def approve_withdraw(withdraw_request_id: int, admin_user) -> WithdrawRequest:
+        """
+        Approve a withdrawal request.
+        
+        Args:
+            withdraw_request_id: ID of the withdraw request.
+            admin_user: Admin user approving the withdrawal.
+            
+        Returns:
+            Updated WithdrawRequest instance.
+        """
+        withdraw_request = WithdrawRequest.objects.get(id=withdraw_request_id)
+        
+        if not withdraw_request.can_be_approved():
+            raise ValidationError("درخواست قابل تایید نیست.")
+        
+        # Complete the transaction (this will deduct from frozen balance)
+        TransactionService.complete_transaction(
+            withdraw_request.related_transaction.id,
+            admin_user
+        )
+        
+        # Update withdraw request
+        withdraw_request.status = WithdrawRequest.WithdrawStatus.COMPLETED
+        withdraw_request.processed_at = timezone.now()
+        withdraw_request.completed_at = timezone.now()
+        withdraw_request.save()
+        
+        # TODO: Send notification to user
+        
+        return withdraw_request
+    
+    @staticmethod
+    @transaction.atomic
+    def reject_withdraw(withdraw_request_id: int, reason: str, admin_user) -> WithdrawRequest:
+        """
+        Reject a withdrawal request.
+        
+        Args:
+            withdraw_request_id: ID of the withdraw request.
+            reason: Reason for rejection.
+            admin_user: Admin user rejecting the withdrawal.
+            
+        Returns:
+            Updated WithdrawRequest instance.
+        """
+        withdraw_request = WithdrawRequest.objects.get(id=withdraw_request_id)
+        
+        if not withdraw_request.can_be_rejected():
+            raise ValidationError("درخواست قابل رد نیست.")
+        
+        # Unfreeze the balance
+        WalletService.unfreeze_balance(
+            withdraw_request.profile,
+            withdraw_request.currency_type,
+            withdraw_request.amount
+        )
+        
+        # Cancel the transaction
+        TransactionService.cancel_transaction(
+            withdraw_request.related_transaction.id,
+            reason,
+            admin_user
+        )
+        
+        # Update withdraw request
+        withdraw_request.status = WithdrawRequest.WithdrawStatus.REJECTED
+        withdraw_request.processed_at = timezone.now()
+        withdraw_request.admin_note = reason
+        withdraw_request.save()
+        
+        # TODO: Send notification to user
+        
+        return withdraw_request

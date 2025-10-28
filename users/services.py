@@ -4,7 +4,7 @@ Business logic services for users app
 from typing import Optional, Tuple
 from django.contrib.auth.models import User
 from django.db import transaction
-from .models import Profile
+from .models import Profile, BankAccount
 
 
 def get_or_create_profile_by_telegram(
@@ -123,3 +123,136 @@ def update_user_balance(
     profile.save(update_fields=['rial_balance', 'gold_balance_grams'])
     
     return profile
+
+
+class BankAccountService:
+    """Service class for bank account operations."""
+    
+    @staticmethod
+    def add_bank_account(
+        profile: Profile,
+        account_holder_name: str,
+        bank_name: str,
+        account_number: str,
+        account_type: str
+    ) -> BankAccount:
+        """
+        Add a new bank account for a user.
+        
+        Args:
+            profile: User profile.
+            account_holder_name: Name of account holder.
+            bank_name: Name of the bank.
+            account_number: Account number (card or IBAN).
+            account_type: Type of account ('CARD' or 'IBAN').
+            
+        Returns:
+            Created BankAccount instance.
+            
+        Raises:
+            ValidationError: If validation fails.
+        """
+        # Check if account already exists
+        if BankAccount.objects.filter(
+            profile=profile,
+            account_number=account_number
+        ).exists():
+            raise ValidationError("این حساب بانکی قبلاً ثبت شده است.")
+        
+        # Validate account holder name matches user name
+        user = profile.user
+        user_full_name = f"{user.first_name} {user.last_name}".strip()
+        if user_full_name and account_holder_name.strip() != user_full_name:
+            raise ValidationError(
+                f"نام صاحب حساب باید با نام کاربر ({user_full_name}) مطابقت داشته باشد."
+            )
+        
+        # Create bank account
+        bank_account = BankAccount.objects.create(
+            profile=profile,
+            account_holder_name=account_holder_name,
+            bank_name=bank_name,
+            account_number=account_number,
+            account_type=account_type,
+            is_verified=False,
+            is_active=True
+        )
+        
+        return bank_account
+    
+    @staticmethod
+    def get_user_bank_accounts(profile: Profile, only_verified: bool = False) -> list:
+        """
+        Get user's bank accounts.
+        
+        Args:
+            profile: User profile.
+            only_verified: If True, return only verified accounts.
+            
+        Returns:
+            List of BankAccount instances.
+        """
+        queryset = profile.bank_accounts.filter(is_active=True)
+        
+        if only_verified:
+            queryset = queryset.filter(is_verified=True)
+        
+        return list(queryset.order_by('-created_at'))
+    
+    @staticmethod
+    def verify_bank_account(bank_account_id: int, admin_user) -> BankAccount:
+        """
+        Verify a bank account by admin.
+        
+        Args:
+            bank_account_id: ID of the bank account.
+            admin_user: Admin user performing the verification.
+            
+        Returns:
+            Updated BankAccount instance.
+            
+        Raises:
+            BankAccount.DoesNotExist: If account not found.
+        """
+        bank_account = BankAccount.objects.get(id=bank_account_id)
+        bank_account.is_verified = True
+        bank_account.save()
+        
+        # TODO: Send notification to user
+        
+        return bank_account
+    
+    @staticmethod
+    def remove_bank_account(bank_account_id: int, profile: Profile) -> bool:
+        """
+        Remove a bank account (soft delete).
+        
+        Args:
+            bank_account_id: ID of the bank account.
+            profile: User profile.
+            
+        Returns:
+            True if removed successfully.
+            
+        Raises:
+            BankAccount.DoesNotExist: If account not found.
+            ValidationError: If account has pending transactions.
+        """
+        bank_account = BankAccount.objects.get(
+            id=bank_account_id,
+            profile=profile
+        )
+        
+        # Check for pending transactions
+        if bank_account.transactions.filter(
+            status__in=['PENDING', 'COMPLETED']
+        ).exists():
+            raise ValidationError(
+                "این حساب بانکی دارای تراکنش‌های فعال است و نمی‌توان آن را حذف کرد."
+            )
+        
+        # Soft delete
+        bank_account.is_active = False
+        bank_account.save()
+        
+        return True
