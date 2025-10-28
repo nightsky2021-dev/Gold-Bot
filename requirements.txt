@@ -13,9 +13,14 @@ APScheduler>=3.10.0
 # ============================================
 # Database Drivers
 # ============================================
-# SQLite is built-in with Python
-# Uncomment below if using PostgreSQL:
+# SQLite is built-in with Python (default)
+# Uncomment below ONLY if using PostgreSQL:
 # psycopg2-binary>=2.9.9
+
+# ============================================
+# Image Processing (for receipt uploads)
+# ============================================
+Pillow>=10.0.0
 
 # ============================================
 # HTTP & API Clients

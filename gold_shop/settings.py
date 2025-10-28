@@ -15,11 +15,13 @@ env = environ.Env(
 )
 
 # Read .env file (tolerate malformed lines)
-try:
-    environ.Env.read_env(BASE_DIR / '.env')
-except Exception:
-    # Ignore invalid .env lines to avoid crashing management commands
-    pass
+env_file = BASE_DIR / '.env'
+if env_file.exists():
+    try:
+        environ.Env.read_env(env_file)
+    except Exception:
+        # Ignore invalid .env lines to avoid crashing management commands
+        pass
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-change-this-in-production')

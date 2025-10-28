@@ -33,7 +33,7 @@
 ### 🔧 ویژگی‌های تکنیکال
 - 🏗️ معماری Clean Architecture با لایه‌های جدا
 - 🔐 امنیت بالا با احراز هویت چند مرحله‌ای
-- 💾 پشتیبانی از PostgreSQL
+- 💾 استفاده از SQLite (پیش‌فرض) با امکان تغییر به PostgreSQL
 - ⚡ عملیات Atomic برای تراکنش‌های مالی
 - 📝 Type Hinting کامل
 - 🧪 قابلیت تست‌پذیری بالا
@@ -82,7 +82,8 @@ gold_shop/
 ## 📦 پیش‌نیازها
 
 - Python 3.9 یا بالاتر
-- PostgreSQL 12 یا بالاتر (اختیاری - SQLite برای development)
+- SQLite (پیش‌فرض - نیازی به نصب نیست)
+- PostgreSQL 12 یا بالاتر (اختیاری)
 - یک Bot Token از [@BotFather](https://t.me/BotFather) در تلگرام
 
 ## 🚀 نصب و راه‌اندازی

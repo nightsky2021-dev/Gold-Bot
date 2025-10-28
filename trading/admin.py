@@ -1,17 +1,16 @@
 """
-Django admin configuration for trading app.
+Admin configuration for trading app.
 
-Provides admin interfaces for Product and Order models.
+This module contains Django admin configurations for Product and Order models.
 """
 
 from django.contrib import admin
 from django.utils.html import format_html
-from django.db import transaction
-from django.utils import timezone
-from typing import Optional
-from decimal import Decimal
+from django.urls import reverse
+from django.utils.safestring import mark_safe
 
-from .models import Product, Order, Transaction, WithdrawRequest
+from .models import Product, Order
+from .services import OrderService
 
 
 @admin.register(Product)
@@ -19,75 +18,77 @@ class ProductAdmin(admin.ModelAdmin):
     """
     Admin interface for Product model.
     
-    Allows easy management of gold products and their prices.
+    Provides comprehensive product management with filtering and search capabilities.
     """
     
     list_display = (
         'name',
-        'buy_price',
-        'sell_price',
-        'price_spread_display',
+        'product_code',
+        'formatted_buy_price',
+        'formatted_sell_price',
         'is_active',
-        'updated_at'
+        'updated_at',
     )
     
-    list_editable = ('buy_price', 'sell_price', 'is_active')
+    list_filter = (
+        'is_active',
+        'product_code',
+        'updated_at',
+    )
     
-    list_filter = ('is_active', 'updated_at')
+    search_fields = (
+        'name',
+        'product_code',
+    )
     
-    search_fields = ('name', 'slug')
-    
-    readonly_fields = ('slug', 'updated_at', 'created_at')
-    
-    prepopulated_fields = {'slug': ('name',)}
+    readonly_fields = (
+        'slug',
+        'updated_at',
+    )
     
     fieldsets = (
         ('اطلاعات محصول', {
-            'fields': ('name', 'slug')
+            'fields': ('name', 'product_code', 'slug')
         }),
         ('قیمت‌گذاری', {
-            'fields': ('buy_price', 'sell_price'),
-            'description': 'قیمت‌ها به ریال برای هر گرم است.'
+            'fields': ('buy_price', 'sell_price')
         }),
         ('وضعیت', {
-            'fields': ('is_active',)
-        }),
-        ('تاریخچه', {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',)
+            'fields': ('is_active', 'updated_at')
         }),
     )
     
-    def formatted_buy_price(self, obj: Product) -> str:
-        """Format buy price with thousand separators."""
+    ordering = ('name',)
+    
+    actions = ['activate_products', 'deactivate_products']
+    
+    def formatted_buy_price(self, obj):
+        """Format buy price with currency."""
         return f"{obj.buy_price:,.0f} ریال"
-    formatted_buy_price.short_description = 'قیمت خرید (ما از مشتری)'
-    formatted_buy_price.admin_order_field = 'buy_price'
+    formatted_buy_price.short_description = 'قیمت خرید'
     
-    def formatted_sell_price(self, obj: Product) -> str:
-        """Format sell price with thousand separators."""
+    def formatted_sell_price(self, obj):
+        """Format sell price with currency."""
         return f"{obj.sell_price:,.0f} ریال"
-    formatted_sell_price.short_description = 'قیمت فروش (ما به مشتری)'
-    formatted_sell_price.admin_order_field = 'sell_price'
+    formatted_sell_price.short_description = 'قیمت فروش'
     
-    def price_spread_display(self, obj: Product) -> str:
-        """Display price spread."""
-        spread = obj.get_price_spread()
-        percentage = obj.get_price_spread_percentage()
-        return f"{spread:,.0f} ریال ({percentage:.2f}%)"
-    price_spread_display.short_description = 'اختلاف قیمت'
-    
-    def active_status(self, obj: Product) -> str:
-        """Display active status with color."""
-        if obj.is_active:
-            return format_html(
-                '<span style="color: green; font-weight: bold;">✓ فعال</span>'
-            )
-        return format_html(
-            '<span style="color: gray;">✗ غیرفعال</span>'
+    def activate_products(self, request, queryset):
+        """Activate selected products."""
+        updated = queryset.update(is_active=True)
+        self.message_user(
+            request,
+            f'{updated} محصول فعال شد.'
         )
-    active_status.short_description = 'وضعیت'
-    active_status.admin_order_field = 'is_active'
+    activate_products.short_description = 'فعال کردن محصولات انتخاب شده'
+    
+    def deactivate_products(self, request, queryset):
+        """Deactivate selected products."""
+        updated = queryset.update(is_active=False)
+        self.message_user(
+            request,
+            f'{updated} محصول غیرفعال شد.'
+        )
+    deactivate_products.short_description = 'غیرفعال کردن محصولات انتخاب شده'
 
 
 @admin.register(Order)
@@ -101,20 +102,20 @@ class OrderAdmin(admin.ModelAdmin):
     list_display = (
         'id',
         'get_user_display',
-        'product',
+        'get_product_display',
         'order_type_display',
-        'status_display',
         'formatted_quantity',
+        'formatted_price',
         'formatted_total',
-        'created_at'
+        'status_display',
+        'created_at',
     )
     
     list_filter = (
-        'status',
         'order_type',
-        'product',
+        'status',
         'created_at',
-        'updated_at'
+        'product',
     )
     
     search_fields = (
@@ -122,151 +123,100 @@ class OrderAdmin(admin.ModelAdmin):
         'profile__user__first_name',
         'profile__user__last_name',
         'profile__phone_number',
-        'profile__telegram_id'
+        'product__name',
     )
-    
-    autocomplete_fields = ('profile', 'product')
     
     readonly_fields = (
         'created_at',
         'updated_at',
-        'completed_at',
-        'total_amount'
     )
     
     fieldsets = (
         ('اطلاعات سفارش', {
-            'fields': ('profile', 'product', 'order_type')
+            'fields': ('profile', 'product', 'order_type', 'status')
         }),
         ('جزئیات معامله', {
-            'fields': (
-                'quantity_grams',
-                'price_per_gram',
-                'total_amount'
-            )
+            'fields': ('quantity_grams', 'price_per_gram', 'total_amount')
         }),
-        ('وضعیت', {
-            'fields': ('status', 'notes')
+        ('یادداشت‌ها', {
+            'fields': ('notes',),
+            'classes': ('collapse',)
         }),
-        ('تاریخچه', {
-            'fields': ('created_at', 'updated_at', 'completed_at'),
+        ('زمان‌بندی', {
+            'fields': ('created_at', 'updated_at'),
             'classes': ('collapse',)
         }),
     )
     
+    ordering = ('-created_at',)
+    
     actions = ['complete_orders', 'cancel_orders']
     
-    date_hierarchy = 'created_at'
-    
-    def get_user_display(self, obj: Order) -> str:
+    def get_user_display(self, obj):
         """Display user information."""
-        return obj.profile.get_display_name()
+        return f"{obj.profile.user.get_full_name()} ({obj.profile.phone_number})"
     get_user_display.short_description = 'کاربر'
-    get_user_display.admin_order_field = 'profile__user__first_name'
     
-    def order_type_display(self, obj: Order) -> str:
-        """Display order type with color."""
-        if obj.order_type == Order.OrderType.BUY:
-            return format_html(
-                '<span style="color: green;">📈 {}</span>',
-                obj.get_order_type_display()
-            )
-        return format_html(
-            '<span style="color: blue;">📉 {}</span>',
-            obj.get_order_type_display()
-        )
-    order_type_display.short_description = 'نوع سفارش'
-    order_type_display.admin_order_field = 'order_type'
+    def get_product_display(self, obj):
+        """Display product information."""
+        return obj.product.name
+    get_product_display.short_description = 'محصول'
     
-    def status_display(self, obj: Order) -> str:
-        """Display status with color."""
-        colors = {
-            Order.OrderStatus.PENDING: 'orange',
-            Order.OrderStatus.COMPLETED: 'green',
-            Order.OrderStatus.CANCELLED: 'red',
+    def order_type_display(self, obj):
+        """Display order type with icon."""
+        icons = {
+            'BUY': '💰',
+            'SELL': '🛒',
         }
-        color = colors.get(obj.status, 'black')
-        return format_html(
-            '<span style="color: {}; font-weight: bold;">{}</span>',
-            color,
-            obj.get_status_display()
-        )
-    status_display.short_description = 'وضعیت'
-    status_display.admin_order_field = 'status'
+        return f"{icons.get(obj.order_type, '❓')} {obj.get_order_type_display()}"
+    order_type_display.short_description = 'نوع سفارش'
     
-    def formatted_quantity(self, obj: Order) -> str:
-        """Format quantity."""
+    def formatted_quantity(self, obj):
+        """Format quantity with unit."""
         return f"{obj.quantity_grams} گرم"
     formatted_quantity.short_description = 'مقدار'
-    formatted_quantity.admin_order_field = 'quantity_grams'
     
-    def formatted_total(self, obj: Order) -> str:
+    def formatted_price(self, obj):
+        """Format price per gram."""
+        return f"{obj.price_per_gram:,.0f} ریال"
+    formatted_price.short_description = 'قیمت هر گرم'
+    
+    def formatted_total(self, obj):
         """Format total amount."""
         return f"{obj.total_amount:,.0f} ریال"
-    formatted_total.short_description = 'مبلغ کل'
-    formatted_total.admin_order_field = 'total_amount'
+    formatted_total.short_description = 'مجموع'
     
-    @transaction.atomic
+    def status_display(self, obj):
+        """Display status with color coding."""
+        colors = {
+            'PENDING': '🟡',
+            'COMPLETED': '🟢',
+            'CANCELLED': '🔴',
+        }
+        return f"{colors.get(obj.status, '❓')} {obj.get_status_display()}"
+    status_display.short_description = 'وضعیت'
+    
     def complete_orders(self, request, queryset):
-        """
-        Bulk action to complete selected pending orders.
-        
-        Updates user balances atomically.
-        """
-        pending_orders = queryset.filter(status=Order.OrderStatus.PENDING)
+        """Complete selected orders."""
         completed_count = 0
         
-        for order in pending_orders:
+        for order in queryset.filter(status='PENDING'):
             try:
-                profile = order.profile
-                
-                if order.order_type == Order.OrderType.BUY:
-                    # User buys gold from us
-                    # Deduct Rial, add Gold
-                    if profile.has_sufficient_rial_balance(order.total_amount):
-                        profile.rial_balance -= order.total_amount
-                        profile.gold_balance_grams += order.quantity_grams
-                        profile.save()
-                        
-                        order.status = Order.OrderStatus.COMPLETED
-                        order.completed_at = timezone.now()
-                        order.save()
-                        completed_count += 1
-                    else:
-                        order.notes += f"\n[{timezone.now()}] موجودی ریالی ناکافی."
-                        order.save()
-                        
-                elif order.order_type == Order.OrderType.SELL:
-                    # User sells gold to us
-                    # Deduct Gold, add Rial
-                    if profile.has_sufficient_gold_balance(order.quantity_grams):
-                        profile.gold_balance_grams -= order.quantity_grams
-                        profile.rial_balance += order.total_amount
-                        profile.save()
-                        
-                        order.status = Order.OrderStatus.COMPLETED
-                        order.completed_at = timezone.now()
-                        order.save()
-                        completed_count += 1
-                    else:
-                        order.notes += f"\n[{timezone.now()}] موجودی طلا ناکافی."
-                        order.save()
-                        
+                OrderService.complete_order(order.id)
+                completed_count += 1
             except Exception as e:
-                order.notes += f"\n[{timezone.now()}] خطا: {str(e)}"
+                order.notes = f"خطا در تکمیل: {str(e)}"
                 order.save()
         
         self.message_user(
             request,
-            f'{completed_count} سفارش با موفقیت تکمیل شد.'
+            f'{completed_count} سفارش تکمیل شد.'
         )
     complete_orders.short_description = 'تکمیل سفارشات انتخاب شده'
     
     def cancel_orders(self, request, queryset):
-        """Bulk action to cancel selected pending orders."""
-        pending_orders = queryset.filter(status=Order.OrderStatus.PENDING)
-        updated = pending_orders.update(status=Order.OrderStatus.CANCELLED)
-        
+        """Cancel selected orders."""
+        updated = queryset.filter(status='PENDING').update(status='CANCELLED')
         self.message_user(
             request,
             f'{updated} سفارش لغو شد.'

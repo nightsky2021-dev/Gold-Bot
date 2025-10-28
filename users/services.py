@@ -1,188 +1,19 @@
 """
 Business logic services for users app
 """
-from typing import Optional, Tuple, List, cast, TYPE_CHECKING
-from decimal import Decimal
+from typing import Optional, Tuple
 from django.contrib.auth.models import User
-from django.db import transaction
 from django.core.exceptions import ValidationError
+from django.db import transaction
+from asgiref.sync import sync_to_async
 from .models import Profile, BankAccount
-import logging
-
-if TYPE_CHECKING:
-    from django.db.models import QuerySet
-
-logger = logging.getLogger('users')
-
-
-class UserService:
-    """Service class for managing user profiles and operations."""
-    
-    @staticmethod
-    def get_or_create_profile(
-        telegram_id: str,
-        phone_number: str,
-        first_name: str = "",
-        last_name: str = "",
-        telegram_username: Optional[str] = None
-    ) -> Tuple[Profile, bool]:
-        """
-        Get or create user profile by Telegram ID.
-        
-        Args:
-            telegram_id: Telegram numeric ID
-            phone_number: User's phone number
-            first_name: User's first name
-            last_name: User's last name
-            telegram_username: Telegram username (optional)
-            
-        Returns:
-            Tuple[Profile, bool]: Profile instance and whether it was created
-        """
-        return get_or_create_profile_by_telegram(
-            telegram_id=telegram_id,
-            phone_number=phone_number,
-            first_name=first_name,
-            last_name=last_name,
-            telegram_username=telegram_username
-        )
-    
-    @staticmethod
-    def get_profile(telegram_id: str) -> Optional[Profile]:
-        """
-        Get profile by Telegram ID.
-        
-        Args:
-            telegram_id: Telegram numeric ID
-            
-        Returns:
-            Profile instance or None
-        """
-        return get_profile_by_telegram_id(telegram_id)
-    
-    @staticmethod
-    def is_approved(telegram_id: str) -> bool:
-        """
-        Check if user is approved by admin.
-        
-        Args:
-            telegram_id: Telegram numeric ID
-            
-        Returns:
-            bool: Whether user is approved
-        """
-        return is_user_approved(telegram_id)
-    
-    @staticmethod
-    def update_balance(
-        profile: Profile,
-        rial_change: float = 0,
-        gold_change: float = 0
-    ) -> Profile:
-        """
-        Update user balance (should be used within a transaction).
-        
-        Args:
-            profile: User profile
-            rial_change: Rial balance change (positive or negative)
-            gold_change: Gold balance change (positive or negative)
-            
-        Returns:
-            Updated Profile instance
-            
-        Raises:
-            ValueError: If balance becomes negative
-        """
-        return update_user_balance(
-            profile=profile,
-            rial_change=rial_change,
-            gold_change=gold_change
-        )
-    
-    @staticmethod
-    async def acheck_user_approval_status(telegram_id: str) -> Tuple[bool, Optional[Profile]]:
-        """
-        Async wrapper to check user approval status.
-        
-        Args:
-            telegram_id: Telegram numeric ID
-            
-        Returns:
-            Tuple[bool, Optional[Profile]]: (is_approved, profile)
-        """
-        from asgiref.sync import sync_to_async
-        
-        profile = await sync_to_async(get_profile_by_telegram_id)(telegram_id)
-        is_approved = bool(profile and profile.is_approved)
-        
-        return is_approved, profile
-    
-    @staticmethod
-    @transaction.atomic
-    def create_user_from_telegram(
-        telegram_id: str,
-        phone_number: str,
-        first_name: str = "",
-        last_name: str = "",
-        telegram_username: Optional[str] = None,
-        national_code: Optional[str] = None
-    ) -> Tuple[User, Profile, bool]:
-        """
-        Create a new user and profile from Telegram registration.
-        
-        Args:
-            telegram_id: Telegram numeric ID
-            phone_number: User's phone number
-            first_name: User's first name
-            last_name: User's last name
-            telegram_username: Telegram username (optional)
-            national_code: National code (optional)
-            
-        Returns:
-            Tuple[User, Profile, bool]: (user, profile, created)
-        """
-        try:
-            # Check if profile already exists
-            profile = Profile.objects.select_related('user').get(telegram_id=telegram_id)
-            created = False
-            
-            # Update if telegram_username changed
-            if telegram_username and profile.telegram_username != telegram_username:
-                profile.telegram_username = telegram_username
-                profile.save(update_fields=['telegram_username'])
-            
-            return profile.user, profile, created
-            
-        except Profile.DoesNotExist:
-            # Create new user and profile
-            username = f"tg_{telegram_id}"
-            
-            user = User.objects.create_user(
-                username=username,
-                first_name=first_name,
-                last_name=last_name
-            )
-            
-            profile = Profile.objects.create(
-                user=user,
-                telegram_id=telegram_id,
-                telegram_username=telegram_username,
-                phone_number=phone_number
-            )
-            
-            logger.info(
-                f"New user created: {username} (Telegram ID: {telegram_id}, "
-                f"Phone: {phone_number})"
-            )
-            
-            return user, profile, True
 
 
 def get_or_create_profile_by_telegram(
-        telegram_id: str,
-        phone_number: str,
-        first_name: str = "",
-        last_name: str = "",
+    telegram_id: str,
+    phone_number: str,
+    first_name: str = "",
+    last_name: str = "",
     telegram_username: Optional[str] = None
 ) -> Tuple[Profile, bool]:
     """
@@ -194,8 +25,8 @@ def get_or_create_profile_by_telegram(
         first_name: نام کاربر
         last_name: نام خانوادگی کاربر
         telegram_username: نام کاربری تلگرام (اختیاری)
-        
-        Returns:
+    
+    Returns:
         Tuple[Profile, bool]: پروفایل و اینکه آیا جدید ایجاد شده یا خیر
     """
     try:
@@ -258,7 +89,7 @@ def is_user_approved(telegram_id: str) -> bool:
         bool: آیا کاربر تایید شده است یا خیر
     """
     profile = get_profile_by_telegram_id(telegram_id)
-    return bool(profile.is_approved) if profile else False
+    return profile.is_approved if profile else False
 
 
 def update_user_balance(
@@ -280,8 +111,8 @@ def update_user_balance(
     Raises:
         ValueError: اگر موجودی منفی شود
     """
-    new_rial_balance = float(profile.rial_balance) + rial_change
-    new_gold_balance = float(profile.gold_balance_grams) + gold_change
+    new_rial_balance = profile.rial_balance + rial_change
+    new_gold_balance = profile.gold_balance_grams + gold_change
     
     if new_rial_balance < 0:
         raise ValueError("موجودی ریالی کافی نیست.")
@@ -297,10 +128,9 @@ def update_user_balance(
 
 
 class BankAccountService:
-    """Service class for managing user bank accounts."""
+    """Service class for bank account operations."""
     
     @staticmethod
-    @transaction.atomic
     def add_bank_account(
         profile: Profile,
         account_holder_name: str,
@@ -309,214 +139,178 @@ class BankAccountService:
         account_type: str
     ) -> BankAccount:
         """
-        Add a new bank account for user.
+        Add a new bank account for a user.
         
         Args:
-            profile: User profile
-            account_holder_name: Name of account holder
-            bank_name: Bank name
-            account_number: Account/card number
-            account_type: Account type (CARD or IBAN)
+            profile: User profile.
+            account_holder_name: Name of account holder.
+            bank_name: Name of the bank.
+            account_number: Account number (card or IBAN).
+            account_type: Type of account ('CARD' or 'IBAN').
             
         Returns:
-            BankAccount instance
+            Created BankAccount instance.
             
         Raises:
-            ValidationError: If validation fails
+            ValidationError: If validation fails.
         """
-        # Check for duplicate account number
+        # Check if account already exists
         if BankAccount.objects.filter(
             profile=profile,
             account_number=account_number
         ).exists():
-            raise ValidationError("این شماره حساب قبلاً ثبت شده است.")
+            raise ValidationError("این حساب بانکی قبلاً ثبت شده است.")
         
-        # Create bank account (validation happens in model's clean method)
-        bank_account = BankAccount(
+        # Validate account holder name matches user name
+        user = profile.user
+        user_full_name = f"{user.first_name} {user.last_name}".strip()
+        if user_full_name and account_holder_name.strip() != user_full_name:
+            raise ValidationError(
+                f"نام صاحب حساب باید با نام کاربر ({user_full_name}) مطابقت داشته باشد."
+            )
+        
+        # Create bank account
+        bank_account = BankAccount.objects.create(
             profile=profile,
-            account_holder_name=account_holder_name.strip(),
+            account_holder_name=account_holder_name,
             bank_name=bank_name,
-            account_number=account_number.strip(),
+            account_number=account_number,
             account_type=account_type,
             is_verified=False,
             is_active=True
         )
         
-        # This will trigger validation
-        bank_account.save()
-        
-        logger.info(
-            f"Bank account added for {profile.get_display_name()}: "
-            f"{bank_name} - {bank_account.get_masked_account_number()}"
-        )
-        
         return bank_account
     
     @staticmethod
-    def get_user_bank_accounts(
-        profile: Profile,
-        only_verified: bool = False,
-        only_active: bool = False
-    ) -> List[BankAccount]:
+    def get_user_bank_accounts(profile: Profile, only_verified: bool = False) -> list:
         """
         Get user's bank accounts.
         
         Args:
-            profile: User profile
-            only_verified: Filter only verified accounts
-            only_active: Filter only active accounts
+            profile: User profile.
+            only_verified: If True, return only verified accounts.
             
         Returns:
-            List of BankAccount instances
+            List of BankAccount instances.
         """
-        queryset = cast('QuerySet[BankAccount]', profile.bank_accounts).all()
+        queryset = profile.bank_accounts.filter(is_active=True)
         
         if only_verified:
             queryset = queryset.filter(is_verified=True)
         
-        if only_active:
-            queryset = queryset.filter(is_active=True)
-        
-        return list(queryset)
+        return list(queryset.order_by('-created_at'))
     
     @staticmethod
-    @transaction.atomic
-    def verify_bank_account(
-        bank_account_id: int,
-        admin_user: Optional[User] = None
-    ) -> BankAccount:
+    def verify_bank_account(bank_account_id: int, admin_user) -> BankAccount:
         """
-        Verify a bank account (admin action).
+        Verify a bank account by admin.
         
         Args:
-            bank_account_id: Bank account ID
-            admin_user: Admin user performing verification
+            bank_account_id: ID of the bank account.
+            admin_user: Admin user performing the verification.
             
         Returns:
-            Verified BankAccount instance
+            Updated BankAccount instance.
             
         Raises:
-            BankAccount.DoesNotExist: If account not found
+            BankAccount.DoesNotExist: If account not found.
         """
-        bank_account = BankAccount.objects.select_related('profile', 'profile__user').get(
-            id=bank_account_id
-        )
-        
+        bank_account = BankAccount.objects.get(id=bank_account_id)
         bank_account.is_verified = True
-        bank_account.save(update_fields=['is_verified', 'updated_at'])
+        bank_account.save()
         
-        logger.info(
-            f"Bank account {cast(int, bank_account.id)} verified for "
-            f"{bank_account.profile.get_display_name()} "
-            f"by admin {admin_user.username if admin_user else 'system'}"
-        )
-        
-        # TODO: Send notification to user via Telegram
+        # TODO: Send notification to user
         
         return bank_account
     
     @staticmethod
-    @transaction.atomic
-    def reject_bank_account(
-        bank_account_id: int,
-        reason: str,
-        admin_user: Optional[User] = None
-    ) -> BankAccount:
+    def remove_bank_account(bank_account_id: int, profile: Profile) -> bool:
         """
-        Reject and deactivate a bank account (admin action).
+        Remove a bank account (soft delete).
         
         Args:
-            bank_account_id: Bank account ID
-            reason: Reason for rejection
-            admin_user: Admin user performing rejection
-        
+            bank_account_id: ID of the bank account.
+            profile: User profile.
+            
         Returns:
-            Rejected BankAccount instance
+            True if removed successfully.
             
         Raises:
-            BankAccount.DoesNotExist: If account not found
-        """
-        bank_account = BankAccount.objects.select_related('profile', 'profile__user').get(
-            id=bank_account_id
-        )
-        
-        bank_account.is_verified = False
-        bank_account.is_active = False
-        bank_account.save(update_fields=['is_verified', 'is_active', 'updated_at'])
-        
-        logger.info(
-            f"Bank account {cast(int, bank_account.id)} rejected for "
-            f"{bank_account.profile.get_display_name()} "
-            f"by admin {admin_user.username if admin_user else 'system'}. "
-            f"Reason: {reason}"
-        )
-        
-        # TODO: Send notification to user via Telegram with reason
-        
-        return bank_account
-
-    @staticmethod
-    @transaction.atomic
-    def remove_bank_account(
-        bank_account_id: int,
-        profile: Profile
-    ) -> None:
-        """
-        Remove a bank account (user action).
-        
-        Args:
-            bank_account_id: Bank account ID
-            profile: User profile (for authorization)
-            
-        Raises:
-            ValidationError: If account has pending transactions
-            BankAccount.DoesNotExist: If account not found or not owned by user
+            BankAccount.DoesNotExist: If account not found.
+            ValidationError: If account has pending transactions.
         """
         bank_account = BankAccount.objects.get(
             id=bank_account_id,
             profile=profile
         )
         
-        # TODO: Check for pending transactions when Transaction model is implemented
-        # if bank_account.transactions.filter(status='PENDING').exists():
-        #     raise ValidationError(
-        #         "این حساب دارای تراکنش در حال انجام است و نمی‌توان آن را حذف کرد."
-        #     )
+        # Check for pending transactions
+        if bank_account.transactions.filter(
+            status__in=['PENDING', 'COMPLETED']
+        ).exists():
+            raise ValidationError(
+                "این حساب بانکی دارای تراکنش‌های فعال است و نمی‌توان آن را حذف کرد."
+            )
         
-        # TODO: Check for pending withdraw requests when WithdrawRequest model is implemented
-        # if bank_account.withdraw_requests.filter(status='PENDING').exists():
-        #     raise ValidationError(
-        #         "این حساب دارای درخواست برداشت در حال انجام است و نمی‌توان آن را حذف کرد."
-        #     )
+        # Soft delete
+        bank_account.is_active = False
+        bank_account.save()
         
-        logger.info(
-            f"Bank account {cast(int, bank_account.id)} removed by "
-            f"{profile.get_display_name()}"
-        )
-        
-        bank_account.delete()
+        return True
+
+
+class UserService:
+    """Service class for user operations."""
     
     @staticmethod
-    def get_bank_account_by_id(
-        bank_account_id: int,
-        profile: Optional[Profile] = None
-    ) -> Optional[BankAccount]:
+    async def acheck_user_approval_status(telegram_id: str) -> Tuple[bool, Optional[Profile]]:
         """
-        Get a bank account by ID.
+        Async version of checking user approval status
         
         Args:
-            bank_account_id: Bank account ID
-            profile: Optional profile to filter by (for authorization)
-            
+            telegram_id: شناسه عددی تلگرام
+        
         Returns:
-            BankAccount instance or None
+            Tuple[bool, Optional[Profile]]: (is_approved, profile)
         """
-        try:
-            queryset = BankAccount.objects.select_related('profile', 'profile__user')
-            
-            if profile:
-                return queryset.get(id=bank_account_id, profile=profile)
-            else:
-                return queryset.get(id=bank_account_id)
-        except BankAccount.DoesNotExist:
-            return None
+        profile = await sync_to_async(get_profile_by_telegram_id)(telegram_id)
+        if profile:
+            return profile.is_approved, profile
+        return False, None
+    
+    @staticmethod
+    def create_user_from_telegram(
+        telegram_id: str,
+        phone_number: str,
+        telegram_username: Optional[str] = None,
+        first_name: str = "",
+        last_name: str = "",
+        national_code: str = ""
+    ) -> Tuple[User, Profile, bool]:
+        """
+        Create user and profile from telegram data
+        
+        Args:
+            telegram_id: شناسه عددی تلگرام
+            phone_number: شماره تماس کاربر
+            telegram_username: نام کاربری تلگرام (اختیاری)
+            first_name: نام کاربر
+            last_name: نام خانوادگی کاربر
+            national_code: کد ملی کاربر (currently not stored in model)
+        
+        Returns:
+            Tuple[User, Profile, bool]: (user, profile, created)
+        """
+        profile, created = get_or_create_profile_by_telegram(
+            telegram_id=telegram_id,
+            phone_number=phone_number,
+            first_name=first_name,
+            last_name=last_name,
+            telegram_username=telegram_username
+        )
+        
+        # Note: national_code field was removed from Profile model in migration 0004
+        # The parameter is kept for compatibility but not stored
+        
+        return profile.user, profile, created

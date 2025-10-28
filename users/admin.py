@@ -22,7 +22,8 @@ class ProfileInline(admin.StackedInline):
     verbose_name_plural = 'پروفایل‌ها'
     fields = (
         'telegram_id', 'telegram_username', 'phone_number',
-        'is_approved', 'rial_balance', 'gold_balance_grams'
+        'is_approved', 'rial_balance', 'gold_balance_grams',
+        'coin_balance', 'dollar_balance'
     )
     readonly_fields = ('telegram_id', 'telegram_username', 'phone_number')
 
@@ -51,8 +52,11 @@ class ProfileAdmin(admin.ModelAdmin):
         'phone_number',
         'telegram_username',
         'is_approved',
+        'approval_status',
         'formatted_rial_balance',
         'formatted_gold_balance',
+        'formatted_coin_balance',
+        'formatted_dollar_balance',
         'created_at'
     )
     
@@ -95,7 +99,11 @@ class ProfileAdmin(admin.ModelAdmin):
             'fields': ('is_approved',)
         }),
         ('موجودی‌ها', {
-            'fields': ('rial_balance', 'gold_balance_grams'),
+            'fields': ('rial_balance', 'gold_balance_grams', 'coin_balance', 'dollar_balance'),
+            'classes': ('wide',)
+        }),
+        ('موجودی‌های مسدود', {
+            'fields': ('frozen_rial_balance', 'frozen_gold_balance', 'frozen_coin_balance', 'frozen_dollar_balance'),
             'classes': ('wide',)
         }),
         ('آمار', {
@@ -141,6 +149,18 @@ class ProfileAdmin(admin.ModelAdmin):
     formatted_gold_balance.short_description = 'موجودی طلا'
     formatted_gold_balance.admin_order_field = 'gold_balance_grams'
     
+    def formatted_coin_balance(self, obj: Profile) -> str:
+        """Format coin balance."""
+        return f"{obj.coin_balance:,.4f} سکه"
+    formatted_coin_balance.short_description = 'موجودی سکه'
+    formatted_coin_balance.admin_order_field = 'coin_balance'
+    
+    def formatted_dollar_balance(self, obj: Profile) -> str:
+        """Format dollar balance."""
+        return f"${obj.dollar_balance:,.2f}"
+    formatted_dollar_balance.short_description = 'موجودی دلار'
+    formatted_dollar_balance.admin_order_field = 'dollar_balance'
+    
     def get_total_orders(self, obj: Profile) -> int:
         """Get total number of orders."""
         return obj.orders.count()
@@ -172,62 +192,58 @@ class ProfileAdmin(admin.ModelAdmin):
 
 @admin.register(BankAccount)
 class BankAccountAdmin(admin.ModelAdmin):
-    """Admin interface for BankAccount model."""
+    """
+    Admin interface for BankAccount model.
+    
+    Provides filtering, searching, and bulk actions for bank accounts.
+    """
     
     list_display = (
-        'id',
         'get_user_display',
+        'account_holder_name',
         'bank_name',
-        'get_masked_number',
+        'get_masked_account_number_display',
         'account_type',
+        'is_verified',
         'verification_status',
-        'active_status',
+        'is_active',
         'created_at'
     )
     
     list_filter = (
+        'bank_name',
+        'account_type',
         'is_verified',
         'is_active',
-        'account_type',
-        'bank_name',
         'created_at'
     )
     
     search_fields = (
         'profile__user__first_name',
         'profile__user__last_name',
-        'profile__phone_number',
+        'profile__user__username',
         'account_holder_name',
-        'account_number'
+        'account_number',
+        'bank_name'
     )
+    
+    list_editable = ('is_verified', 'is_active')
     
     readonly_fields = (
         'created_at',
         'updated_at',
-        'get_transaction_count',
-        'get_withdraw_request_count'
+        'get_masked_account_number_display'
     )
-    
-    autocomplete_fields = ('profile',)
     
     fieldsets = (
         ('اطلاعات کاربر', {
             'fields': ('profile',)
         }),
-        ('اطلاعات حساب', {
-            'fields': (
-                'account_holder_name',
-                'bank_name',
-                'account_number',
-                'account_type'
-            )
+        ('اطلاعات حساب بانکی', {
+            'fields': ('account_holder_name', 'bank_name', 'account_type', 'account_number')
         }),
-        ('وضعیت', {
+        ('وضعیت حساب', {
             'fields': ('is_verified', 'is_active')
-        }),
-        ('آمار', {
-            'fields': ('get_transaction_count', 'get_withdraw_request_count'),
-            'classes': ('collapse',)
         }),
         ('تاریخچه', {
             'fields': ('created_at', 'updated_at'),
@@ -235,19 +251,15 @@ class BankAccountAdmin(admin.ModelAdmin):
         }),
     )
     
-    actions = ['verify_accounts', 'deactivate_accounts']
-    
-    date_hierarchy = 'created_at'
+    actions = ['verify_accounts', 'unverify_accounts', 'activate_accounts', 'deactivate_accounts']
     
     def get_user_display(self, obj: BankAccount) -> str:
-        """Display user information."""
-        return obj.profile.get_display_name()
-    get_user_display.short_description = 'کاربر'
-    
-    def get_masked_number(self, obj: BankAccount) -> str:
-        """Display masked account number."""
-        return obj.get_masked_account_number()
-    get_masked_number.short_description = 'شماره حساب'
+        """Display user's full name or username."""
+        full_name = obj.profile.user.get_full_name()
+        if full_name:
+            return full_name
+        return obj.profile.user.username
+    get_user_display.short_description = 'نام کاربر'
     
     def verification_status(self, obj: BankAccount) -> str:
         """Display verification status with color."""
@@ -256,45 +268,47 @@ class BankAccountAdmin(admin.ModelAdmin):
                 '<span style="color: green; font-weight: bold;">✓ تأیید شده</span>'
             )
         return format_html(
-            '<span style="color: orange; font-weight: bold;">⏳ در انتظار تأیید</span>'
+            '<span style="color: red; font-weight: bold;">✗ تأیید نشده</span>'
         )
     verification_status.short_description = 'وضعیت تأیید'
     
-    def active_status(self, obj: BankAccount) -> str:
-        """Display active status with color."""
-        if obj.is_active:
-            return format_html(
-                '<span style="color: green;">✓ فعال</span>'
-            )
-        return format_html(
-            '<span style="color: gray;">✗ غیرفعال</span>'
-        )
-    active_status.short_description = 'وضعیت فعالیت'
-    
-    def get_transaction_count(self, obj: BankAccount) -> int:
-        """Get number of related transactions."""
-        return obj.transactions.count()
-    get_transaction_count.short_description = 'تعداد تراکنش‌ها'
-    
-    def get_withdraw_request_count(self, obj: BankAccount) -> int:
-        """Get number of related withdraw requests."""
-        return obj.withdraw_requests.count()
-    get_withdraw_request_count.short_description = 'تعداد درخواست‌های برداشت'
+    def get_masked_account_number_display(self, obj: BankAccount) -> str:
+        """Display masked account number."""
+        return obj.get_masked_account_number()
+    get_masked_account_number_display.short_description = 'شماره حساب (مخفی)'
     
     def verify_accounts(self, request, queryset):
-        """Bulk action to verify selected bank accounts."""
+        """Bulk action to verify selected accounts."""
         updated = queryset.update(is_verified=True)
         self.message_user(
             request,
-            f'{updated} حساب بانکی با موفقیت تأیید شد.'
+            f'{updated} حساب بانکی با موفقیت تأیید شدند.'
         )
     verify_accounts.short_description = 'تأیید حساب‌های انتخاب شده'
     
+    def unverify_accounts(self, request, queryset):
+        """Bulk action to unverify selected accounts."""
+        updated = queryset.update(is_verified=False)
+        self.message_user(
+            request,
+            f'تأیید {updated} حساب بانکی لغو شد.'
+        )
+    unverify_accounts.short_description = 'لغو تأیید حساب‌های انتخاب شده'
+    
+    def activate_accounts(self, request, queryset):
+        """Bulk action to activate selected accounts."""
+        updated = queryset.update(is_active=True)
+        self.message_user(
+            request,
+            f'{updated} حساب بانکی فعال شدند.'
+        )
+    activate_accounts.short_description = 'فعال کردن حساب‌های انتخاب شده'
+    
     def deactivate_accounts(self, request, queryset):
-        """Bulk action to deactivate selected bank accounts."""
+        """Bulk action to deactivate selected accounts."""
         updated = queryset.update(is_active=False)
         self.message_user(
             request,
-            f'{updated} حساب بانکی غیرفعال شد.'
+            f'{updated} حساب بانکی غیرفعال شدند.'
         )
     deactivate_accounts.short_description = 'غیرفعال کردن حساب‌های انتخاب شده'

@@ -22,41 +22,7 @@ class Migration(migrations.Migration):
             model_name='order',
             name='trading_ord_status_a4f93e_idx',
         ),
-        migrations.RenameIndex(
-            model_name='transaction',
-            new_name='trading_tra_profile_9314fb_idx',
-            old_name='trading_tra_profile_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='transaction',
-            new_name='trading_tra_transac_21b468_idx',
-            old_name='trading_tra_trans_type_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='transaction',
-            new_name='trading_tra_currenc_003d9f_idx',
-            old_name='trading_tra_currency_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='transaction',
-            new_name='trading_tra_status_6fc988_idx',
-            old_name='trading_tra_status_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='withdrawrequest',
-            new_name='trading_wit_profile_0451b6_idx',
-            old_name='trading_wit_profile_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='withdrawrequest',
-            new_name='trading_wit_status_db462a_idx',
-            old_name='trading_wit_status_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='withdrawrequest',
-            new_name='trading_wit_currenc_30da7c_idx',
-            old_name='trading_wit_currency_idx',
-        ),
+        # Skip index renames as they don't exist
         migrations.RemoveField(
             model_name='order',
             name='invoice_number',

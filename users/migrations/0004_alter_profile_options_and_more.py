@@ -16,16 +16,6 @@ class Migration(migrations.Migration):
             name='profile',
             options={'ordering': ['-created_at'], 'verbose_name': 'پروفایل', 'verbose_name_plural': 'پروفایل\u200cها'},
         ),
-        migrations.RenameIndex(
-            model_name='bankaccount',
-            new_name='users_banka_profile_937577_idx',
-            old_name='users_banka_profile_idx',
-        ),
-        migrations.RenameIndex(
-            model_name='bankaccount',
-            new_name='users_banka_is_veri_2bd423_idx',
-            old_name='users_banka_is_verified_idx',
-        ),
         migrations.RemoveField(
             model_name='profile',
             name='national_code',

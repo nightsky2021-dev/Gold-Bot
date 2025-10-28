@@ -33,10 +33,87 @@ from telegram.ext import (
 
 from users.services import UserService
 from users.models import Profile
+from users.wallet_services import WalletService
 from trading.services import TradingService
 from trading.models import Product, Order
-from bot.constants import *
-from bot.keyboards import *
+from bot.constants import (
+    # Conversation States
+    SELECTING_PRODUCT, SELECTING_METHOD, ENTERING_AMOUNT, CONFIRMING_BUY, CONFIRMING_SELL,
+    WALLET_MAIN, WALLET_DEPOSIT_STATE, WALLET_WITHDRAW_STATE, WALLET_HISTORY_STATE,
+    ACCOUNT_MAIN, ACCOUNT_ADD_BANK, ACCOUNT_EDIT_BANK, ACCOUNT_VERIFY_BANK,
+    DEPOSIT_SELECT_CURRENCY, DEPOSIT_ENTER_AMOUNT, DEPOSIT_SELECT_BANK, DEPOSIT_UPLOAD_RECEIPT, DEPOSIT_CONFIRM,
+    WITHDRAW_SELECT_CURRENCY, WITHDRAW_ENTER_AMOUNT, WITHDRAW_SELECT_BANK, WITHDRAW_CONFIRM,
+    SELECTING_ACTION, CONFIRMING_TRADE, ENTERING_FIRST_NAME, ENTERING_LAST_NAME,
+    
+    # Callback Data Prefixes
+    PRODUCT_PREFIX, METHOD_PREFIX, CONFIRM_PREFIX, CANCEL_PREFIX,
+    WALLET_PREFIX, ACCOUNT_PREFIX, CURRENCY_PREFIX, BANK_PREFIX, DEPOSIT_PREFIX, WITHDRAW_PREFIX,
+    
+    # Calculation Methods
+    METHOD_GRAMS, METHOD_RIAL,
+    
+    # Main Menu Buttons
+    MENU_PRICE, MENU_BUY, MENU_SELL, MENU_WALLET, MENU_ACCOUNT, MENU_HISTORY, MENU_CANCEL,
+    MENU_TRADE, MENU_PORTFOLIO, MENU_REFRESH, MENU_PRICES,
+    
+    # Wallet Menu Buttons
+    WALLET_BALANCE, WALLET_DEPOSIT, WALLET_WITHDRAW, WALLET_HISTORY,
+    
+    # Account Menu Buttons
+    ACCOUNT_ADD, ACCOUNT_LIST, ACCOUNT_VERIFY,
+    
+    # Currency Types
+    CURRENCY_RIAL, CURRENCY_GOLD, CURRENCY_COIN, CURRENCY_DOLLAR, CURRENCY_TYPES,
+    
+    # Iranian Banks
+    IRANIAN_BANKS,
+    
+    # Validation Limits
+    MIN_ORDER_GRAMS, MIN_ORDER_RIAL, MAX_ORDER_GRAMS, MAX_ORDER_RIAL,
+    
+    # Welcome Messages
+    WELCOME_NEW_USER, WELCOME_PENDING_USER, WELCOME_APPROVED_USER, REGISTRATION_SUCCESS,
+    
+    # Error Messages
+    ERROR_NOT_APPROVED, ERROR_INVALID_AMOUNT, ERROR_INSUFFICIENT_BALANCE_RIAL, ERROR_INSUFFICIENT_BALANCE_GOLD,
+    ERROR_GENERAL, ERROR_NO_PRODUCTS, ERROR_AMOUNT_TOO_SMALL, ERROR_AMOUNT_TOO_LARGE,
+    
+    # Order Messages
+    ORDER_SUCCESS, ORDER_CANCELLED,
+    
+    # Prompts
+    PROMPT_SELECT_PRODUCT, PROMPT_SELECT_METHOD, PROMPT_ENTER_AMOUNT_GRAMS, PROMPT_ENTER_AMOUNT_RIAL,
+    PROMPT_ENTER_AMOUNT_SELL_GRAMS, PROMPT_ENTER_AMOUNT_SELL_RIAL,
+    
+    # History Messages
+    NO_ORDERS, ORDERS_HISTORY_HEADER,
+    
+    # Button Texts
+    BTN_SHARE_CONTACT, BTN_METHOD_GRAMS, BTN_METHOD_RIAL, BTN_CONFIRM, BTN_CANCEL, BTN_BACK_TO_MENU,
+    
+    # Callback Data Patterns
+    CALLBACK_PRICE_GOLD, CALLBACK_PRICE_COIN, CALLBACK_PRICE_DOLLAR, CALLBACK_PRICE_ALL, CALLBACK_PRICE_REFRESH,
+    CALLBACK_BACK_TO_PRICES_MENU, CALLBACK_TRADE_PRODUCT_PREFIX, CALLBACK_ACTION_BUY, CALLBACK_ACTION_SELL,
+    CALLBACK_METHOD_GRAM, CALLBACK_METHOD_RIAL, PRODUCT_GOLD, PRODUCT_COIN, PRODUCT_DOLLAR,
+    CALLBACK_BACK_TO_MAIN, CALLBACK_CONFIRM_YES, CALLBACK_CONFIRM_NO,
+    
+    # Account & Wallet Management States
+    VIEWING_PROFILE, MANAGING_BANK_ACCOUNTS, ADDING_BANK_ACCOUNT, ENTERING_BANK_NAME, ENTERING_ACCOUNT_NUMBER,
+    ENTERING_ACCOUNT_HOLDER, ENTERING_ACCOUNT_TYPE, SELECTING_DEPOSIT_CURRENCY, ENTERING_DEPOSIT_AMOUNT,
+    SELECTING_DEPOSIT_BANK, UPLOADING_RECEIPT, CONFIRMING_DEPOSIT, SELECTING_WITHDRAW_CURRENCY,
+    ENTERING_WITHDRAW_AMOUNT, SELECTING_WITHDRAW_BANK, CONFIRMING_WITHDRAW,
+    
+    # Callback Data for Account & Wallet
+    CALLBACK_ACCOUNT_PROFILE, CALLBACK_ACCOUNT_BANKCARDS, CALLBACK_ACCOUNT_BALANCES, CALLBACK_ACCOUNT_TRANSACTIONS,
+    CALLBACK_WALLET_DEPOSIT, CALLBACK_WALLET_WITHDRAW, CALLBACK_WALLET_BALANCES, CALLBACK_WALLET_TRANSACTIONS,
+    CALLBACK_CURRENCY_RIAL, CALLBACK_CURRENCY_GOLD, CALLBACK_CURRENCY_COIN, CALLBACK_CURRENCY_DOLLAR,
+    CALLBACK_SELECT_BANK_PREFIX, CALLBACK_ADD_BANK_ACCOUNT, CALLBACK_REMOVE_BANK_PREFIX
+)
+from bot.keyboards import (
+    get_main_menu_keyboard, get_prices_menu_keyboard, get_product_detail_keyboard,
+    get_amount_method_keyboard, get_confirmation_keyboard, get_cancel_keyboard,
+    get_contact_keyboard, get_back_to_prices_keyboard
+)
 from bot.utils import format_number, parse_decimal, validate_amount, format_datetime
 
 # Enable logging
@@ -71,6 +148,8 @@ class Command(BaseCommand):
         
         # Menu handlers
         application.add_handler(MessageHandler(filters.Regex(f'^{MENU_PRICES}$'), show_prices_menu))
+        application.add_handler(MessageHandler(filters.Regex(f'^{MENU_WALLET}$'), show_wallet))
+        application.add_handler(MessageHandler(filters.Regex(f'^{MENU_ACCOUNT}$'), show_account))
         application.add_handler(MessageHandler(filters.Regex(f'^{MENU_PORTFOLIO}$'), show_portfolio))
         application.add_handler(MessageHandler(filters.Regex(f'^{MENU_HISTORY}$'), show_history))
         
@@ -81,7 +160,7 @@ class Command(BaseCommand):
         application.add_handler(CallbackQueryHandler(show_all_prices, pattern=f'^{CALLBACK_PRICE_ALL}$'))
         
         # Price refresh callbacks
-        application.add_handler(CallbackQueryHandler(refresh_price, pattern=f'^{CALLBACK_PRICE_REFRESH}(GOLD_ABSHODEH|COIN_FULL|DOLLAR)$'))
+        application.add_handler(CallbackQueryHandler(refresh_price, pattern=f'^{CALLBACK_PRICE_REFRESH}(gold|coin|dollar)$'))
         
         # Back to prices menu callback
         application.add_handler(CallbackQueryHandler(back_to_prices_menu, pattern='^back_to_prices_menu$'))
@@ -242,39 +321,7 @@ async def registration_last_name(update: Update, context: ContextTypes.DEFAULT_T
     if user_data is not None:
         user_data['last_name'] = last_name
     
-    await update.message.reply_text(
-        f"✅ نام خانوادگی: *{last_name}*\n\n"
-        "لطفاً *کد ملی* (10 رقمی) خود را وارد کنید:",
-        parse_mode='Markdown'
-    )
-    
-    return ENTERING_NATIONAL_CODE
-
-
-async def registration_national_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """دریافت کد ملی و تکمیل ثبت نام"""
-    if not update.message or not update.message.text:
-        logger.warning("registration_national_code called but no message or text found")
-        return ConversationHandler.END
-    
-    national_code = update.message.text.strip()
-    
-    # اعتبارسنجی کد ملی
-    if not national_code.isdigit() or len(national_code) != 10:
-        await update.message.reply_text(
-            "❌ کد ملی باید دقیقاً 10 رقم باشد.\n\n"
-            "لطفاً کد ملی خود را وارد کنید:"
-        )
-        return ENTERING_NATIONAL_CODE
-    
-    user_data = context.user_data
-    if user_data is None:
-        logger.error("registration_national_code: user_data is None")
-        return ConversationHandler.END
-    
-    user_data['national_code'] = national_code
-    
-    # ثبت کاربر در دیتابیس
+    # ثبت کاربر در دیتابیس (بدون کد ملی)
     try:
         # Create async wrapper - type checker can't infer wrapped function signature
         user_obj, profile, created = await sync_to_async(  # type: ignore[misc,call-arg]
@@ -285,38 +332,39 @@ async def registration_national_code(update: Update, context: ContextTypes.DEFAU
             phone_number=user_data.get('phone_number', ''),  # type: ignore[arg-type]
             telegram_username=user_data.get('telegram_username'),  # type: ignore[arg-type]
             first_name=user_data.get('first_name', ''),  # type: ignore[arg-type]
-            last_name=user_data.get('last_name', ''),  # type: ignore[arg-type]
-            national_code=national_code  # type: ignore[arg-type]
+            last_name=last_name,  # type: ignore[arg-type]
+            national_code=""  # type: ignore[arg-type]
         )
         
         if created:
             await update.message.reply_text(
                 "✅ *ثبت‌نام شما با موفقیت انجام شد!*\n\n"
-                f"👤 نام: {user_data.get('first_name', '')} {user_data.get('last_name', '')}\n"
-                f"📱 شماره تماس: {user_data.get('phone_number', '')}\n"
-                f"🆔 کد ملی: {national_code}\n\n"
+                f"👤 نام: {user_data.get('first_name', '') if user_data else ''} {last_name}\n"
+                f"📱 شماره تماس: {user_data.get('phone_number', '') if user_data else ''}\n\n"
                 "⏳ حساب شما در انتظار تایید مدیر است.\n"
                 "پس از تایید، از منوی ربات استفاده کنید. 🙏",
                 parse_mode='Markdown',
                 reply_markup=ReplyKeyboardRemove()
             )
-            logger.info(f"کاربر جدید: {user_data.get('first_name', '')} {user_data.get('last_name', '')} - {user_data.get('phone_number', '')} ({user_data.get('telegram_id', '')})")
         else:
             await update.message.reply_text(
-                "ℹ️ شما قبلاً ثبت‌نام کرده‌اید.",
+                "✅ *اطلاعات شما به‌روزرسانی شد!*\n\n"
+                f"👤 نام: {user_data.get('first_name', '') if user_data else ''} {last_name}\n"
+                f"📱 شماره تماس: {user_data.get('phone_number', '') if user_data else ''}\n\n"
+                "از منوی ربات استفاده کنید. 🙏",
                 parse_mode='Markdown',
                 reply_markup=ReplyKeyboardRemove()
             )
-    
+        
+        return ConversationHandler.END
+        
     except Exception as e:
-        logger.error(f"خطا در ثبت‌نام: {e}")
+        logger.error(f"Error creating user: {e}")
         await update.message.reply_text(
-            "❌ خطایی رخ داد. لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.",
+            "❌ خطا در ثبت‌نام. لطفاً دوباره تلاش کنید.",
             reply_markup=ReplyKeyboardRemove()
         )
-    
-    user_data.clear()
-    return ConversationHandler.END
+        return ConversationHandler.END
 
 
 def get_registration_conversation_handler() -> ConversationHandler:
@@ -331,9 +379,6 @@ def get_registration_conversation_handler() -> ConversationHandler:
             ],
             ENTERING_LAST_NAME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, registration_last_name),
-            ],
-            ENTERING_NATIONAL_CODE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, registration_national_code),
             ],
         },
         fallbacks=[
@@ -828,7 +873,7 @@ async def refresh_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 # ==================== Portfolio & History ====================
 
 async def show_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """نمایش پورتفولیو"""
+    """نمایش پورتفولیو و آمار کلی"""
     if not update.effective_user or not update.message:
         logger.warning("show_portfolio called but no effective_user or message found")
         return
@@ -843,13 +888,103 @@ async def show_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
     
+    # Get user's order statistics
+    orders = await sync_to_async(list)(profile.orders.all())
+    
+    total_orders = len(orders)
+    completed_orders = len([o for o in orders if o.status == 'COMPLETED'])
+    pending_orders = len([o for o in orders if o.status == 'PENDING'])
+    
     message = (
-        "👛 *کیف پول شما*\n\n"
-        f"💰 *موجودی ریالی:*\n   {format_number(Decimal(str(profile.rial_balance)))} ریال\n\n"
-        f"⚖️ *موجودی طلا:*\n   {format_number(Decimal(str(profile.gold_balance_grams)), 4)} گرم\n\n"
-        f"─────────────────\n"
-        f"_به‌روزرسانی: {format_datetime(cast(datetime, profile.updated_at))}_"
+        "📊 *پورتفولیو و آمار شما*\n\n"
+        f"👤 *اطلاعات کاربری:*\n"
+        f"   📱 شماره تماس: {profile.phone_number}\n"
+        f"   ✅ وضعیت: {'تایید شده' if profile.is_approved else 'در انتظار تایید'}\n\n"
+        f"📈 *آمار معاملات:*\n"
+        f"   📋 کل سفارشات: {total_orders}\n"
+        f"   ✅ تکمیل شده: {completed_orders}\n"
+        f"   ⏳ در انتظار: {pending_orders}\n\n"
+        f"💰 *موجودی کلی:*\n"
+        f"   💵 ریال: {format_number(Decimal(str(profile.rial_balance)))} ریال\n"
+        f"   🪙 طلا: {format_number(Decimal(str(profile.gold_balance_grams)), 4)} گرم\n"
+        f"   🥇 سکه: {format_number(Decimal(str(profile.coin_balance)))} عدد\n"
+        f"   💵 دلار: {format_number(Decimal(str(profile.dollar_balance)))} دلار\n\n"
+        f"📅 عضویت از: {profile.created_at.strftime('%Y/%m/%d')}"
     )
+    
+    await update.message.reply_text(
+        message, 
+        parse_mode='Markdown',
+        reply_markup=get_main_menu_keyboard()
+    )
+
+
+async def show_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """نمایش کیف پول با جزئیات کامل"""
+    if not update.effective_user or not update.message:
+        logger.warning("show_wallet called but no effective_user or message found")
+        return
+    
+    telegram_id = str(update.effective_user.id)
+    is_approved, profile = await UserService.acheck_user_approval_status(telegram_id)
+    
+    if not profile or not is_approved:
+        await update.message.reply_text(
+            "❌ شما مجاز به استفاده از این بخش نیستید.",
+            reply_markup=get_main_menu_keyboard()
+        )
+        return
+    
+    # Use the WalletService to format the wallet display
+    wallet_text = WalletService.format_wallet_display(profile)
+    
+    await update.message.reply_text(
+        wallet_text, 
+        parse_mode='Markdown',
+        reply_markup=get_main_menu_keyboard()
+    )
+
+
+async def show_account(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """نمایش حساب‌های بانکی کاربر"""
+    if not update.effective_user or not update.message:
+        logger.warning("show_account called but no effective_user or message found")
+        return
+    
+    telegram_id = str(update.effective_user.id)
+    is_approved, profile = await UserService.acheck_user_approval_status(telegram_id)
+    
+    if not profile or not is_approved:
+        await update.message.reply_text(
+            "❌ شما مجاز به استفاده از این بخش نیستید.",
+            reply_markup=get_main_menu_keyboard()
+        )
+        return
+    
+    # Get user's bank accounts
+    bank_accounts = await sync_to_async(list)(profile.bank_accounts.all())
+    
+    if not bank_accounts:
+        message = (
+            "🏦 *حساب‌های بانکی*\n\n"
+            "شما هنوز هیچ حساب بانکی ثبت نکرده‌اید.\n\n"
+            "برای واریز و برداشت، ابتدا باید حساب بانکی خود را ثبت کنید.\n\n"
+            "لطفاً با پشتیبانی تماس بگیرید تا راهنمایی لازم را دریافت کنید."
+        )
+    else:
+        message = "🏦 *حساب‌های بانکی شما:*\n\n"
+        
+        for i, account in enumerate(bank_accounts, 1):
+            status_icon = "✅" if account.is_verified else "⏳"
+            status_text = "تایید شده" if account.is_verified else "در انتظار تایید"
+            
+            message += f"{i}. {status_icon} *{account.bank_name}*\n"
+            message += f"   📋 صاحب حساب: {account.account_holder_name}\n"
+            message += f"   💳 شماره: {account.account_number}\n"
+            message += f"   📝 نوع: {account.account_type}\n"
+            message += f"   🔍 وضعیت: {status_text}\n\n"
+        
+        message += f"📅 آخرین بروزرسانی: {profile.updated_at.strftime('%Y/%m/%d - %H:%M')}"
     
     await update.message.reply_text(
         message, 
@@ -895,11 +1030,11 @@ async def show_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         
         type_emoji = "🟢" if order.order_type == Order.OrderType.BUY else "🔴"
         
-        message += f"{type_emoji} *سفارش #{order.id}*\n"
-        message += f"   {order.get_order_type_display()} | {order.product.name}\n"
+        message += f"{type_emoji} *سفارش #{order.id}*\n"  # type: ignore[attr-defined]
+        message += f"   {order.order_type} | {order.product.name}\n"
         message += f"   مقدار: {format_number(order.quantity_grams, 4)} گرم\n"
         message += f"   مبلغ: {format_number(order.total_amount)} ریال\n"
-        message += f"   {status_emoji.get(str(order.status), '❓')} {order.get_status_display()}\n\n"
+        message += f"   {status_emoji.get(str(order.status), '❓')} {order.status}\n\n"
     
     await update.message.reply_text(
         message, 
@@ -927,7 +1062,7 @@ async def trade_action_selected(update: Update, context: ContextTypes.DEFAULT_TY
     logger.info(f"Action callback: {callback_data}")
     
     # استخراج product_code و action از callback
-    # فرمت: trade_GOLD_ABSHODEH_action_buy یا trade_COIN_FULL_action_sell
+    # فرمت: trade_gold_action_buy یا trade_coin_action_sell
     # حذف پیشوند trade_
     data_without_prefix = callback_data.replace(CALLBACK_TRADE_PRODUCT_PREFIX, "")
     
@@ -1007,7 +1142,7 @@ async def trade_action_selected(update: Update, context: ContextTypes.DEFAULT_TY
     
     # برای سکه و دلار، مستقیم به وارد کردن تعداد می‌رویم
     if product_code in [PRODUCT_COIN, PRODUCT_DOLLAR]:
-        context.user_data['amount_type'] = 'gram'  # برای سکه و دلار فقط تعداد
+        context.user_data['amount_type'] = 'grams'  # برای سکه و دلار فقط تعداد
         
         unit = "عدد"
         if product_code == PRODUCT_COIN:
@@ -1104,7 +1239,7 @@ async def trade_method_selected(update: Update, context: ContextTypes.DEFAULT_TY
     
     await query.answer()
     
-    method = "gram" if query.data == CALLBACK_METHOD_GRAM else "rial"
+    method = "grams" if query.data == CALLBACK_METHOD_GRAM else "rial"
     context.user_data['amount_type'] = method
     
     product = context.user_data.get('product')
@@ -1281,26 +1416,56 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
     # محاسبه جزئیات
     try:
         if action == "buy":
-            quantity_grams, total_amount = TradingService.calculate_buy_details(
+            quantity_grams, price_per_gram, total_amount = TradingService.calculate_buy_details(
                 product, amount_type, amount
             )
             price = product.sell_price
             action_text = "خرید"
+            
+            # بررسی موجودی ریالی برای خرید
+            if total_amount > profile.rial_balance:
+                await update.message.reply_text(
+                    f"❌ موجودی ریالی شما کافی نیست.\n\n"
+                    f"💰 موجودی شما: {format_number(profile.rial_balance)} ریال\n"
+                    f"💸 مبلغ مورد نیاز: {format_number(total_amount)} ریال\n"
+                    f"📉 کمبود: {format_number(total_amount - profile.rial_balance)} ریال\n\n"
+                    f"💡 برای افزایش موجودی، از بخش کیف پول استفاده کنید.",
+                    reply_markup=get_main_menu_keyboard()
+                )
+                context.user_data.clear()
+                return ConversationHandler.END
         else:
-            quantity_grams, total_amount = TradingService.calculate_sell_details(
+            quantity_grams, price_per_gram, total_amount = TradingService.calculate_sell_details(
                 product, amount_type, amount
             )
             price = product.buy_price
             action_text = "فروش"
             
-            # بررسی موجودی
-            if quantity_grams > profile.gold_balance_grams:
-                await update.message.reply_text(
-                    f"❌ موجودی طلای شما کافی نیست.\n\n"
-                    f"موجودی شما: {format_number(profile.gold_balance_grams, 4)} گرم\n"
-                    f"مقدار درخواستی: {format_number(quantity_grams, 4)} گرم"
-                )
-                return ENTERING_AMOUNT
+            # بررسی موجودی بر اساس نوع محصول
+            if product_code == PRODUCT_GOLD:
+                if quantity_grams > profile.gold_balance_grams:
+                    await update.message.reply_text(
+                        f"❌ موجودی طلای شما کافی نیست.\n\n"
+                        f"موجودی شما: {format_number(profile.gold_balance_grams, 4)} گرم\n"
+                        f"مقدار درخواستی: {format_number(quantity_grams, 4)} گرم"
+                    )
+                    return ENTERING_AMOUNT
+            elif product_code == PRODUCT_COIN:
+                if amount > profile.coin_balance:
+                    await update.message.reply_text(
+                        f"❌ موجودی سکه شما کافی نیست.\n\n"
+                        f"موجودی شما: {format_number(profile.coin_balance, 4)} سکه\n"
+                        f"مقدار درخواستی: {format_number(amount, 4)} سکه"
+                    )
+                    return ENTERING_AMOUNT
+            elif product_code == PRODUCT_DOLLAR:
+                if amount > profile.dollar_balance:
+                    await update.message.reply_text(
+                        f"❌ موجودی دلار شما کافی نیست.\n\n"
+                        f"موجودی شما: {format_number(profile.dollar_balance, 2)} دلار\n"
+                        f"مقدار درخواستی: {format_number(amount, 2)} دلار"
+                    )
+                    return ENTERING_AMOUNT
         
         context.user_data['quantity_grams'] = quantity_grams
         context.user_data['total_amount'] = total_amount
@@ -1322,10 +1487,8 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
         persian_date = now.strftime("%Y/%m/%d")
         persian_time = now.strftime("%H:%M:%S")
         
-        # دریافت کدملی
+        # دریافت کدملی (فیلد حذف شده است)
         national_code = "ثبت نشده"
-        if profile:
-            national_code = profile.national_code or "ثبت نشده"
         
         # نمایش پیش‌فاکتور
         invoice = (
@@ -1368,7 +1531,8 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
         return CONFIRMING_TRADE
     
     except Exception as e:
-        logger.error(f"Error in calculation: {e}")
+        logger.error(f"Error in calculation: {e}", exc_info=True)
+        logger.error(f"Product: {product}, Amount: {amount}, Amount Type: {amount_type}, Action: {action}")
         await update.message.reply_text("❌ خطا در محاسبه. لطفاً دوباره تلاش کنید.")
         return ConversationHandler.END
 
@@ -1464,8 +1628,7 @@ async def trade_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 profile=profile,  # type: ignore[arg-type]
                 product=product,  # type: ignore[arg-type]
                 quantity_grams=quantity_grams,  # type: ignore[arg-type]
-                total_amount=total_amount,  # type: ignore[arg-type]
-                invoice_number=invoice_number  # type: ignore[arg-type]
+                total_amount=total_amount  # type: ignore[arg-type]
             )
             action_text = "خرید"
         else:
@@ -1473,8 +1636,7 @@ async def trade_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 profile=profile,  # type: ignore[arg-type]
                 product=product,  # type: ignore[arg-type]
                 quantity_grams=quantity_grams,  # type: ignore[arg-type]
-                total_amount=total_amount,  # type: ignore[arg-type]
-                invoice_number=invoice_number  # type: ignore[arg-type]
+                total_amount=total_amount  # type: ignore[arg-type]
             )
             action_text = "فروش"
         
@@ -1484,10 +1646,8 @@ async def trade_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if profile and profile.user:
             full_name = profile.user.get_full_name() or "کاربر"
         
-        # دریافت کدملی
+        # دریافت کدملی (فیلد حذف شده است)
         national_code = "ثبت نشده"
-        if profile:
-            national_code = profile.national_code or "ثبت نشده"
         
         # دریافت نام محصول
         product_name = product.name if product else "محصول"
@@ -1499,7 +1659,7 @@ async def trade_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text(
             f"✅ *سفارش {action_text} با موفقیت ثبت شد!*\n\n"
             f"📋 شماره فاکتور: `{invoice_number}`\n"
-            f"🆔 شماره سفارش: *{order.id}*\n"
+            f"🆔 شماره سفارش: *{order.id}*\n"  # type: ignore[attr-defined]
             f"👤 نام مشتری: *{full_name}*\n"
             f"🪪 کد ملی: `{national_code}`\n"
             f"📅 تاریخ: {persian_date}\n"
@@ -1525,9 +1685,9 @@ async def trade_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             # Log order info before clearing
             phone = context.user_data.get('profile', {})
             if hasattr(phone, 'phone_number'):
-                logger.info(f"سفارش {action_text} ثبت شد: {order.id} - {phone.phone_number}")
+                logger.info(f"سفارش {action_text} ثبت شد: {order.id} - {phone.phone_number}")  # type: ignore[attr-defined]
             else:
-                logger.info(f"سفارش {action_text} ثبت شد: {order.id}")
+                logger.info(f"سفارش {action_text} ثبت شد: {order.id}")  # type: ignore[attr-defined]
     
     except ValidationError as e:
         await query.edit_message_text(f"❌ {str(e)}")
@@ -1652,11 +1812,11 @@ def get_trade_conversation_handler() -> ConversationHandler:
             # ورود مستقیم از دکمه‌های خرید/فروش در بخش قیمت‌ها
             CallbackQueryHandler(
                 trade_action_selected,
-                pattern=f'^{CALLBACK_TRADE_PRODUCT_PREFIX}(GOLD_ABSHODEH|COIN_FULL|DOLLAR)_{CALLBACK_ACTION_BUY}$'
+                pattern=f'^{CALLBACK_TRADE_PRODUCT_PREFIX}(gold|coin|dollar)_{CALLBACK_ACTION_BUY}$'
             ),
             CallbackQueryHandler(
                 trade_action_selected,
-                pattern=f'^{CALLBACK_TRADE_PRODUCT_PREFIX}(GOLD_ABSHODEH|COIN_FULL|DOLLAR)_{CALLBACK_ACTION_SELL}$'
+                pattern=f'^{CALLBACK_TRADE_PRODUCT_PREFIX}(gold|coin|dollar)_{CALLBACK_ACTION_SELL}$'
             ),
         ],
         states={

@@ -46,8 +46,7 @@ class TransactionAdmin(admin.ModelAdmin):
         'balance_before',
         'balance_after',
         'created_at',
-        'updated_at',
-        'completed_at'
+        'completed_at',
     )
     
     autocomplete_fields = ('profile', 'related_bank_account', 'related_order')
