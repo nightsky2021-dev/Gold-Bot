@@ -2,6 +2,7 @@
 Django settings for gold_shop project.
 """
 import environ
+import os
 from pathlib import Path
 
 # Build paths inside the project
@@ -13,16 +14,20 @@ env = environ.Env(
     ALLOWED_HOSTS=(list, []),
 )
 
-# Read .env file
-environ.Env.read_env(BASE_DIR / '.env')
+# Read .env file (tolerate malformed lines)
+try:
+    environ.Env.read_env(BASE_DIR / '.env')
+except Exception:
+    # Ignore invalid .env lines to avoid crashing management commands
+    pass
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env('SECRET_KEY', default='django-insecure-change-this-in-production')
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-change-this-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env('DEBUG')
 
-ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS') or ['localhost', '127.0.0.1']
 
 # Application definition
 INSTALLED_APPS = [
@@ -94,8 +99,8 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # Internationalization
-LANGUAGE_CODE = env('LANGUAGE_CODE', default='fa-ir')
-TIME_ZONE = env('TIME_ZONE', default='Asia/Tehran')
+LANGUAGE_CODE = os.getenv('LANGUAGE_CODE', 'fa-ir')
+TIME_ZONE = os.getenv('TIME_ZONE', 'Asia/Tehran')
 USE_I18N = True
 USE_TZ = True
 
@@ -111,8 +116,8 @@ MEDIA_ROOT = BASE_DIR / 'mediafiles'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Telegram Bot Configuration
-TELEGRAM_BOT_TOKEN = env('TELEGRAM_BOT_TOKEN', default='')
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 
 # Navasan API Configuration
-NAVASAN_API_KEY = env('NAVASAN_API_KEY', default='freeTET7c1g57cU7kPnjQa4KAMP7BWaS')
+NAVASAN_API_KEY = os.getenv('NAVASAN_API_KEY', 'freeTET7c1g57cU7kPnjQa4KAMP7BWaS')
 
