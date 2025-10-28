@@ -14,11 +14,44 @@ ENTERING_AMOUNT: Final[int] = 2
 CONFIRMING_BUY: Final[int] = 3
 CONFIRMING_SELL: Final[int] = 4
 
+# States for wallet management
+WALLET_MAIN: Final[int] = 10
+WALLET_DEPOSIT: Final[int] = 11
+WALLET_WITHDRAW: Final[int] = 12
+WALLET_HISTORY: Final[int] = 13
+
+# States for account management
+ACCOUNT_MAIN: Final[int] = 20
+ACCOUNT_ADD_BANK: Final[int] = 21
+ACCOUNT_EDIT_BANK: Final[int] = 22
+ACCOUNT_VERIFY_BANK: Final[int] = 23
+
+# States for deposit process
+DEPOSIT_SELECT_CURRENCY: Final[int] = 30
+DEPOSIT_ENTER_AMOUNT: Final[int] = 31
+DEPOSIT_SELECT_BANK: Final[int] = 32
+DEPOSIT_UPLOAD_RECEIPT: Final[int] = 33
+DEPOSIT_CONFIRM: Final[int] = 34
+
+# States for withdrawal process
+WITHDRAW_SELECT_CURRENCY: Final[int] = 40
+WITHDRAW_ENTER_AMOUNT: Final[int] = 41
+WITHDRAW_SELECT_BANK: Final[int] = 42
+WITHDRAW_CONFIRM: Final[int] = 43
+
 # ==================== Callback Data Prefixes ====================
 PRODUCT_PREFIX: Final[str] = "product_"
 METHOD_PREFIX: Final[str] = "method_"
 CONFIRM_PREFIX: Final[str] = "confirm_"
 CANCEL_PREFIX: Final[str] = "cancel_"
+
+# Wallet and account management prefixes
+WALLET_PREFIX: Final[str] = "wallet_"
+ACCOUNT_PREFIX: Final[str] = "account_"
+CURRENCY_PREFIX: Final[str] = "currency_"
+BANK_PREFIX: Final[str] = "bank_"
+DEPOSIT_PREFIX: Final[str] = "deposit_"
+WITHDRAW_PREFIX: Final[str] = "withdraw_"
 
 # ==================== Calculation Methods ====================
 METHOD_GRAMS: Final[str] = "grams"
@@ -28,9 +61,51 @@ METHOD_RIAL: Final[str] = "rial"
 MENU_PRICE: Final[str] = "📈 قیمت لحظه‌ای"
 MENU_BUY: Final[str] = "💰 خرید طلا"
 MENU_SELL: Final[str] = "🛒 فروش طلا"
-MENU_PORTFOLIO: Final[str] = "📊 کیف پول من"
-MENU_HISTORY: Final[str] = "📜 تاریخچه سفارشات"
+MENU_WALLET: Final[str] = "💳 کیف پول"
+MENU_ACCOUNT: Final[str] = "🏦 حساب‌های بانکی"
+MENU_HISTORY: Final[str] = "📜 تاریخچه"
 MENU_CANCEL: Final[str] = "❌ لغو"
+
+# ==================== Wallet Menu Buttons ====================
+WALLET_BALANCE: Final[str] = "💰 موجودی"
+WALLET_DEPOSIT: Final[str] = "📥 واریز"
+WALLET_WITHDRAW: Final[str] = "📤 برداشت"
+WALLET_HISTORY: Final[str] = "📜 تاریخچه تراکنش‌ها"
+
+# ==================== Account Menu Buttons ====================
+ACCOUNT_ADD: Final[str] = "➕ افزودن حساب"
+ACCOUNT_LIST: Final[str] = "📋 لیست حساب‌ها"
+ACCOUNT_VERIFY: Final[str] = "✅ تایید حساب"
+
+# ==================== Currency Types ====================
+CURRENCY_RIAL: Final[str] = "RIAL"
+CURRENCY_GOLD: Final[str] = "GOLD"
+CURRENCY_COIN: Final[str] = "COIN"
+CURRENCY_DOLLAR: Final[str] = "DOLLAR"
+
+# ==================== Iranian Banks ====================
+IRANIAN_BANKS = [
+    ("بانک ملی ایران", "BANK_MELI"),
+    ("بانک سپه", "BANK_SEPAH"),
+    ("بانک صنعت و معدن", "BANK_SANAT"),
+    ("بانک کشاورزی", "BANK_KESHAVARZI"),
+    ("بانک مسکن", "BANK_MASKAN"),
+    ("بانک توسعه صادرات", "BANK_TOSEH"),
+    ("بانک پارسیان", "BANK_PARSIAN"),
+    ("بانک پاسارگاد", "BANK_PASARGAD"),
+    ("بانک اقتصاد نوین", "BANK_EGHTESAD"),
+    ("بانک سینا", "BANK_SINA"),
+    ("بانک دی", "BANK_DAY"),
+    ("بانک صادرات", "BANK_SADERAT"),
+    ("بانک ملت", "BANK_MELAT"),
+    ("بانک تجارت", "BANK_TEJARAT"),
+    ("بانک رفاه", "BANK_REFAH"),
+    ("بانک انصار", "BANK_ANSAR"),
+    ("بانک کارآفرین", "BANK_KARAFARIN"),
+    ("بانک سامان", "BANK_SAMAN"),
+    ("بانک سینا", "BANK_SINA"),
+    ("بانک شهر", "BANK_SHAHR"),
+]
 
 # ==================== Validation Limits ====================
 # Minimum order amounts to prevent dust transactions
