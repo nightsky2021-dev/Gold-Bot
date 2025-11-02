@@ -352,3 +352,362 @@ class BalanceService:
             f"Balance updated for {profile.get_display_name()}: "
             f"Rial change: {rial_change}, Gold change: {gold_change}"
         )
+
+
+class TransactionService:
+    """Service class for Transaction-related operations."""
+    
+    @staticmethod
+    @transaction.atomic
+    def create_deposit(
+        profile: 'Profile',
+        currency: str,
+        amount: Decimal,
+        bank_account: 'BankAccount' = None,
+        receipt_image = None,
+        description: str = ""
+    ) -> 'Transaction':
+        """
+        Create a deposit transaction.
+        
+        Args:
+            profile: User profile
+            currency: Currency type ('RIAL', 'GOLD', etc.)
+            amount: Amount to deposit
+            bank_account: Bank account used (optional)
+            receipt_image: Receipt image file (optional)
+            description: Additional description
+            
+        Returns:
+            Created Transaction instance
+        """
+        from .models import Transaction
+        
+        transaction_obj = Transaction.objects.create(
+            profile=profile,
+            transaction_type=Transaction.TransactionType.DEPOSIT,
+            currency=currency,
+            amount=amount,
+            bank_account=bank_account,
+            receipt_image=receipt_image,
+            description=description,
+            status=Transaction.TransactionStatus.PENDING
+        )
+        
+        logger.info(
+            f"Deposit transaction {transaction_obj.id} created: "
+            f"{amount} {currency} by {profile.get_display_name()}"
+        )
+        
+        return transaction_obj
+    
+    @staticmethod
+    def get_user_transactions(
+        profile: 'Profile',
+        limit: Optional[int] = None,
+        status: Optional[str] = None,
+        transaction_type: Optional[str] = None
+    ) -> List['Transaction']:
+        """
+        Get transactions for a specific user.
+        
+        Args:
+            profile: User profile
+            limit: Maximum number of transactions (None for all)
+            status: Filter by status (None for all)
+            transaction_type: Filter by type (None for all)
+            
+        Returns:
+            List of Transaction instances
+        """
+        from .models import Transaction
+        
+        queryset = profile.transactions.all()
+        
+        if status:
+            queryset = queryset.filter(status=status)
+        
+        if transaction_type:
+            queryset = queryset.filter(transaction_type=transaction_type)
+        
+        if limit:
+            queryset = queryset[:limit]
+        
+        return list(queryset)
+    
+    @staticmethod
+    def format_transaction_for_display(transaction: 'Transaction') -> str:
+        """
+        Format transaction for display in Telegram.
+        
+        Args:
+            transaction: Transaction instance
+            
+        Returns:
+            Formatted string
+        """
+        type_emoji = {
+            'DEPOSIT': '📥',
+            'WITHDRAW': '📤',
+            'BUY': '📈',
+            'SELL': '📉',
+            'ADJUSTMENT': '⚙️'
+        }
+        
+        status_emoji = {
+            'PENDING': '⏳',
+            'COMPLETED': '✅',
+            'CANCELLED': '❌',
+            'REJECTED': '🚫'
+        }
+        
+        emoji = type_emoji.get(transaction.transaction_type, '💳')
+        status_icon = status_emoji.get(transaction.status, '')
+        
+        text = (
+            f"{emoji} *تراکنش #{transaction.id}*\n"
+            f"نوع: {transaction.get_transaction_type_display()}\n"
+            f"ارز: {transaction.get_currency_display_name()}\n"
+            f"مقدار: {transaction.amount:,.2f}\n"
+            f"وضعیت: {status_icon} {transaction.get_status_display()}\n"
+            f"تاریخ: {transaction.created_at.strftime('%Y/%m/%d %H:%M')}\n"
+        )
+        
+        if transaction.description:
+            text += f"توضیحات: {transaction.description}\n"
+        
+        return text
+
+
+class WithdrawalService:
+    """Service class for withdrawal-related operations."""
+    
+    @staticmethod
+    @transaction.atomic
+    def create_withdraw_request(
+        profile: 'Profile',
+        currency: str,
+        amount: Decimal,
+        bank_account: 'BankAccount'
+    ) -> 'WithdrawRequest':
+        """
+        Create a withdrawal request and freeze balance.
+        
+        Args:
+            profile: User profile
+            currency: Currency type
+            amount: Amount to withdraw
+            bank_account: Destination bank account
+            
+        Returns:
+            Created WithdrawRequest instance
+            
+        Raises:
+            ValidationError: If insufficient balance or bank account not verified
+        """
+        from .models import WithdrawRequest
+        from users.services import WalletService
+        
+        # Validate bank account
+        if not bank_account.is_verified:
+            raise ValidationError("حساب بانکی تأیید نشده است.")
+        
+        if bank_account.profile != profile:
+            raise ValidationError("این حساب بانکی متعلق به شما نیست.")
+        
+        # Freeze balance
+        try:
+            WalletService.freeze_balance(profile, currency, float(amount))
+        except ValueError as e:
+            raise ValidationError(str(e))
+        
+        # Create withdraw request
+        withdraw_request = WithdrawRequest.objects.create(
+            profile=profile,
+            currency=currency,
+            amount=amount,
+            bank_account=bank_account,
+            status=WithdrawRequest.WithdrawStatus.PENDING
+        )
+        
+        logger.info(
+            f"Withdraw request {withdraw_request.id} created: "
+            f"{amount} {currency} by {profile.get_display_name()}"
+        )
+        
+        return withdraw_request
+    
+    @staticmethod
+    def get_user_withdraw_requests(
+        profile: 'Profile',
+        limit: Optional[int] = None,
+        status: Optional[str] = None
+    ) -> List['WithdrawRequest']:
+        """
+        Get withdrawal requests for a specific user.
+        
+        Args:
+            profile: User profile
+            limit: Maximum number of requests (None for all)
+            status: Filter by status (None for all)
+            
+        Returns:
+            List of WithdrawRequest instances
+        """
+        from .models import WithdrawRequest
+        
+        queryset = profile.withdraw_requests.all()
+        
+        if status:
+            queryset = queryset.filter(status=status)
+        
+        if limit:
+            queryset = queryset[:limit]
+        
+        return list(queryset)
+    
+    @staticmethod
+    def format_withdraw_request_for_display(request: 'WithdrawRequest') -> str:
+        """
+        Format withdrawal request for display.
+        
+        Args:
+            request: WithdrawRequest instance
+            
+        Returns:
+            Formatted string
+        """
+        status_emoji = {
+            'PENDING': '⏳',
+            'PROCESSING': '🔄',
+            'COMPLETED': '✅',
+            'CANCELLED': '❌',
+            'REJECTED': '🚫'
+        }
+        
+        status_icon = status_emoji.get(request.status, '')
+        
+        text = (
+            f"📤 *درخواست برداشت #{request.id}*\n"
+            f"ارز: {request.get_currency_display()}\n"
+            f"مقدار: {request.amount:,.2f}\n"
+            f"بانک: {request.bank_account.bank_name}\n"
+            f"شماره حساب: {request.bank_account.get_masked_account_number()}\n"
+            f"وضعیت: {status_icon} {request.get_status_display()}\n"
+            f"تاریخ: {request.created_at.strftime('%Y/%m/%d %H:%M')}\n"
+        )
+        
+        if request.rejection_reason:
+            text += f"\nدلیل رد: {request.rejection_reason}\n"
+        
+        return text
+
+
+class BankAccountService:
+    """Service class for bank account operations."""
+    
+    @staticmethod
+    @transaction.atomic
+    def create_bank_account(
+        profile: 'Profile',
+        bank_name: str,
+        account_holder_name: str,
+        account_number: str,
+        iban: str = "",
+        account_type: str = "SAVINGS"
+    ) -> 'BankAccount':
+        """
+        Create a new bank account for user.
+        
+        Args:
+            profile: User profile
+            bank_name: Name of the bank
+            account_holder_name: Name of account holder
+            account_number: 16-digit account number
+            iban: IBAN number (optional)
+            account_type: Type of account (SAVINGS or CURRENT)
+            
+        Returns:
+            Created BankAccount instance
+            
+        Raises:
+            ValidationError: If account number is invalid or duplicate
+        """
+        from users.models import BankAccount
+        
+        # Validate account number
+        if not account_number.isdigit() or len(account_number) != 16:
+            raise ValidationError("شماره حساب باید دقیقاً 16 رقم باشد.")
+        
+        # Check for duplicate
+        if BankAccount.objects.filter(
+            profile=profile,
+            account_number=account_number
+        ).exists():
+            raise ValidationError("این حساب بانکی قبلاً ثبت شده است.")
+        
+        # Create bank account
+        bank_account = BankAccount.objects.create(
+            profile=profile,
+            bank_name=bank_name,
+            account_holder_name=account_holder_name,
+            account_number=account_number,
+            iban=iban,
+            account_type=account_type,
+            is_verified=False  # Must be verified by admin
+        )
+        
+        logger.info(
+            f"Bank account {bank_account.id} created for {profile.get_display_name()}: "
+            f"{bank_name} - {account_number[-4:]}"
+        )
+        
+        return bank_account
+    
+    @staticmethod
+    def get_user_bank_accounts(
+        profile: 'Profile',
+        verified_only: bool = False
+    ) -> List['BankAccount']:
+        """
+        Get bank accounts for a user.
+        
+        Args:
+            profile: User profile
+            verified_only: Only return verified accounts
+            
+        Returns:
+            List of BankAccount instances
+        """
+        from users.models import BankAccount
+        
+        queryset = profile.bank_accounts.all()
+        
+        if verified_only:
+            queryset = queryset.filter(is_verified=True)
+        
+        return list(queryset)
+    
+    @staticmethod
+    def format_bank_account_for_display(bank_account: 'BankAccount') -> str:
+        """
+        Format bank account for display.
+        
+        Args:
+            bank_account: BankAccount instance
+            
+        Returns:
+            Formatted string
+        """
+        status_icon = '✅' if bank_account.is_verified else '⏳'
+        status_text = 'تأیید شده' if bank_account.is_verified else 'در انتظار تأیید'
+        
+        text = (
+            f"🏦 *{bank_account.bank_name}*\n"
+            f"صاحب حساب: {bank_account.account_holder_name}\n"
+            f"شماره حساب: {bank_account.get_masked_account_number()}\n"
+            f"نوع حساب: {bank_account.get_account_type_display()}\n"
+            f"وضعیت: {status_icon} {status_text}\n"
+        )
+        
+        return text

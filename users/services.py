@@ -123,3 +123,178 @@ def update_user_balance(
     profile.save(update_fields=['rial_balance', 'gold_balance_grams'])
     
     return profile
+
+
+class WalletService:
+    """
+    Service for wallet operations including balance display,
+    freezing/unfreezing balances, and formatting wallet information.
+    """
+    
+    @staticmethod
+    def format_wallet_display(profile: Profile) -> str:
+        """
+        Format complete wallet display with all balances.
+        
+        Args:
+            profile: User profile
+            
+        Returns:
+            Formatted wallet string with all currencies
+        """
+        rial_available = profile.get_available_rial_balance()
+        rial_frozen = profile.frozen_rial_balance
+        
+        gold_available = profile.get_available_gold_balance()
+        gold_frozen = profile.frozen_gold_balance
+        
+        wallet_text = "💼 *کیف پول شما:*\n\n"
+        
+        # Rial balance
+        wallet_text += f"💰 *ریال:*\n"
+        wallet_text += f"   موجودی کل: {profile.rial_balance:,.0f} ریال\n"
+        wallet_text += f"   قابل استفاده: {rial_available:,.0f} ریال\n"
+        if rial_frozen > 0:
+            wallet_text += f"   مسدود شده: {rial_frozen:,.0f} ریال\n"
+        wallet_text += "\n"
+        
+        # Gold balance
+        wallet_text += f"🪙 *طلا:*\n"
+        wallet_text += f"   موجودی کل: {profile.gold_balance_grams} گرم\n"
+        wallet_text += f"   قابل استفاده: {gold_available} گرم\n"
+        if gold_frozen > 0:
+            wallet_text += f"   مسدود شده: {gold_frozen} گرم\n"
+        
+        return wallet_text
+    
+    @staticmethod
+    def freeze_balance(
+        profile: Profile,
+        currency: str,
+        amount: float
+    ) -> None:
+        """
+        Freeze balance for pending withdrawal.
+        
+        Args:
+            profile: User profile
+            currency: Currency type ('RIAL', 'GOLD', 'COIN', 'DOLLAR')
+            amount: Amount to freeze
+            
+        Raises:
+            ValueError: If insufficient available balance
+        """
+        from django.db import transaction as db_transaction
+        
+        with db_transaction.atomic():
+            # Refresh from database to avoid race conditions
+            profile.refresh_from_db()
+            
+            if currency == 'RIAL':
+                if not profile.has_sufficient_available_rial(amount):
+                    raise ValueError("موجودی ریالی قابل برداشت کافی نیست.")
+                profile.frozen_rial_balance += amount
+                profile.save(update_fields=['frozen_rial_balance'])
+                
+            elif currency in ['GOLD', 'COIN']:
+                if not profile.has_sufficient_available_gold(amount):
+                    raise ValueError("موجودی طلای قابل برداشت کافی نیست.")
+                profile.frozen_gold_balance += amount
+                profile.save(update_fields=['frozen_gold_balance'])
+            
+            else:
+                raise ValueError(f"ارز {currency} پشتیبانی نمی‌شود.")
+    
+    @staticmethod
+    def unfreeze_balance(
+        profile: Profile,
+        currency: str,
+        amount: float
+    ) -> None:
+        """
+        Unfreeze balance (e.g., when withdrawal is cancelled).
+        
+        Args:
+            profile: User profile
+            currency: Currency type
+            amount: Amount to unfreeze
+        """
+        from django.db import transaction as db_transaction
+        
+        with db_transaction.atomic():
+            profile.refresh_from_db()
+            
+            if currency == 'RIAL':
+                profile.frozen_rial_balance = max(0, profile.frozen_rial_balance - amount)
+                profile.save(update_fields=['frozen_rial_balance'])
+                
+            elif currency in ['GOLD', 'COIN']:
+                profile.frozen_gold_balance = max(0, profile.frozen_gold_balance - amount)
+                profile.save(update_fields=['frozen_gold_balance'])
+    
+    @staticmethod
+    def process_withdrawal(
+        profile: Profile,
+        currency: str,
+        amount: float
+    ) -> None:
+        """
+        Process withdrawal by deducting from both frozen and total balance.
+        
+        Args:
+            profile: User profile
+            currency: Currency type
+            amount: Amount to withdraw
+        """
+        from django.db import transaction as db_transaction
+        
+        with db_transaction.atomic():
+            profile.refresh_from_db()
+            
+            if currency == 'RIAL':
+                profile.rial_balance -= amount
+                profile.frozen_rial_balance -= amount
+                profile.save(update_fields=['rial_balance', 'frozen_rial_balance'])
+                
+            elif currency in ['GOLD', 'COIN']:
+                profile.gold_balance_grams -= amount
+                profile.frozen_gold_balance -= amount
+                profile.save(update_fields=['gold_balance_grams', 'frozen_gold_balance'])
+    
+    @staticmethod
+    def add_balance(
+        profile: Profile,
+        currency: str,
+        amount: float
+    ) -> None:
+        """
+        Add balance to user's wallet (e.g., after deposit approval).
+        
+        Args:
+            profile: User profile
+            currency: Currency type
+            amount: Amount to add
+        """
+        from django.db import transaction as db_transaction
+        
+        with db_transaction.atomic():
+            profile.refresh_from_db()
+            
+            if currency == 'RIAL':
+                profile.rial_balance += amount
+                profile.save(update_fields=['rial_balance'])
+                
+            elif currency in ['GOLD', 'COIN']:
+                profile.gold_balance_grams += amount
+                profile.save(update_fields=['gold_balance_grams'])
+    
+    @staticmethod
+    def get_currency_display_name(currency: str) -> str:
+        """Get Persian display name for currency."""
+        currency_names = {
+            'RIAL': 'ریال',
+            'GOLD': 'طلا',
+            'COIN': 'سکه',
+            'DOLLAR': 'دلار'
+        }
+        return currency_names.get(currency, currency)

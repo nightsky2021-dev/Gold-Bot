@@ -78,6 +78,25 @@ class Profile(models.Model):
         help_text="موجودی طلای کاربر به گرم"
     )
     
+    # Frozen balances for pending withdrawals
+    frozen_rial_balance = models.DecimalField(
+        max_digits=15,
+        decimal_places=0,
+        default=0,
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="موجودی ریالی مسدود شده",
+        help_text="موجودی ریالی که به دلیل برداشت در انتظار مسدود شده"
+    )
+    
+    frozen_gold_balance = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        default=Decimal('0.0000'),
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="موجودی طلای مسدود شده",
+        help_text="موجودی طلا که به دلیل برداشت در انتظار مسدود شده"
+    )
+    
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="تاریخ ایجاد"
@@ -121,3 +140,137 @@ class Profile(models.Model):
     def has_sufficient_gold_balance(self, amount_grams: Decimal) -> bool:
         """Check if user has sufficient gold balance."""
         return self.gold_balance_grams >= amount_grams
+    
+    def get_available_rial_balance(self) -> Decimal:
+        """Get available Rial balance (total - frozen)."""
+        return self.rial_balance - self.frozen_rial_balance
+    
+    def get_available_gold_balance(self) -> Decimal:
+        """Get available gold balance (total - frozen)."""
+        return self.gold_balance_grams - self.frozen_gold_balance
+    
+    def has_sufficient_available_rial(self, amount: Decimal) -> bool:
+        """Check if user has sufficient available Rial balance."""
+        return self.get_available_rial_balance() >= amount
+    
+    def has_sufficient_available_gold(self, amount_grams: Decimal) -> bool:
+        """Check if user has sufficient available gold balance."""
+        return self.get_available_gold_balance() >= amount_grams
+
+
+class BankAccount(models.Model):
+    """
+    Bank account information for deposits and withdrawals.
+    
+    Stores user's bank account details for financial transactions.
+    Must be verified by admin before use.
+    """
+    
+    class AccountType(models.TextChoices):
+        SAVINGS = 'SAVINGS', 'حساب پس‌انداز'
+        CURRENT = 'CURRENT', 'حساب جاری'
+    
+    profile = models.ForeignKey(
+        Profile,
+        on_delete=models.CASCADE,
+        related_name='bank_accounts',
+        verbose_name="پروفایل کاربر",
+        help_text="کاربری که این حساب متعلق به اوست"
+    )
+    
+    bank_name = models.CharField(
+        max_length=100,
+        verbose_name="نام بانک",
+        help_text="نام بانک (مثل: ملی، ملت، سپه)"
+    )
+    
+    account_holder_name = models.CharField(
+        max_length=200,
+        verbose_name="نام صاحب حساب",
+        help_text="نام کامل صاحب حساب"
+    )
+    
+    account_number = models.CharField(
+        max_length=16,
+        verbose_name="شماره حساب",
+        help_text="شماره حساب 16 رقمی"
+    )
+    
+    iban = models.CharField(
+        max_length=26,
+        blank=True,
+        verbose_name="شماره شبا",
+        help_text="شماره شبای 26 رقمی (اختیاری)"
+    )
+    
+    account_type = models.CharField(
+        max_length=10,
+        choices=AccountType.choices,
+        default=AccountType.SAVINGS,
+        verbose_name="نوع حساب",
+        help_text="نوع حساب بانکی"
+    )
+    
+    is_verified = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name="تأیید شده",
+        help_text="آیا این حساب توسط ادمین تأیید شده است؟"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="تاریخ ایجاد"
+    )
+    
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="آخرین به‌روزرسانی"
+    )
+
+    class Meta:
+        verbose_name = "حساب بانکی"
+        verbose_name_plural = "حساب‌های بانکی"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['profile', 'is_verified']),
+            models.Index(fields=['account_number']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['profile', 'account_number'],
+                name='unique_profile_account'
+            )
+        ]
+
+    def __str__(self) -> str:
+        """Return string representation of the bank account."""
+        masked_account = self.get_masked_account_number()
+        return f"{self.bank_name} - {masked_account} ({self.profile.get_display_name()})"
+    
+    def get_masked_account_number(self) -> str:
+        """Get masked account number for display (show only last 4 digits)."""
+        if len(self.account_number) >= 4:
+            return f"****{self.account_number[-4:]}"
+        return self.account_number
+    
+    def can_be_used(self) -> bool:
+        """Check if account can be used for transactions."""
+        return self.is_verified
+    
+    def has_pending_transactions(self) -> bool:
+        """Check if account has pending transactions."""
+        # Import here to avoid circular import
+        from trading.models import Transaction, WithdrawRequest
+        
+        pending_deposits = Transaction.objects.filter(
+            bank_account=self,
+            status='pending'
+        ).exists()
+        
+        pending_withdrawals = WithdrawRequest.objects.filter(
+            bank_account=self,
+            status='pending'
+        ).exists()
+        
+        return pending_deposits or pending_withdrawals

@@ -14,23 +14,53 @@ ENTERING_AMOUNT: Final[int] = 2
 CONFIRMING_BUY: Final[int] = 3
 CONFIRMING_SELL: Final[int] = 4
 
+# States for deposit workflow
+DEPOSIT_SELECT_CURRENCY: Final[int] = 10
+DEPOSIT_ENTER_AMOUNT: Final[int] = 11
+DEPOSIT_SELECT_BANK: Final[int] = 12
+DEPOSIT_UPLOAD_RECEIPT: Final[int] = 13
+DEPOSIT_CONFIRM: Final[int] = 14
+
+# States for withdrawal workflow
+WITHDRAW_SELECT_CURRENCY: Final[int] = 20
+WITHDRAW_ENTER_AMOUNT: Final[int] = 21
+WITHDRAW_SELECT_BANK: Final[int] = 22
+WITHDRAW_CONFIRM: Final[int] = 23
+
+# States for bank account management
+ACCOUNT_ADD_BANK: Final[int] = 30
+ACCOUNT_ADD_HOLDER_NAME: Final[int] = 31
+ACCOUNT_ADD_NUMBER: Final[int] = 32
+ACCOUNT_ADD_TYPE: Final[int] = 33
+ACCOUNT_ADD_CONFIRM: Final[int] = 34
+
 # ==================== Callback Data Prefixes ====================
 PRODUCT_PREFIX: Final[str] = "product_"
 METHOD_PREFIX: Final[str] = "method_"
 CONFIRM_PREFIX: Final[str] = "confirm_"
 CANCEL_PREFIX: Final[str] = "cancel_"
+CURRENCY_PREFIX: Final[str] = "currency_"
+BANK_PREFIX: Final[str] = "bank_"
+TRANSACTION_PREFIX: Final[str] = "transaction_"
+FILTER_PREFIX: Final[str] = "filter_"
+SETTINGS_PREFIX: Final[str] = "settings_"
+PAGE_PREFIX: Final[str] = "page_"
 
 # ==================== Calculation Methods ====================
 METHOD_GRAMS: Final[str] = "grams"
 METHOD_RIAL: Final[str] = "rial"
 
 # ==================== Main Menu Buttons ====================
-MENU_PRICE: Final[str] = "📈 قیمت لحظه‌ای"
+MENU_PRICE: Final[str] = "📈 قیمت‌ها و معامله"
+MENU_WALLET: Final[str] = "💼 کیف پول"
+MENU_HISTORY: Final[str] = "📋 تاریخچه"
+MENU_SETTINGS: Final[str] = "⚙️ تنظیمات"
+MENU_CANCEL: Final[str] = "❌ لغو"
+
+# Legacy buttons (for backward compatibility)
 MENU_BUY: Final[str] = "💰 خرید طلا"
 MENU_SELL: Final[str] = "🛒 فروش طلا"
 MENU_PORTFOLIO: Final[str] = "📊 کیف پول من"
-MENU_HISTORY: Final[str] = "📜 تاریخچه سفارشات"
-MENU_CANCEL: Final[str] = "❌ لغو"
 
 # ==================== Validation Limits ====================
 # Minimum order amounts to prevent dust transactions
@@ -171,6 +201,170 @@ ORDERS_HISTORY_HEADER: Final[str] = (
     "📜 *آخرین سفارشات شما:*\n\n"
 )
 
+# ==================== Wallet Messages ====================
+WALLET_DISPLAY_HEADER: Final[str] = (
+    "💼 *کیف پول شما:*\n\n"
+)
+
+NO_TRANSACTIONS: Final[str] = (
+    "📊 شما هنوز تراکنشی ندارید.\n\n"
+    "از دکمه‌های زیر برای واریز یا برداشت استفاده کنید."
+)
+
+TRANSACTION_HISTORY_HEADER: Final[str] = (
+    "📊 *تراکنش‌های شما:*\n\n"
+)
+
+# ==================== Deposit Messages ====================
+PROMPT_SELECT_DEPOSIT_CURRENCY: Final[str] = (
+    "لطفاً ارز مورد نظر برای واریز را انتخاب کنید:"
+)
+
+PROMPT_ENTER_DEPOSIT_AMOUNT: Final[str] = (
+    "💰 لطفاً مبلغ واریزی را وارد کنید:\n\n"
+    "مثال: 1000000"
+)
+
+PROMPT_SELECT_DEPOSIT_BANK: Final[str] = (
+    "لطفاً حساب بانکی مقصد را انتخاب کنید:"
+)
+
+PROMPT_UPLOAD_RECEIPT: Final[str] = (
+    "📸 لطفاً تصویر رسید واریز را ارسال کنید:\n\n"
+    "⚠️ توجه: تصویر باید واضح و خوانا باشد."
+)
+
+DEPOSIT_SUCCESS: Final[str] = (
+    "✅ *درخواست واریز شما با موفقیت ثبت شد!*\n\n"
+    "شماره تراکنش: #{transaction_id}\n"
+    "مبلغ: {amount:,} {currency}\n\n"
+    "درخواست شما در صف بررسی قرار گرفت.\n"
+    "پس از تأیید مدیر، موجودی شما به‌روزرسانی خواهد شد."
+)
+
+# ==================== Withdrawal Messages ====================
+PROMPT_SELECT_WITHDRAW_CURRENCY: Final[str] = (
+    "لطفاً ارز مورد نظر برای برداشت را انتخاب کنید:"
+)
+
+PROMPT_ENTER_WITHDRAW_AMOUNT: Final[str] = (
+    "💰 لطفاً مبلغ برداشت را وارد کنید:\n\n"
+    "موجودی قابل برداشت: {available} {currency}\n\n"
+    "مثال: 1000000"
+)
+
+PROMPT_SELECT_WITHDRAW_BANK: Final[str] = (
+    "لطفاً حساب بانکی مقصد را انتخاب کنید:\n\n"
+    "⚠️ فقط حساب‌های تأیید شده نمایش داده می‌شوند."
+)
+
+WITHDRAW_PREVIEW: Final[str] = (
+    "💵 *پیش‌فاکتور برداشت*\n\n"
+    "ارز: {currency}\n"
+    "مبلغ: {amount:,}\n"
+    "حساب بانکی: {bank_name}\n"
+    "شماره حساب: {account_number}\n\n"
+    "آیا از ثبت درخواست برداشت مطمئن هستید؟"
+)
+
+WITHDRAW_SUCCESS: Final[str] = (
+    "✅ *درخواست برداشت شما با موفقیت ثبت شد!*\n\n"
+    "شماره درخواست: #{request_id}\n"
+    "مبلغ: {amount:,} {currency}\n\n"
+    "موجودی مورد نظر مسدود شد.\n"
+    "پس از تأیید مدیر، واریز به حساب شما انجام خواهد شد."
+)
+
+ERROR_NO_VERIFIED_BANKS: Final[str] = (
+    "❌ شما هیچ حساب بانکی تأیید شده ندارید.\n\n"
+    "لطفاً ابتدا از منوی تنظیمات، حساب بانکی خود را اضافه کنید."
+)
+
+ERROR_INSUFFICIENT_BALANCE: Final[str] = (
+    "❌ موجودی شما کافی نیست.\n\n"
+    "موجودی فعلی: {current:,} {currency}\n"
+    "مورد نیاز: {required:,} {currency}"
+)
+
+# ==================== Bank Account Messages ====================
+NO_BANK_ACCOUNTS: Final[str] = (
+    "🏦 شما هنوز حساب بانکی ثبت نکرده‌اید.\n\n"
+    "برای واریز و برداشت، لطفاً حساب بانکی خود را اضافه کنید."
+)
+
+BANK_ACCOUNTS_LIST_HEADER: Final[str] = (
+    "🏦 *حساب‌های بانکی شما:*\n\n"
+)
+
+PROMPT_SELECT_BANK_NAME: Final[str] = (
+    "لطفاً نام بانک خود را انتخاب کنید:"
+)
+
+PROMPT_ENTER_ACCOUNT_HOLDER: Final[str] = (
+    "لطفاً نام صاحب حساب را وارد کنید:\n\n"
+    "مثال: علی احمدی"
+)
+
+PROMPT_ENTER_ACCOUNT_NUMBER: Final[str] = (
+    "لطفاً شماره حساب (16 رقمی) را وارد کنید:\n\n"
+    "مثال: 1234567890123456"
+)
+
+ERROR_INVALID_ACCOUNT_NUMBER: Final[str] = (
+    "❌ شماره حساب نامعتبر است.\n\n"
+    "شماره حساب باید دقیقاً 16 رقم باشد."
+)
+
+BANK_ACCOUNT_ADD_SUCCESS: Final[str] = (
+    "✅ *حساب بانکی شما با موفقیت ثبت شد!*\n\n"
+    "بانک: {bank_name}\n"
+    "صاحب حساب: {holder_name}\n"
+    "شماره حساب: {account_number}\n\n"
+    "⏳ حساب شما در صف تأیید قرار گرفت.\n"
+    "پس از تأیید مدیر، می‌توانید از آن استفاده کنید."
+)
+
+BANK_ACCOUNT_REMOVE_CONFIRM: Final[str] = (
+    "⚠️ آیا از حذف این حساب بانکی مطمئن هستید؟\n\n"
+    "بانک: {bank_name}\n"
+    "شماره حساب: {account_number}"
+)
+
+BANK_ACCOUNT_REMOVE_SUCCESS: Final[str] = (
+    "✅ حساب بانکی با موفقیت حذف شد."
+)
+
+ERROR_CANNOT_REMOVE_ACCOUNT: Final[str] = (
+    "❌ امکان حذف این حساب وجود ندارد.\n\n"
+    "دلیل: این حساب دارای تراکنش‌های در انتظار است."
+)
+
+# ==================== Settings Messages ====================
+SETTINGS_MENU: Final[str] = (
+    "⚙️ *تنظیمات*\n\n"
+    "لطفاً گزینه مورد نظر را انتخاب کنید:"
+)
+
+PROFILE_DISPLAY: Final[str] = (
+    "👤 *پروفایل من*\n\n"
+    "نام: {full_name}\n"
+    "شماره تماس: {phone_number}\n"
+    "نام کاربری تلگرام: @{telegram_username}\n"
+    "تاریخ عضویت: {created_at}\n"
+    "وضعیت حساب: {status}\n"
+)
+
+STATISTICS_DISPLAY: Final[str] = (
+    "📊 *آمار من*\n\n"
+    "تعداد سفارشات: {total_orders}\n"
+    "  • تکمیل شده: {completed_orders}\n"
+    "  • در انتظار: {pending_orders}\n"
+    "  • لغو شده: {cancelled_orders}\n\n"
+    "حجم معاملات: {trade_volume:,} ریال\n"
+    "محصول محبوب: {favorite_product}\n"
+    "عضویت از: {member_since}"
+)
+
 # ==================== Button Texts ====================
 BTN_SHARE_CONTACT: Final[str] = "📱 ارسال شماره تماس"
 BTN_METHOD_GRAMS: Final[str] = "⚖️ بر اساس مقدار (گرم)"
@@ -178,6 +372,75 @@ BTN_METHOD_RIAL: Final[str] = "💰 بر اساس مبلغ (ریال)"
 BTN_CONFIRM: Final[str] = "✅ تایید نهایی"
 BTN_CANCEL: Final[str] = "❌ لغو"
 BTN_BACK_TO_MENU: Final[str] = "🔙 بازگشت به منوی اصلی"
+
+# Wallet action buttons
+BTN_DEPOSIT: Final[str] = "📥 واریز"
+BTN_WITHDRAW: Final[str] = "📤 برداشت"
+BTN_TRANSACTIONS: Final[str] = "📊 تراکنش‌ها"
+
+# Settings submenu buttons
+BTN_PROFILE: Final[str] = "👤 پروفایل من"
+BTN_BANK_ACCOUNTS: Final[str] = "🏦 حساب‌های بانکی"
+BTN_STATISTICS: Final[str] = "📊 آمار من"
+
+# Bank account buttons
+BTN_ADD_ACCOUNT: Final[str] = "➕ افزودن حساب"
+BTN_REMOVE_ACCOUNT: Final[str] = "🗑️ حذف حساب"
+
+# Transaction filter buttons
+BTN_FILTER_ALL: Final[str] = "همه"
+BTN_FILTER_PENDING: Final[str] = "در انتظار"
+BTN_FILTER_COMPLETED: Final[str] = "تکمیل شده"
+BTN_FILTER_CANCELLED: Final[str] = "لغو شده"
+
+# ==================== Currency Types ====================
+CURRENCY_RIAL: Final[str] = "rial"
+CURRENCY_GOLD: Final[str] = "gold"
+CURRENCY_COIN: Final[str] = "coin"
+CURRENCY_DOLLAR: Final[str] = "dollar"
+
+# ==================== Iranian Banks ====================
+IRANIAN_BANKS: Final[list] = [
+    "ملی",
+    "ملت",
+    "سپه",
+    "تجارت",
+    "صادرات",
+    "رفاه",
+    "مسکن",
+    "پست بانک",
+    "کشاورزی",
+    "صنعت و معدن",
+    "پاسارگاد",
+    "سامان",
+    "سینا",
+    "پارسیان",
+    "کارآفرین",
+    "اقتصاد نوین",
+    "دی",
+    "شهر",
+    "آینده",
+    "انصار",
+    "حکمت ایرانیان",
+    "گردشگری",
+    "توسعه تعاون",
+    "رسالت",
+    "قوامین",
+    "سایر"
+]
+
+# ==================== Transaction Types ====================
+TRANSACTION_DEPOSIT: Final[str] = "deposit"
+TRANSACTION_WITHDRAW: Final[str] = "withdraw"
+TRANSACTION_BUY: Final[str] = "buy"
+TRANSACTION_SELL: Final[str] = "sell"
+TRANSACTION_ADJUSTMENT: Final[str] = "adjustment"
+
+# ==================== Transaction Status ====================
+STATUS_PENDING: Final[str] = "pending"
+STATUS_COMPLETED: Final[str] = "completed"
+STATUS_CANCELLED: Final[str] = "cancelled"
+STATUS_REJECTED: Final[str] = "rejected"
 
 # Import Decimal for validation constants
 from decimal import Decimal

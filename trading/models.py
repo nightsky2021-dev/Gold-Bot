@@ -264,3 +264,283 @@ class Order(models.Model):
     def can_be_cancelled(self) -> bool:
         """Check if order can be cancelled (only pending orders)."""
         return self.is_pending()
+
+
+class Transaction(models.Model):
+    """
+    Represents a financial transaction (deposit/withdraw/buy/sell).
+    
+    Tracks all balance changes with full audit trail.
+    """
+    
+    class TransactionType(models.TextChoices):
+        DEPOSIT = 'DEPOSIT', 'واریز'
+        WITHDRAW = 'WITHDRAW', 'برداشت'
+        BUY = 'BUY', 'خرید'
+        SELL = 'SELL', 'فروش'
+        ADJUSTMENT = 'ADJUSTMENT', 'تعدیل'
+    
+    class TransactionStatus(models.TextChoices):
+        PENDING = 'PENDING', 'در انتظار'
+        COMPLETED = 'COMPLETED', 'تکمیل شده'
+        CANCELLED = 'CANCELLED', 'لغو شده'
+        REJECTED = 'REJECTED', 'رد شده'
+    
+    class CurrencyType(models.TextChoices):
+        RIAL = 'RIAL', 'ریال'
+        GOLD = 'GOLD', 'طلا'
+        COIN = 'COIN', 'سکه'
+        DOLLAR = 'DOLLAR', 'دلار'
+    
+    profile = models.ForeignKey(
+        Profile,
+        on_delete=models.PROTECT,
+        related_name='transactions',
+        verbose_name="پروفایل کاربر",
+        help_text="کاربر مربوط به این تراکنش"
+    )
+    
+    transaction_type = models.CharField(
+        max_length=15,
+        choices=TransactionType.choices,
+        verbose_name="نوع تراکنش",
+        help_text="نوع عملیات انجام شده"
+    )
+    
+    currency = models.CharField(
+        max_length=10,
+        choices=CurrencyType.choices,
+        verbose_name="ارز",
+        help_text="نوع ارز تراکنش"
+    )
+    
+    amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        verbose_name="مقدار",
+        help_text="مقدار تراکنش"
+    )
+    
+    status = models.CharField(
+        max_length=10,
+        choices=TransactionStatus.choices,
+        default=TransactionStatus.PENDING,
+        db_index=True,
+        verbose_name="وضعیت",
+        help_text="وضعیت فعلی تراکنش"
+    )
+    
+    bank_account = models.ForeignKey(
+        'users.BankAccount',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transactions',
+        verbose_name="حساب بانکی",
+        help_text="حساب بانکی مرتبط (برای واریز/برداشت)"
+    )
+    
+    receipt_image = models.ImageField(
+        upload_to='receipts/%Y/%m/',
+        null=True,
+        blank=True,
+        verbose_name="تصویر رسید",
+        help_text="تصویر رسید واریز (فقط برای واریز ریالی)"
+    )
+    
+    related_order = models.ForeignKey(
+        Order,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transactions',
+        verbose_name="سفارش مرتبط",
+        help_text="سفارش مرتبط (برای خرید/فروش)"
+    )
+    
+    description = models.TextField(
+        blank=True,
+        verbose_name="توضیحات",
+        help_text="توضیحات تراکنش"
+    )
+    
+    admin_notes = models.TextField(
+        blank=True,
+        verbose_name="یادداشت‌های مدیر",
+        help_text="یادداشت‌های داخلی برای مدیر"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="تاریخ ایجاد"
+    )
+    
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="آخرین به‌روزرسانی"
+    )
+    
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="تاریخ تکمیل",
+        help_text="زمان تکمیل تراکنش"
+    )
+
+    class Meta:
+        verbose_name = "تراکنش"
+        verbose_name_plural = "تراکنش‌ها"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['profile', '-created_at']),
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['transaction_type', 'status']),
+        ]
+
+    def __str__(self) -> str:
+        """Return string representation of the transaction."""
+        return f"تراکنش {self.id} – {self.get_transaction_type_display()} – {self.profile.get_display_name()}"
+    
+    def is_pending(self) -> bool:
+        """Check if transaction is pending."""
+        return self.status == self.TransactionStatus.PENDING
+    
+    def is_completed(self) -> bool:
+        """Check if transaction is completed."""
+        return self.status == self.TransactionStatus.COMPLETED
+    
+    def get_currency_display_name(self) -> str:
+        """Get Persian display name for currency."""
+        currency_names = {
+            'RIAL': 'ریال',
+            'GOLD': 'گرم طلا',
+            'COIN': 'سکه',
+            'DOLLAR': 'دلار'
+        }
+        return currency_names.get(self.currency, self.currency)
+
+
+class WithdrawRequest(models.Model):
+    """
+    Represents a withdrawal request from user's balance.
+    
+    User initiates withdrawal, balance is frozen, admin processes it.
+    """
+    
+    class WithdrawStatus(models.TextChoices):
+        PENDING = 'PENDING', 'در انتظار'
+        PROCESSING = 'PROCESSING', 'در حال پردازش'
+        COMPLETED = 'COMPLETED', 'تکمیل شده'
+        CANCELLED = 'CANCELLED', 'لغو شده'
+        REJECTED = 'REJECTED', 'رد شده'
+    
+    class CurrencyType(models.TextChoices):
+        RIAL = 'RIAL', 'ریال'
+        GOLD = 'GOLD', 'طلا'
+        COIN = 'COIN', 'سکه'
+        DOLLAR = 'DOLLAR', 'دلار'
+    
+    profile = models.ForeignKey(
+        Profile,
+        on_delete=models.PROTECT,
+        related_name='withdraw_requests',
+        verbose_name="پروفایل کاربر",
+        help_text="کاربر درخواست‌کننده"
+    )
+    
+    currency = models.CharField(
+        max_length=10,
+        choices=CurrencyType.choices,
+        verbose_name="ارز",
+        help_text="نوع ارز برداشت"
+    )
+    
+    amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        verbose_name="مقدار",
+        help_text="مقدار برداشت"
+    )
+    
+    bank_account = models.ForeignKey(
+        'users.BankAccount',
+        on_delete=models.PROTECT,
+        related_name='withdraw_requests',
+        verbose_name="حساب بانکی مقصد",
+        help_text="حساب بانکی که باید به آن واریز شود"
+    )
+    
+    status = models.CharField(
+        max_length=15,
+        choices=WithdrawStatus.choices,
+        default=WithdrawStatus.PENDING,
+        db_index=True,
+        verbose_name="وضعیت",
+        help_text="وضعیت فعلی درخواست"
+    )
+    
+    related_transaction = models.OneToOneField(
+        Transaction,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='withdraw_request',
+        verbose_name="تراکنش مرتبط",
+        help_text="تراکنش ثبت شده برای این برداشت"
+    )
+    
+    rejection_reason = models.TextField(
+        blank=True,
+        verbose_name="دلیل رد",
+        help_text="دلیل رد درخواست (در صورت رد)"
+    )
+    
+    admin_notes = models.TextField(
+        blank=True,
+        verbose_name="یادداشت‌های مدیر",
+        help_text="یادداشت‌های داخلی برای مدیر"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="تاریخ ثبت"
+    )
+    
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="آخرین به‌روزرسانی"
+    )
+    
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="تاریخ تکمیل",
+        help_text="زمان تکمیل درخواست"
+    )
+
+    class Meta:
+        verbose_name = "درخواست برداشت"
+        verbose_name_plural = "درخواست‌های برداشت"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['profile', '-created_at']),
+            models.Index(fields=['status', '-created_at']),
+        ]
+
+    def __str__(self) -> str:
+        """Return string representation of the withdraw request."""
+        return f"برداشت {self.id} – {self.amount} {self.get_currency_display()} – {self.profile.get_display_name()}"
+    
+    def is_pending(self) -> bool:
+        """Check if request is pending."""
+        return self.status == self.WithdrawStatus.PENDING
+    
+    def is_completed(self) -> bool:
+        """Check if request is completed."""
+        return self.status == self.WithdrawStatus.COMPLETED
+    
+    def can_be_cancelled(self) -> bool:
+        """Check if request can be cancelled."""
+        return self.status in [self.WithdrawStatus.PENDING, self.WithdrawStatus.PROCESSING]

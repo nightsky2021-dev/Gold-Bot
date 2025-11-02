@@ -11,7 +11,7 @@ from django.utils import timezone
 from typing import Optional
 from decimal import Decimal
 
-from .models import Product, Order
+from .models import Product, Order, Transaction, WithdrawRequest
 
 
 @admin.register(Product)
@@ -272,3 +272,357 @@ class OrderAdmin(admin.ModelAdmin):
             f'{updated} سفارش لغو شد.'
         )
     cancel_orders.short_description = 'لغو سفارشات انتخاب شده'
+
+
+@admin.register(Transaction)
+class TransactionAdmin(admin.ModelAdmin):
+    """
+    Admin interface for Transaction model.
+    
+    Manages all wallet transactions including deposits, withdrawals, and trades.
+    """
+    
+    list_display = (
+        'id',
+        'get_user_display',
+        'transaction_type_display',
+        'currency_display',
+        'formatted_amount',
+        'status_display',
+        'bank_account_display',
+        'created_at'
+    )
+    
+    list_filter = (
+        'status',
+        'transaction_type',
+        'currency',
+        'created_at'
+    )
+    
+    search_fields = (
+        'id',
+        'profile__user__first_name',
+        'profile__user__last_name',
+        'profile__phone_number',
+        'description',
+        'admin_notes'
+    )
+    
+    autocomplete_fields = ('profile', 'bank_account', 'related_order')
+    
+    readonly_fields = (
+        'created_at',
+        'updated_at',
+        'completed_at'
+    )
+    
+    fieldsets = (
+        ('اطلاعات تراکنش', {
+            'fields': ('profile', 'transaction_type', 'currency', 'amount')
+        }),
+        ('جزئیات', {
+            'fields': ('bank_account', 'related_order', 'receipt_image', 'description')
+        }),
+        ('وضعیت', {
+            'fields': ('status', 'admin_notes')
+        }),
+        ('تاریخچه', {
+            'fields': ('created_at', 'updated_at', 'completed_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    actions = ['approve_transactions', 'reject_transactions']
+    
+    date_hierarchy = 'created_at'
+    
+    def get_user_display(self, obj: Transaction) -> str:
+        """Display user information."""
+        return obj.profile.get_display_name()
+    get_user_display.short_description = 'کاربر'
+    get_user_display.admin_order_field = 'profile__user__first_name'
+    
+    def transaction_type_display(self, obj: Transaction) -> str:
+        """Display transaction type with emoji."""
+        emojis = {
+            'DEPOSIT': '📥',
+            'WITHDRAW': '📤',
+            'BUY': '📈',
+            'SELL': '📉',
+            'ADJUSTMENT': '⚙️'
+        }
+        emoji = emojis.get(obj.transaction_type, '💳')
+        return f"{emoji} {obj.get_transaction_type_display()}"
+    transaction_type_display.short_description = 'نوع'
+    transaction_type_display.admin_order_field = 'transaction_type'
+    
+    def currency_display(self, obj: Transaction) -> str:
+        """Display currency."""
+        return obj.get_currency_display()
+    currency_display.short_description = 'ارز'
+    currency_display.admin_order_field = 'currency'
+    
+    def formatted_amount(self, obj: Transaction) -> str:
+        """Format amount."""
+        return f"{obj.amount:,.2f}"
+    formatted_amount.short_description = 'مقدار'
+    formatted_amount.admin_order_field = 'amount'
+    
+    def status_display(self, obj: Transaction) -> str:
+        """Display status with color."""
+        colors = {
+            'PENDING': 'orange',
+            'COMPLETED': 'green',
+            'CANCELLED': 'gray',
+            'REJECTED': 'red'
+        }
+        color = colors.get(obj.status, 'black')
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{}</span>',
+            color,
+            obj.get_status_display()
+        )
+    status_display.short_description = 'وضعیت'
+    status_display.admin_order_field = 'status'
+    
+    def bank_account_display(self, obj: Transaction) -> str:
+        """Display bank account."""
+        if obj.bank_account:
+            return f"{obj.bank_account.bank_name} - {obj.bank_account.get_masked_account_number()}"
+        return '-'
+    bank_account_display.short_description = 'حساب بانکی'
+    
+    @transaction.atomic
+    def approve_transactions(self, request, queryset):
+        """Approve pending deposit transactions and credit user balances."""
+        from users.services import WalletService
+        
+        pending_txns = queryset.filter(
+            status='PENDING',
+            transaction_type='DEPOSIT'
+        )
+        approved_count = 0
+        
+        for txn in pending_txns:
+            try:
+                # Add balance to user
+                WalletService.add_balance(
+                    txn.profile,
+                    txn.currency,
+                    float(txn.amount)
+                )
+                
+                # Mark transaction as completed
+                txn.status = 'COMPLETED'
+                txn.completed_at = timezone.now()
+                txn.save()
+                
+                approved_count += 1
+            except Exception as e:
+                txn.admin_notes += f"\n[{timezone.now()}] خطا: {str(e)}"
+                txn.save()
+        
+        self.message_user(
+            request,
+            f'{approved_count} تراکنش تأیید و موجودی کاربران به‌روزرسانی شد.'
+        )
+    approve_transactions.short_description = 'تأیید واریزهای انتخاب شده'
+    
+    def reject_transactions(self, request, queryset):
+        """Reject pending transactions."""
+        pending_txns = queryset.filter(status='PENDING')
+        updated = pending_txns.update(status='REJECTED')
+        
+        self.message_user(
+            request,
+            f'{updated} تراکنش رد شد.'
+        )
+    reject_transactions.short_description = 'رد تراکنش‌های انتخاب شده'
+
+
+@admin.register(WithdrawRequest)
+class WithdrawRequestAdmin(admin.ModelAdmin):
+    """
+    Admin interface for WithdrawRequest model.
+    
+    Manages withdrawal requests with balance freezing and processing.
+    """
+    
+    list_display = (
+        'id',
+        'get_user_display',
+        'currency_display',
+        'formatted_amount',
+        'status_display',
+        'bank_account_display',
+        'created_at'
+    )
+    
+    list_filter = (
+        'status',
+        'currency',
+        'created_at'
+    )
+    
+    search_fields = (
+        'id',
+        'profile__user__first_name',
+        'profile__user__last_name',
+        'profile__phone_number'
+    )
+    
+    autocomplete_fields = ('profile', 'bank_account', 'related_transaction')
+    
+    readonly_fields = (
+        'created_at',
+        'updated_at',
+        'completed_at'
+    )
+    
+    fieldsets = (
+        ('اطلاعات درخواست', {
+            'fields': ('profile', 'currency', 'amount', 'bank_account')
+        }),
+        ('وضعیت', {
+            'fields': ('status', 'rejection_reason', 'admin_notes', 'related_transaction')
+        }),
+        ('تاریخچه', {
+            'fields': ('created_at', 'updated_at', 'completed_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    actions = ['process_withdrawals', 'reject_withdrawals', 'cancel_withdrawals']
+    
+    date_hierarchy = 'created_at'
+    
+    def get_user_display(self, obj: WithdrawRequest) -> str:
+        """Display user information."""
+        return obj.profile.get_display_name()
+    get_user_display.short_description = 'کاربر'
+    get_user_display.admin_order_field = 'profile__user__first_name'
+    
+    def currency_display(self, obj: WithdrawRequest) -> str:
+        """Display currency."""
+        return obj.get_currency_display()
+    currency_display.short_description = 'ارز'
+    currency_display.admin_order_field = 'currency'
+    
+    def formatted_amount(self, obj: WithdrawRequest) -> str:
+        """Format amount."""
+        return f"{obj.amount:,.2f}"
+    formatted_amount.short_description = 'مقدار'
+    formatted_amount.admin_order_field = 'amount'
+    
+    def status_display(self, obj: WithdrawRequest) -> str:
+        """Display status with color."""
+        colors = {
+            'PENDING': 'orange',
+            'PROCESSING': 'blue',
+            'COMPLETED': 'green',
+            'CANCELLED': 'gray',
+            'REJECTED': 'red'
+        }
+        color = colors.get(obj.status, 'black')
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{}</span>',
+            color,
+            obj.get_status_display()
+        )
+    status_display.short_description = 'وضعیت'
+    status_display.admin_order_field = 'status'
+    
+    def bank_account_display(self, obj: WithdrawRequest) -> str:
+        """Display bank account."""
+        return f"{obj.bank_account.bank_name} - {obj.bank_account.get_masked_account_number()}"
+    bank_account_display.short_description = 'حساب بانکی'
+    
+    @transaction.atomic
+    def process_withdrawals(self, request, queryset):
+        """Process pending withdrawal requests and deduct balances."""
+        from users.services import WalletService
+        
+        pending_requests = queryset.filter(status='PENDING')
+        processed_count = 0
+        
+        for req in pending_requests:
+            try:
+                # Process the withdrawal (deduct from total and frozen)
+                WalletService.process_withdrawal(
+                    req.profile,
+                    req.currency,
+                    float(req.amount)
+                )
+                
+                # Create transaction record
+                txn = Transaction.objects.create(
+                    profile=req.profile,
+                    transaction_type='WITHDRAW',
+                    currency=req.currency,
+                    amount=req.amount,
+                    bank_account=req.bank_account,
+                    status='COMPLETED',
+                    description=f"برداشت شماره {req.id}",
+                    completed_at=timezone.now()
+                )
+                
+                # Mark request as completed
+                req.status = 'COMPLETED'
+                req.related_transaction = txn
+                req.completed_at = timezone.now()
+                req.save()
+                
+                processed_count += 1
+            except Exception as e:
+                req.admin_notes += f"\n[{timezone.now()}] خطا: {str(e)}"
+                req.save()
+        
+        self.message_user(
+            request,
+            f'{processed_count} درخواست برداشت پردازش شد.'
+        )
+    process_withdrawals.short_description = 'پردازش برداشت‌های انتخاب شده'
+    
+    @transaction.atomic
+    def reject_withdrawals(self, request, queryset):
+        """Reject withdrawal requests and unfreeze balances."""
+        from users.services import WalletService
+        
+        pending_requests = queryset.filter(status='PENDING')
+        rejected_count = 0
+        
+        for req in pending_requests:
+            try:
+                # Unfreeze balance
+                WalletService.unfreeze_balance(
+                    req.profile,
+                    req.currency,
+                    float(req.amount)
+                )
+                
+                # Mark as rejected
+                req.status = 'REJECTED'
+                req.save()
+                
+                rejected_count += 1
+            except Exception as e:
+                req.admin_notes += f"\n[{timezone.now()}] خطا: {str(e)}"
+                req.save()
+        
+        self.message_user(
+            request,
+            f'{rejected_count} درخواست برداشت رد شد.'
+        )
+    reject_withdrawals.short_description = 'رد برداشت‌های انتخاب شده'
+    
+    def cancel_withdrawals(self, request, queryset):
+        """Cancel withdrawal requests."""
+        pending_requests = queryset.filter(status='PENDING')
+        updated = pending_requests.update(status='CANCELLED')
+        
+        self.message_user(
+            request,
+            f'{updated} درخواست برداشت لغو شد.'
+        )
+    cancel_withdrawals.short_description = 'لغو برداشت‌های انتخاب شده'
