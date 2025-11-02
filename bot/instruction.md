@@ -1,903 +1,747 @@
 
-# 📋 دستورالعمل پیاده‌سازی سیستم کیف پول و حساب کاربری
-
-## 🎯 هدف کلی
-توسعه یک سیستم کامل مدیریت کیف پول و حساب کاربری که امکان مدیریت موجودی‌های چندگانه (ریال، طلا، سکه، دلار)، واریز/برداشت از طریق حساب‌های بانکی ثبت‌شده، و مدیریت تراکنش‌ها را فراهم کند.
+Based on my review, here's a **complete Product Requirements Document (PRD)** for implementing the Standard E-Commerce Structure (Option A):
 
 ---
 
-## 📊 وضعیت فعلی پروژه
+# 📋 Product Requirements Document: Bot Menu Reorganization
+## Option A: Standard E-Commerce Structure
 
-### ✅ موارد موجود:
-- مدل `Profile` با موجودی ریالی (`rial_balance`) و موجودی طلا (`gold_balance_grams`)
-- مدل `Order` برای ثبت سفارشات خرید/فروش
-- سیستم احراز هویت با Telegram ID
-- تایید دو مرحله‌ای (ثبت‌نام + تایید ادمین)
-- سرویس‌های `UserService` و `TradingService`
+### 🎯 Executive Summary
 
-### ❌ موارد نیازمند توسعه:
-- مدیریت کارت‌ها و حساب‌های بانکی کاربران
-- سیستم کیف پول چندارزی کامل
-- سیستم واریز و برداشت وجه
-- مدل تراکنش‌های مالی
-- موجودی سکه و دلار جداگانه در Profile
+**Objective:** Reorganize the Telegram bot's main menu from 5 buttons to 4 buttons, eliminating redundancy and enhancing user experience with a standard e-commerce structure.
+
+**Timeline:** 3 development phases (Quick Win → Core Enhancement → Advanced Features)
+
+**Impact:** 
+- Reduce button count from 5 to 4 (20% reduction)
+- Eliminate 80% functionality overlap between Portfolio and Wallet
+- Enable deposit/withdraw functionality (currently unused despite models existing)
+- Improve user task completion rate
 
 ---
 
-## 🗂️ مدل‌های دیتابیس مورد نیاز
+## 📐 Current vs. Target State
 
-### 1️⃣ مدل `BankAccount` (حساب‌های بانکی)
-
-**مسیر پیشنهادی**: `users/models.py`
-
-**فیلدهای مورد نیاز**:
+### Current Structure (5 Buttons)
 ```
-- id (Primary Key)
-- profile (ForeignKey به Profile)
-- account_holder_name (نام صاحب حساب - باید با نام کاربر مطابقت داشته باشد)
-- bank_name (نام بانک - انتخابی از لیست بانک‌های ایران)
-- account_number (شماره حساب - IBAN و شماره کارت 16 رقمی)
-- account_type (نوع حساب: CARD, IBAN)
-- is_verified (تایید شده توسط ادمین)
-- is_active (فعال برای واریز/برداشت)
-- created_at
-- updated_at
+Row 1: 📈 قیمت‌ها
+Row 2: 💳 کیف پول | 🏦 حساب‌های بانکی
+Row 3: 📊 پورتفولیو | 📜 تاریخچه
 ```
 
-**نکات مهم**:
-- یک کاربر می‌تواند چندین حساب بانکی داشته باشد
-- فقط حساب‌های تایید شده (`is_verified=True`) قابل استفاده برای واریز/برداشت هستند
-- نام صاحب حساب باید با `profile.user.first_name` و `profile.user.last_name` مطابقت داشته باشد
-- Validation برای شماره کارت 16 رقمی و شماره شبا (IBAN) ایران
-
-### 2️⃣ مدل `Wallet` (کیف پول - اختیاری)
-
-**توضیح**: از آنجا که موجودی‌ها در `Profile` ذخیره می‌شوند، نیازی به مدل جداگانه Wallet نیست. اما باید `Profile` را توسعه دهید.
-
-**تغییرات در مدل `Profile`**:
+### Target Structure (4 Buttons)
 ```
-# فیلدهای موجود:
-- rial_balance (موجودی ریالی)
-- gold_balance_grams (موجودی طلا به گرم)
-
-# فیلدهای جدید مورد نیاز:
-- coin_balance (موجودی سکه تمام - Decimal)
-- dollar_balance (موجودی دلار - Decimal)
-- frozen_rial_balance (موجودی ریالی مسدود شده - برای تراکنش‌های در حال انجام)
-- frozen_gold_balance (موجودی طلای مسدود شده)
-- frozen_coin_balance (موجودی سکه مسدود شده)
-- frozen_dollar_balance (موجودی دلار مسدود شده)
-```
-
-**دلیل Frozen Balance**:
-- هنگام ثبت درخواست برداشت، موجودی مسدود می‌شود
-- تا زمان تایید ادمین، موجودی از `balance` به `frozen_balance` منتقل می‌شود
-- در صورت تایید، از `frozen_balance` کسر می‌شود
-- در صورت لغو، به `balance` برمی‌گردد
-
-### 3️⃣ مدل `Transaction` (تراکنش‌های مالی)
-
-**مسیر پیشنهادی**: `trading/models.py` یا ایجاد اپ جدید `wallet/`
-
-**فیلدهای مورد نیاز**:
-```
-- id (Primary Key)
-- transaction_number (شماره یونیک تراکنش - مثل: TXN-20241024-001)
-- profile (ForeignKey به Profile - کاربر اصلی)
-- transaction_type (نوع تراکنش: DEPOSIT, WITHDRAW, TRANSFER_SEND, TRANSFER_RECEIVE, BUY, SELL)
-- currency_type (نوع ارز: RIAL, GOLD, COIN, DOLLAR)
-- amount (مقدار تراکنش)
-- balance_before (موجودی قبل از تراکنش)
-- balance_after (موجودی بعد از تراکنش)
-- status (وضعیت: PENDING, COMPLETED, CANCELLED, FAILED)
-- related_bank_account (ForeignKey به BankAccount - اختیاری، برای واریز/برداشت)
-- related_order (ForeignKey به Order - اختیاری، برای خرید/فروش)
-- admin_note (یادداشت ادمین)
-- user_note (یادداشت کاربر)
-- created_at
-- completed_at (زمان تکمیل)
-```
-
-**انواع تراکنش‌ها**:
-- `DEPOSIT`: واریز وجه به حساب
-- `WITHDRAW`: برداشت وجه از حساب
-- `BUY`: خرید محصول (کسر ریال، اضافه طلا/سکه/دلار)
-- `SELL`: فروش محصول (کسر طلا/سکه/دلار، اضافه ریال)
-
-### 4️⃣ مدل `WithdrawRequest` (درخواست برداشت)
-
-**مسیر پیشنهادی**: `trading/models.py`
-
-**فیلدهای مورد نیاز**:
-```
-- id (Primary Key)
-- request_number (شماره یونیک درخواست)
-- profile (ForeignKey به Profile)
-- bank_account (ForeignKey به BankAccount - حساب مقصد)
-- currency_type (نوع ارز: RIAL, GOLD, COIN, DOLLAR)
-- amount (مقدار درخواستی)
-- status (وضعیت: PENDING, APPROVED, REJECTED, COMPLETED)
-- related_transaction (ForeignKey به Transaction - OneToOne)
-- admin_note (دلیل رد یا توضیحات)
-- created_at
-- processed_at (زمان پردازش توسط ادمین)
-- completed_at (زمان تکمیل)
-```
-
-
-## 🏗️ سرویس‌های مورد نیاز
-
-### 1️⃣ سرویس `BankAccountService`
-
-**مسیر پیشنهادی**: `users/services.py`
-
-**متدهای مورد نیاز**:
-
-```
-add_bank_account(profile, account_holder_name, bank_name, account_number, account_type)
-    ↳ افزودن حساب بانکی جدید
-    ↳ Validation: بررسی تطابق نام با مشخصات کاربر
-    ↳ بررسی عدم تکرار شماره حساب
-    ↳ وضعیت اولیه: is_verified=False
-
-get_user_bank_accounts(profile, only_verified=False)
-    ↳ دریافت لیست حساب‌های بانکی کاربر
-    ↳ فیلتر بر اساس تایید شده بودن
-
-verify_bank_account(bank_account_id, admin_user)
-    ↳ تایید حساب بانکی توسط ادمین
-    ↳ تغییر وضعیت به is_verified=True
-    ↳ ارسال نوتیفیکیشن به کاربر
-
-remove_bank_account(bank_account_id, profile)
-    ↳ حذف حساب بانکی (soft delete یا hard delete)
-    ↳ بررسی عدم وجود تراکنش pending
-```
-
-### 2️⃣ سرویس `WalletService`
-
-**مسیر پیشنهادی**: `trading/services.py` یا ایجاد فایل جدید `users/wallet_services.py`
-
-**متدهای مورد نیاز**:
-
-```
-get_wallet_balance(profile)
-    ↳ دریافت موجودی‌های کامل کاربر
-    ↳ Return: Dict شامل {rial, gold, coin, dollar, frozen_rial, frozen_gold, ...}
-
-freeze_balance(profile, currency_type, amount)
-    ↳ مسدود کردن موجودی برای تراکنش
-    ↳ کسر از balance اصلی و اضافه به frozen_balance
-    ↳ استفاده از @transaction.atomic()
-
-unfreeze_balance(profile, currency_type, amount)
-    ↳ آزاد کردن موجودی مسدود شده
-    ↳ کسر از frozen_balance و اضافه به balance
-
-deduct_balance(profile, currency_type, amount)
-    ↳ کسر موجودی (برای تراکنش‌های تکمیل شده)
-    ↳ بررسی کفایت موجودی
-    ↳ استفاده از @transaction.atomic()
-
-add_balance(profile, currency_type, amount)
-    ↳ افزودن موجودی
-    ↳ استفاده از @transaction.atomic()
-
-check_sufficient_balance(profile, currency_type, amount)
-    ↳ بررسی کفایت موجودی
-    ↳ Return: Boolean
-```
-
-### 3️⃣ سرویس `TransactionService`
-
-**مسیر پیشنهادی**: `trading/services.py` یا فایل جدید
-
-**متدهای مورد نیاز**:
-
-```
-create_transaction(profile, transaction_type, currency_type, amount, **kwargs)
-    ↳ ایجاد تراکنش جدید
-    ↳ تولید transaction_number یونیک
-    ↳ ثبت balance_before و balance_after
-    ↳ Return: Transaction instance
-
-get_user_transactions(profile, currency_type=None, limit=20, status=None)
-    ↳ دریافت تاریخچه تراکنش‌های کاربر
-    ↳ فیلتر بر اساس نوع ارز و وضعیت
-    ↳ مرتب‌سازی بر اساس تاریخ (جدیدترین اول)
-
-complete_transaction(transaction_id, admin_user=None)
-    ↳ تکمیل تراکنش
-    ↳ تغییر وضعیت به COMPLETED
-    ↳ ثبت زمان completed_at
-
-cancel_transaction(transaction_id, reason, admin_user=None)
-    ↳ لغو تراکنش
-    ↳ بازگشت موجودی frozen (در صورت نیاز)
-    ↳ ثبت دلیل لغو
-```
-
-### 4️⃣ سرویس `DepositService`
-
-**مسیر پیشنهادی**: `trading/services.py`
-
-**متدهای مورد نیاز**:
-
-```
-create_deposit_request(profile, currency_type, amount, bank_account_id, receipt_image=None)
-    ↳ ایجاد درخواست واریز
-    ↳ بررسی تایید شده بودن حساب بانکی
-    ↳ ایجاد Transaction با status=PENDING
-    ↳ ذخیره تصویر رسید (اختیاری)
-    ↳ ارسال نوتیفیکیشن به ادمین
-
-approve_deposit(transaction_id, admin_user)
-    ↳ تایید واریز توسط ادمین
-    ↳ افزودن موجودی به حساب کاربر
-    ↳ تکمیل تراکنش
-    ↳ ارسال نوتیفیکیشن به کاربر
-    ↳ استفاده از @transaction.atomic()
-
-reject_deposit(transaction_id, reason, admin_user)
-    ↳ رد واریز
-    ↳ تغییر وضعیت به CANCELLED
-    ↳ ارسال نوتیفیکیشن به کاربر با دلیل
-```
-
-### 5️⃣ سرویس `WithdrawService`
-
-**مسیر پیشنهادی**: `trading/services.py`
-
-**متدهای مورد نیاز**:
-
-```
-create_withdraw_request(profile, currency_type, amount, bank_account_id)
-    ↳ ایجاد درخواست برداشت
-    ↳ بررسی کفایت موجودی
-    ↳ بررسی تایید شده بودن حساب بانکی مقصد
-    ↳ مسدود کردن موجودی (freeze_balance)
-    ↳ ایجاد WithdrawRequest و Transaction
-    ↳ ارسال نوتیفیکیشن به ادمین
-    ↳ استفاده از @transaction.atomic()
-
-approve_withdraw(withdraw_request_id, admin_user)
-    ↳ تایید برداشت
-    ↳ کسر از frozen_balance
-    ↳ تکمیل تراکنش
-    ↳ ارسال نوتیفیکیشن به کاربر
-    ↳ استفاده از @transaction.atomic()
-
-reject_withdraw(withdraw_request_id, reason, admin_user)
-    ↳ رد برداشت
-    ↳ آزاد کردن موجودی مسدود شده (unfreeze)
-    ↳ لغو تراکنش
-    ↳ ارسال نوتیفیکیشن به کاربر با دلیل
-    ↳ استفاده از @transaction.atomic()
-```
-
-
-## 🤖 تغییرات در ربات تلگرام
-
-### کیبوردهای جدید مورد نیاز
-
-**1. منوی حساب کاربری** (`bot/keyboards.py`):
-```python
-def get_account_menu_keyboard():
-    """کیبورد منوی حساب کاربری"""
-    keyboard = [
-        [InlineKeyboardButton("👤 مشخصات من", callback_data="account_profile")],
-        [InlineKeyboardButton("💳 کارت‌های بانکی", callback_data="account_bankcards")],
-        [InlineKeyboardButton("💰 موجودی‌ها", callback_data="account_balances")],
-        [InlineKeyboardButton("📊 تراکنش‌ها", callback_data="account_transactions")],
-        [InlineKeyboardButton("🔙 بازگشت", callback_data=CALLBACK_BACK_TO_MAIN)],
-    ]
-```
-
-**2. منوی کیف پول**:
-```python
-def get_wallet_menu_keyboard():
-    """کیبورد منوی کیف پول"""
-    keyboard = [
-        [InlineKeyboardButton("➕ واریز وجه", callback_data="wallet_deposit")],
-        [InlineKeyboardButton("➖ برداشت وجه", callback_data="wallet_withdraw")],
-        [InlineKeyboardButton("💰 موجودی‌ها", callback_data="wallet_balances")],
-        [InlineKeyboardButton("📜 تراکنش‌ها", callback_data="wallet_transactions")],
-        [InlineKeyboardButton("🔙 بازگشت", callback_data=CALLBACK_BACK_TO_MAIN)],
-    ]
-```
-
-**3. کیبورد انتخاب نوع ارز**:
-```python
-def get_currency_selection_keyboard(action_type):
-    """کیبورد انتخاب نوع ارز"""
-    keyboard = [
-        [InlineKeyboardButton("💵 ریال", callback_data=f"{action_type}_RIAL")],
-        [InlineKeyboardButton("🪙 طلا", callback_data=f"{action_type}_GOLD")],
-        [InlineKeyboardButton("🥇 سکه", callback_data=f"{action_type}_COIN")],
-        [InlineKeyboardButton("💵 دلار", callback_data=f"{action_type}_DOLLAR")],
-        [InlineKeyboardButton("🔙 انصراف", callback_data=CALLBACK_CONFIRM_NO)],
-    ]
-```
-
-**4. کیبورد لیست حساب‌های بانکی**:
-```python
-def get_bank_accounts_keyboard(bank_accounts, action_prefix="select_bank"):
-    """کیبورد لیست حساب‌های بانکی کاربر"""
-    keyboard = []
-    for account in bank_accounts:
-        card_display = account.account_number[-4:]  # 4 رقم آخر
-        keyboard.append([
-            InlineKeyboardButton(
-                f"💳 {account.bank_name} - ****{card_display}",
-                callback_data=f"{action_prefix}_{account.id}"
-            )
-        ])
-    keyboard.append([
-        InlineKeyboardButton("➕ افزودن حساب جدید", callback_data="add_bank_account")
-    ])
-    keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data=CALLBACK_BACK_TO_MAIN)])
-```
-
-### Conversation Handlers جدید
-
-**1. Account Management Handler** (`bot/management/commands/runbot.py`):
-- State: `VIEWING_PROFILE`, `MANAGING_BANK_ACCOUNTS`, `ADDING_BANK_ACCOUNT`
-- نمایش مشخصات کاربر
-- مدیریت کارت‌های بانکی
-- افزودن/حذف کارت بانکی
-
-**2. Deposit Handler**:
-- States: `SELECTING_DEPOSIT_CURRENCY`, `ENTERING_DEPOSIT_AMOUNT`, `SELECTING_DEPOSIT_BANK`, `UPLOADING_RECEIPT`, `CONFIRMING_DEPOSIT`
-- انتخاب نوع ارز
-- ورود مقدار
-- انتخاب حساب بانکی مبدا
-- آپلود تصویر رسید (اختیاری)
-- تایید نهایی و ثبت درخواست
-
-**3. Withdraw Handler**:
-- States: `SELECTING_WITHDRAW_CURRENCY`, `ENTERING_WITHDRAW_AMOUNT`, `SELECTING_WITHDRAW_BANK`, `CONFIRMING_WITHDRAW`
-- انتخاب نوع ارز
-- ورود مقدار
-- بررسی کفایت موجودی
-- انتخاب حساب بانکی مقصد
-- تایید نهایی و ثبت درخواست
-
-
-**5. Transaction History Handler**:
-- نمایش تاریخچه تراکنش‌ها
-- فیلتر بر اساس نوع ارز
-- صفحه‌بندی (Pagination)
-- جزئیات هر تراکنش
-
-### دکمه جدید در منوی اصلی
-
-**تغییر در `get_main_menu_keyboard()`**:
-```python
-def get_main_menu_keyboard():
-    keyboard = [
-        [MENU_PRICES],
-        [MENU_PORTFOLIO, MENU_HISTORY],
-        ["👤 حساب کاربری", "💼 کیف پول"],  # دکمه‌های جدید
-    ]
+Row 1: 📈 قیمت‌ها
+Row 2: 💼 کیف پول
+Row 3: 📋 تاریخچه | ⚙️ تنظیمات
 ```
 
 ---
 
-## 🛡️ امنیت و اعتبارسنجی
+## 🎨 Detailed Button Specifications
 
-### Validations ضروری:
+### **Button 1: 📈 قیمت‌ها (Prices & Trade)**
 
-1. **کارت بانکی**:
-   - بررسی فرمت صحیح شماره کارت (16 رقم)
-   - بررسی فرمت صحیح شبا (IR + 24 رقم)
-   - تطابق نام صاحب حساب با مشخصات کاربر
-   - تایید ادمین قبل از استفاده
+**Status:** NO CHANGES REQUIRED ✅ only change the name to قیمتها و معامله
 
-2. **تراکنش‌ها**:
-   - استفاده از `@transaction.atomic()` در تمام عملیات‌های مالی
-   - بررسی کفایت موجودی قبل از هر تراکنش
-   - لاگ کردن تمام تراکنش‌ها
-   - ثبت `balance_before` و `balance_after` برای Audit Trail
+**Current Functionality:**
+- Display inline menu with product options (Gold, Coin, Dollar)
+- Show individual product prices with buy/sell buttons
+- Automatic price expiration after 60 seconds
+- Direct transition to buy/sell conversation flow
 
-3. **واریز و برداشت**:
-   - محدودیت حداقل و حداکثر مبلغ
-   - تایید دو مرحله‌ای (ثبت درخواست + تایید ادمین)
-   - تایم‌استمپ دقیق برای هر مرحله
-
-
-### Rate Limiting:
-- محدودیت تعداد درخواست‌های واریز/برداشت در روز
-- محدودیت مجموع مبلغ برداشت در روز
+**Keep as is:** This button is well-implemented and follows best practices.
 
 ---
 
-## 📱 پنل ادمین Django
+### **Button 2: 💼 کیف پول (Wallet) - ENHANCE**
 
-### صفحات جدید مورد نیاز:
+**Current State:**
+- Only displays balance information (read-only)
+- Shows: Rial, Gold, Coin, Dollar balances
+- Shows: Available vs. Frozen balances
+- No interaction capability
 
-**1. مدیریت حساب‌های بانکی** (`users/admin.py`):
-- نمایش لیست حساب‌های بانکی در حال انتظار تایید
-- امکان تایید/رد دسته‌جمع
-- نمایش اطلاعات کاربر در کنار اطلاعات حساب
-- فیلتر بر اساس بانک، وضعیت، تاریخ
+**Target State:**
+- Interactive wallet hub with action buttons
+- Full transaction management
 
-**2. مدیریت درخواست‌های واریز** (`trading/admin.py`):
-- نمایش درخواست‌های واریز Pending
-- نمایش تصویر رسید (در صورت وجود)
-- دکمه‌های تایید/رد سریع
-- فیلترها: نوع ارز، وضعیت، تاریخ، کاربر
+**Required Features:**
 
-**3. مدیریت درخواست‌های برداشت** (`trading/admin.py`):
-- نمایش درخواست‌های برداشت Pending
-- نمایش اطلاعات کامل حساب مقصد
-- دکمه‌های تایید/رد سریع
-- Alert برای درخواست‌های مبالغ بالا
+#### 2.1 Enhanced Balance Display
+- Display current balances (all 4 currencies)
+- Show available vs. frozen amounts
+- Display last update timestamp
+- Add total portfolio value estimation (optional Phase 3)
 
-**4. گزارش تراکنش‌ها** (`trading/admin.py`):
-- نمایش تمام تراکنش‌ها با فیلترهای پیشرفته
-- خلاصه آماری: مجموع واریز، برداشت، انتقال در بازه زمانی
-- Export به Excel/CSV
-- نمودارهای تحلیلی
+#### 2.2 Inline Action Buttons
+Add inline keyboard with three action buttons:
 
-### Actions سفارشی:
+**📥 واریز (Deposit)**
+- Opens deposit workflow
+- Currency selection (Rial, Gold, Coin, Dollar)
+- Amount input
+- Bank account selection (from user's registered accounts)
+- Receipt upload for Rial deposits
+- Generates pending transaction record
+- Admin notification for approval
 
-```python
-# در admin.py
-@admin.action(description="تایید حساب‌های بانکی انتخاب شده")
-def approve_bank_accounts(modeladmin, request, queryset):
-    queryset.update(is_verified=True)
-    # ارسال نوتیفیکیشن به کاربران
+**📤 برداشت (Withdraw)**
+- Opens withdrawal workflow
+- Currency selection (only from available balance)
+- Amount validation (check sufficient balance)
+- Bank account selection (verified accounts only)
+- Confirmation step with details
+- Generates WithdrawRequest record
+- Admin notification for processing
 
-@admin.action(description="تایید درخواست‌های واریز")
-def approve_deposits(modeladmin, request, queryset):
-    for deposit in queryset:
-        DepositService.approve_deposit(deposit.id, request.user)
-```
+**📊 تراکنش‌ها (Transaction History)**
+- Display last 20 transactions
+- Show: Type, Currency, Amount, Status, Date
+- Filter options: All / Pending / Completed / Cancelled
+- Pagination support (10 per page)
+- Transaction detail view on selection
 
----
-
-## 📊 Dashboard و گزارش‌گیری
-
-### ویجت‌های پیشنهادی برای Admin Dashboard:
-
-1. **آماری کلی امروز**:
-   - ت
-
-### ویجت‌های پیشنهادی برای Admin Dashboard:
-
-1. **آماری کلی امروز**:
-   - تعداد و مجموع واریزها
-   - تعداد و مجموع برداشت‌ها
-   - تعداد درخواست‌های در انتظار
-
-2. **درخواست‌های نیازمند بررسی**:
-   - حساب‌های بانکی منتظر تایید (با Badge قرمز)
-   - درخواست‌های واریز Pending
-   - درخواست‌های برداشت Pending
-   - لینک مستقیم برای بررسی سریع
-
-3. **موجودی کل سیستم**:
-   - مجموع موجودی ریالی تمام کاربران
-   - مجموع موجودی طلا
-   - مجموع موجودی سکه
-   - مجموع موجودی دلار
-   - مجموع موجودی‌های مسدود شده
-
-4. **نمودارهای تحلیلی**:
-   - نمودار روند واریز/برداشت (۳۰ روز اخیر)
-   - نمودار نوع تراکنش‌ها (Pie Chart)
-   - نمودار کاربران فعال
+**Technical Notes:**
+- Use existing `Transaction` model in `trading/models.py`
+- Use existing `WithdrawRequest` model in `trading/models.py`
+- Leverage `WalletService` in `users/wallet_services.py`
+- Conversation states already defined in `bot/constants.py` (DEPOSIT_*, WITHDRAW_*)
 
 ---
 
-## 🔔 سیستم نوتیفیکیشن
+### **Button 3: 📋 تاریخچه (History) - ENHANCE**
 
-### نوتیفیکیشن‌های کاربر (از طریق تلگرام):
+**Current State:**
+- Shows only last 5 orders
+- No filtering or pagination
+- Order-only (no transaction history)
 
-1. **تایید حساب بانکی**:
-   ```
-   ✅ حساب بانکی شما تایید شد
-   🏦 بانک: [نام بانک]
-   💳 شماره کارت: ****[4 رقم آخر]
-   
-   اکنون می‌توانید از این حساب برای واریز و برداشت استفاده کنید.
-   ```
+**Target State:**
+- Comprehensive history viewer with tabs
 
-2. **تایید واریز**:
-   ```
-   ✅ واریز شما تایید شد
-   💰 مبلغ: [مقدار] [نوع ارز]
-   📊 موجودی جدید: [موجودی]
-   🔢 شماره تراکنش: [TXN-NUMBER]
-   ```
+**Required Features:**
 
-3. **تایید برداشت**:
-   ```
-   ✅ برداشت شما انجام شد
-   💸 مبلغ: [مقدار] [نوع ارز]
-   🏦 به حساب: [بانک] - ****[4 رقم آخر]
-   📊 موجودی جدید: [موجودی]
-   
-   ⏰ مبلغ ظرف 24 ساعت آینده به حساب شما واریز می‌شود.
-   ```
+#### 3.1 Enhanced Order History
+- Display last 10-20 orders (increase from 5)
+- Show order details:
+  - Order ID
+  - Product name
+  - Buy/Sell indicator
+  - Quantity
+  - Total amount
+  - Status (Pending/Completed/Cancelled)
+  - Creation date
+- Pagination support (10 per page)
+- Order detail view with full invoice
 
-4. **رد درخواست**:
-   ```
-   ❌ درخواست [نوع] شما رد شد
-   💰 مبلغ: [مقدار] [نوع ارز]
-   📋 دلیل: [دلیل ادمین]
-   
-   در صورت سوال، با پشتیبانی تماس بگیرید.
-   ```
+#### 3.2 Filter Options (Inline Buttons)
+Add inline keyboard:
+- **🛒 سفارشات** (Orders) - Current functionality
+- **💳 تراکنش‌ها** (Transactions) - Links to wallet transaction history
 
-### نوتیفیکیشن‌های ادمین:
-
-1. **درخواست واریز جدید** (تلگرام یا ایمیل):
-   ```
-   🔔 درخواست واریز جدید
-   👤 کاربر: [نام]
-   💰 مبلغ: [مقدار] [نوع ارز]
-   
-   [لینک به پنل ادمین]
-   ```
-
-2. **درخواست برداشت جدید**:
-   ```
-   🔔 درخواست برداشت جدید
-   👤 کاربر: [نام]
-   💸 مبلغ: [مقدار] [نوع ارز]
-   🏦 به حساب: [بانک]
-   
-   [لینک به پنل ادمین]
-   ```
-
-3. **حساب بانکی جدید برای تایید**:
-   ```
-   🔔 حساب بانکی جدید
-   👤 کاربر: [نام]
-   🏦 بانک: [نام بانک]
-   💳 شماره: [شماره حساب]
-   
-   [لینک به پنل ادمین]
-   ```
+**Note:** Transaction history will be accessed via Wallet button primarily, this is a secondary access point for user convenience.
 
 ---
 
-## 🔄 جریان کاری (Workflow)
+### **Button 4: ⚙️ تنظیمات (Settings) - NEW**
 
-### فلوچارت واریز وجه:
+**Purpose:** Consolidate user profile, account management, and statistics
 
-```
-کاربر: کلیک "واریز وجه"
-    ↓
-بررسی وجود حساب بانکی تایید شده
-    ↓ (دارد)
-انتخاب نوع ارز (ریال/طلا/سکه/دلار)
-    ↓
-ورود مقدار واریز
-    ↓
-انتخاب حساب بانکی مبدا
-    ↓
-(اختیاری) آپلود تصویر رسید
-    ↓
-نمایش خلاصه و تایید نهایی
-    ↓
-ثبت Transaction با status=PENDING
-    ↓
-ارسال نوتیفیکیشن به ادمین
-    ↓
-[منتظر بررسی ادمین]
-    ↓
-ادمین: بررسی و تایید/رد
-    ↓ (تایید)
-افزودن به موجودی کاربر
-    ↓
-تکمیل Transaction (status=COMPLETED)
-    ↓
-ارسال نوتیفیکیشن به کاربر
-```
+**Required Features:**
 
-### فلوچارت برداشت وجه:
+#### 4.1 Profile Section (👤 پروفایل من)
+Display user information:
+- Full name
+- Phone number
+- Telegram username
+- Registration date
+- Verification status
+- National code (if available)
 
-```
-کاربر: کلیک "برداشت وجه"
-    ↓
-بررسی وجود حساب بانکی تایید شده
-    ↓ (دارد)
-انتخاب نوع ارز
-    ↓
-ورود مقدار برداشت
-    ↓
-بررسی کفایت موجودی
-    ↓ (کافی است)
-انتخاب حساب بانکی مقصد
-    ↓
-نمایش خلاصه و تایید نهایی
-    ↓
-مسدود کردن موجودی (freeze_balance)
-    ↓
-ثبت WithdrawRequest و Transaction
-    ↓
-ارسال نوتیفیکیشن به ادمین
-    ↓
-[منتظر بررسی ادمین]
-    ↓
-ادمین: بررسی و تایید/رد
-    ↓ (تایید)
-کسر از frozen_balance
-    ↓
-تکمیل Transaction (status=COMPLETED)
-    ↓
-ارسال نوتیفیکیشن به کاربر
-    ↓ (رد)
-آزاد کردن موجودی (unfreeze_balance)
-    ↓
-لغو Transaction (status=CANCELLED)
-    ↓
-ارسال نوتیفیکیشن به کاربر با دلیل
-```
+**Actions:**
+- View only (no editing)
+- Display formatted in Persian
+
+#### 4.2 Bank Account Management (🏦 حساب‌های بانکی)
+
+**Functionality:**
+
+**📋 List Bank Accounts:**
+- Display all registered bank accounts
+- Show: Bank name, Account holder, Account number (masked), Verification status
+- Verified accounts marked with ✅
+- Pending accounts marked with ⏳
+- Empty state message if no accounts
+
+**➕ Add Bank Account:**
+- Conversation flow to add new account
+- Fields required:
+  1. Bank name (select from predefined list - `IRANIAN_BANKS` in constants)
+  2. Account holder name
+  3. Account number (16 digits)
+  4. Account type (savings/current)
+- Validation on all fields
+- Auto-generates verification request
+- Notifies admin for verification
+
+**🗑️ Remove Bank Account:**
+- Select from list
+- Confirmation dialog
+- Only allow removal of unverified accounts
+- Block removal if account has pending transactions
+
+**Technical Notes:**
+- Use existing `BankAccount` model in `users/models.py`
+- Conversation states already defined: `ACCOUNT_ADD_BANK`, etc.
+
+#### 4.3 Statistics Dashboard (📊 آمار من)
+Consolidate information from old Portfolio button:
+
+**Display Metrics:**
+- Total orders count
+- Completed orders
+- Pending orders
+- Cancelled orders
+- Total trade volume (in Rial)
+- Favorite product (most traded)
+- Member since date
+- Account status
+
+**Layout:** Single formatted message with all statistics
 
 ---
 
-## 🎨 UI/UX در ربات تلگرام
+## 🗑️ Buttons to Remove
 
-### نمایش موجودی‌ها:
+### **Portfolio Button - REMOVE**
+**Reason:** 80% redundancy with Wallet and Settings
 
+**Migration Plan:**
+- Balance information → Already in Wallet ✅
+- User information → Move to Settings > Profile ✅
+- Order statistics → Move to Settings > Statistics ✅
+- Account status → Move to Settings > Profile ✅
+
+### **Bank Accounts Button - REMOVE**
+**Reason:** Low usage frequency, better as submenu
+
+**Migration Plan:**
+- Bank account list → Move to Settings > Bank Accounts ✅
+- Add/Edit functionality → Implement in Settings ✅
+
+---
+
+## 📝 User Stories & Acceptance Criteria
+
+### Epic 1: Wallet Enhancement
+
+**User Story 1.1: Deposit Money**
 ```
-💼 کیف پول شما:
+As a user
+I want to deposit money into my wallet
+So that I can buy gold/coin/dollar
 
-💵 موجودی ریالی:
-├─ آزاد: 5,000,000 ریال
-└─ مسدود شده: 500,000 ریال
-
-🪙 موجودی طلا:
-├─ آزاد: 12.5 گرم
-└─ مسدود شده: 0 گرم
-
-🥇 موجودی سکه:
-├─ آزاد: 3 عدد
-└─ مسدود شده: 0 عدد
-
-💵 موجودی دلار:
-├─ آزاد: 100 دلار
-└─ مسدود شده: 0 دلار
-
-⏰ آخرین بروزرسانی: 1403/08/03 - 14:25
-```
-
-### نمایش تاریخچه تراکنش:
-
-```
-📜 تاریخچه تراکنش‌ها:
-
-┌─────────────────────────
-│ 🟢 واریز ریال
-│ 💰 مبلغ: +2,000,000 ریال
-│ 📅 1403/08/03 - 10:15
-│ ✅ تکمیل شده
-│ 🔢 TXN-20241024-0012
-└─────────────────────────
-
-┌─────────────────────────
-│ 🔴 برداشت طلا
-│ 💰 مبلغ: -2.5 گرم
-│ 📅 1403/08/02 - 16:30
-│ ⏳ در حال بررسی
-│ 🔢 TXN-20241023-0087
-└─────────────────────────
-
-[دکمه: صفحه بعد]
-[دکمه: فیلتر بر اساس نوع ارز]
-[دکمه: بازگشت]
+Acceptance Criteria:
+✓ User can select currency type (Rial/Gold/Coin/Dollar)
+✓ User can enter amount with validation
+✓ User can select destination bank account
+✓ User can upload payment receipt (for Rial)
+✓ System creates pending transaction record
+✓ User receives confirmation message with transaction number
+✓ Admin receives notification for approval
+✓ User can view transaction in history
 ```
 
-### نمایش جزئیات تراکنش:
-
+**User Story 1.2: Withdraw Money**
 ```
-📋 جزئیات تراکنش
+As a user
+I want to withdraw money from my wallet
+So that I can receive cash/assets
 
-🔢 شماره: TXN-20241024-0012
-📊 نوع: واریز ریال
-💰 مبلغ: 2,000,000 ریال
+Acceptance Criteria:
+✓ User can only withdraw from available balance
+✓ System validates sufficient balance before proceeding
+✓ User can select verified bank account only
+✓ System shows withdrawal details for confirmation
+✓ System creates WithdrawRequest record
+✓ Balance is frozen until admin processes
+✓ User receives confirmation with request number
+✓ Admin receives notification
+```
 
-📈 موجودی قبل: 3,000,000 ریال
-📈 موجودی بعد: 5,000,000 ریال
+**User Story 1.3: View Transaction History**
+```
+As a user
+I want to view my transaction history
+So that I can track my financial activities
 
-📅 تاریخ ثبت: 1403/08/03 - 09:45
-✅ تاریخ تکمیل: 1403/08/03 - 10:15
-⏱ مدت زمان: 30 دقیقه
+Acceptance Criteria:
+✓ User sees last 20 transactions
+✓ Each transaction shows: type, currency, amount, status, date
+✓ User can filter by status
+✓ User can paginate through history
+✓ User can tap transaction for details
+```
 
-🏦 از حساب: بانک ملی - ****1234
+### Epic 2: Settings Menu
 
-✅ وضعیت: تکمیل شده
+**User Story 2.1: View Profile**
+```
+As a user
+I want to view my profile information
+So that I can verify my details
 
-[دکمه: بازگشت به لیست]
+Acceptance Criteria:
+✓ User sees complete profile information
+✓ All fields displayed in Persian
+✓ Dates formatted correctly (Jalali calendar)
+✓ Verification status clearly indicated
+```
+
+**User Story 2.2: Manage Bank Accounts**
+```
+As a user
+I want to add and manage my bank accounts
+So that I can deposit and withdraw funds
+
+Acceptance Criteria:
+✓ User can view list of registered accounts
+✓ User can add new bank account through guided flow
+✓ System validates all account details
+✓ User can remove unverified accounts
+✓ System prevents removal of accounts with pending transactions
+✓ User sees verification status for each account
+```
+
+**User Story 2.3: View Statistics**
+```
+As a user
+I want to view my trading statistics
+So that I can track my activity
+
+Acceptance Criteria:
+✓ User sees total order count by status
+✓ User sees total trade volume
+✓ User sees favorite product
+✓ User sees membership duration
+✓ All numbers formatted properly in Persian
+```
+
+### Epic 3: History Enhancement
+
+**User Story 3.1: Enhanced Order History**
+```
+As a user
+I want to see more orders in my history
+So that I can review past transactions
+
+Acceptance Criteria:
+✓ User sees last 10-20 orders (increased from 5)
+✓ Orders displayed with complete information
+✓ User can paginate through history
+✓ User can tap order for full invoice details
 ```
 
 ---
 
-## 📝 Constants جدید مورد نیاز
+## 🔧 Technical Implementation Guidelines
 
-**در فایل `bot/constants.py`:**
+### Phase 1: Quick Wins 
+**Goal:** Restructure menu, remove redundancy
 
-```python
-# States برای Account Management
-VIEWING_PROFILE = "viewing_profile"
-MANAGING_BANK_ACCOUNTS = "managing_bank_accounts"
-ADDING_BANK_ACCOUNT = "adding_bank_account"
-ENTERING_BANK_NAME = "entering_bank_name"
-ENTERING_ACCOUNT_NUMBER = "entering_account_number"
-ENTERING_ACCOUNT_HOLDER = "entering_account_holder"
+**Tasks:**
+1. Update `bot/keyboards.py`:
+   - Modify `get_main_menu_keyboard()` function
+   - Change from 5 buttons to 4 buttons layout
+   - Update button constants if needed
 
-# States برای Wallet Management
-SELECTING_DEPOSIT_CURRENCY = "selecting_deposit_currency"
-ENTERING_DEPOSIT_AMOUNT = "entering_deposit_amount"
-SELECTING_DEPOSIT_BANK = "selecting_deposit_bank"
-UPLOADING_RECEIPT = "uploading_receipt"
-CONFIRMING_DEPOSIT = "confirming_deposit"
+2. Remove handlers in `bot/management/commands/runbot.py`:
+   - Remove or comment out Portfolio button handler
+   - Remove or comment out Bank Accounts button handler
 
-SELECTING_WITHDRAW_CURRENCY = "selecting_withdraw_currency"
-ENTERING_WITHDRAW_AMOUNT = "entering_withdraw_amount"
-SELECTING_WITHDRAW_BANK = "selecting_withdraw_bank"
-CONFIRMING_WITHDRAW = "confirming_withdraw"
+3. Add Settings button handler:
+   - Create `show_settings()` function
+   - Display inline keyboard with 3 options (Profile, Bank Accounts, Statistics)
+   - Implement basic display for each submenu
 
-# Callback Data Prefixes
-CALLBACK_ACCOUNT_PROFILE = "account_profile"
-CALLBACK_ACCOUNT_BANKCARDS = "account_bankcards"
-CALLBACK_ACCOUNT_BALANCES = "account_balances"
-CALLBACK_ACCOUNT_TRANSACTIONS = "account_transactions"
+4. Update `bot/constants.py`:
+   - Add new menu button constant: `MENU_SETTINGS`
+   - Add callback constants for settings submenus
 
-CALLBACK_WALLET_DEPOSIT = "wallet_deposit"
-CALLBACK_WALLET_WITHDRAW = "wallet_withdraw"
-CALLBACK_WALLET_BALANCES = "wallet_balances"
-CALLBACK_WALLET_TRANSACTIONS = "wallet_transactions"
-
-CALLBACK_CURRENCY_RIAL = "currency_rial"
-CALLBACK_CURRENCY_GOLD = "currency_gold"
-CALLBACK_CURRENCY_COIN = "currency_coin"
-CALLBACK_CURRENCY_DOLLAR = "currency_dollar"
-
-CALLBACK_SELECT_BANK_PREFIX = "select_bank_"
-CALLBACK_ADD_BANK_ACCOUNT = "add_bank_account"
-CALLBACK_REMOVE_BANK_PREFIX = "remove_bank_"
-
-# منوهای اصلی جدید
-MENU_ACCOUNT = "👤 حساب کاربری"
-MENU_WALLET = "💼 کیف پول"
-
-# انواع ارز
-CURRENCY_TYPES = {
-    'RIAL': 'ریال',
-    'GOLD': 'طلا',
-    'COIN': 'سکه',
-    'DOLLAR': 'دلار',
-}
-
-# لیست بانک‌های ایران
-IRANIAN_BANKS = [
-    'ملی ایران', 'ملت', 'تجارت', 'صادرات', 'سپه',
-    'رفاه', 'پاسارگاد', 'پارسیان', 'اقتصاد نوین', 'سامان',
-    'سینا', 'کارآفرین', 'آینده', 'شهر', 'دی',
-    'صنعت و معدن', 'توسعه تعاون', 'قوامین', 'مهر اقتصاد', 'حکمت ایرانیان'
-]
-```
+**Testing Checklist:**
+- [ ] Menu displays with 4 buttons correctly
+- [ ] Each button responds when clicked
+- [ ] Settings submenu appears with 3 options
+- [ ] Profile display shows user information
+- [ ] Bank accounts display shows list
+- [ ] Statistics display shows consolidated info from old Portfolio
 
 ---
 
-## 🧪 تست‌های مورد نیاز
+### Phase 2: Wallet Enhancement 
+**Goal:** Make wallet interactive
 
-### Unit Tests:
+**Tasks:**
 
-**1. تست سرویس BankAccount:**
-```python
-# tests/test_bank_account_service.py
-def test_add_bank_account_success()
-def test_add_bank_account_duplicate()
-def test_add_bank_account_invalid_name()
-def test_verify_bank_account()
-def test_remove_bank_account_with_pending_transaction()
-```
+#### 2.1 Update Wallet Display
+1. Modify `show_wallet()` function in `runbot.py`
+2. Add inline keyboard with 3 action buttons (Deposit, Withdraw, Transactions)
+3. Keep existing balance display from `WalletService.format_wallet_display()`
 
-**2. تست سرویس Wallet:**
-```python
-# tests/test_wallet_service.py
-def test_freeze_balance_success()
-def test_freeze_balance_insufficient()
-def test_unfreeze_balance()
-def test_deduct_balance()
-def test_add_balance()
-def test_check_sufficient_balance()
-```
+#### 2.2 Implement Transaction History Viewer
+1. Create callback handler: `show_wallet_transactions()`
+2. Query last 20 transactions from database
+3. Format display with pagination support
+4. Add filter buttons (All, Pending, Completed, Cancelled)
+5. Implement transaction detail view
 
-**3. تست سرویس Transaction:**
-```python
-# tests/test_transaction_service.py
-def test_create_transaction()
-def test_complete_transaction()
-def test_cancel_transaction()
-def test_get_user_transactions_filtered()
-```
+#### 2.3 Implement Deposit Workflow
+1. Create conversation handler for deposit
+2. Use existing states: `DEPOSIT_SELECT_CURRENCY`, `DEPOSIT_ENTER_AMOUNT`, etc.
+3. Implement handlers:
+   - `deposit_select_currency()` - Show currency options
+   - `deposit_enter_amount()` - Validate amount input
+   - `deposit_select_bank()` - Show user's bank accounts
+   - `deposit_upload_receipt()` - Handle photo upload (Rial only)
+   - `deposit_confirm()` - Create Transaction record
+4. Generate transaction number
+5. Send admin notification
 
-**4. تست سرویس Deposit:**
-```python
-# tests/test_deposit_service.py
-def test_create_deposit_request()
-def test_approve_deposit()
-def test_reject_deposit()
-def test_deposit_with_unverified_bank()
-```
+#### 2.4 Implement Withdrawal Workflow
+1. Create conversation handler for withdrawal
+2. Use existing states: `WITHDRAW_SELECT_CURRENCY`, `WITHDRAW_ENTER_AMOUNT`, etc.
+3. Implement handlers:
+   - `withdraw_select_currency()` - Show available currencies
+   - `withdraw_enter_amount()` - Validate against available balance
+   - `withdraw_select_bank()` - Show verified bank accounts only
+   - `withdraw_confirm()` - Create WithdrawRequest record
+4. Freeze balance using `WalletService.freeze_balance()`
+5. Generate request number
+6. Send admin notification
 
-**5. تست سرویس Withdraw:**
-```python
-# tests/test_withdraw_service.py
-def test_create_withdraw_request()
-def test_approve_withdraw()
-def test_reject_withdraw()
-def test_withdraw_insufficient_balance()
-def test_freeze_unfreeze_on_reject()
-```
+**Integration Points:**
+- Use `WalletService` for all balance operations
+- Use `Transaction` model for deposit tracking
+- Use `WithdrawRequest` model for withdrawal tracking
+- Reference `BankAccount` model for account selection
 
-
-### Integration Tests:
-
-```python
-# tests/test_wallet_integration.py
-def test_complete_deposit_workflow()
-def test_complete_withdraw_workflow()
-def test_concurrent_transactions()
-def test_balance_consistency()
-```
+**Testing Checklist:**
+- [ ] Wallet displays with 3 action buttons
+- [ ] Transaction history loads and displays correctly
+- [ ] Pagination works in transaction history
+- [ ] Deposit workflow completes successfully
+- [ ] Transaction record created correctly
+- [ ] Withdrawal workflow validates balance
+- [ ] WithdrawRequest record created correctly
+- [ ] Balance frozen after withdrawal request
+- [ ] Admin notifications sent
+- [ ] Error handling works for invalid inputs
 
 ---
 
-## ⚠️ نکات مهم و توصیه‌ها
+### Phase 3: Bank Account Management 
+**Goal:** Enable users to manage bank accounts
 
-### 1. امنیت:
-- ✅ همیشه از `@transaction.atomic()` استفاده کنید
-- ✅ تمام ورودی‌های کاربر را Validate کنید
-- ✅ از Decimal برای مقادیر مالی استفاده کنید (نه Float)
-- ✅ تمام تراکنش‌ها را لاگ کنید
-- ✅ دسترسی به Admin Panel را محدود کنید
+**Tasks:**
 
-### 2. عملکرد:
-- ✅ از Select Related و Prefetch Related استفاده کنید
-- ✅ Index مناسب برای فیلدهای جستجو
-- ✅ Pagination برای لیست‌های طولانی
-- ✅ Cache برای قیمت‌ها و داده‌های ثابت
+#### 3.1 Display Bank Accounts
+1. Implement `show_bank_accounts()` function
+2. Query user's bank accounts from database
+3. Format list with status indicators
+4. Add action buttons: Add Account, Remove Account
 
-### 3. تجربه کاربری:
-- ✅ پیام‌های خطا واضح و فارسی
-- ✅ Loading indicators برای عملیات‌های طولانی
-- ✅ تاییدیه قبل از عملیات‌های حساس
-- ✅ نمایش پیشرفت در Conversation Handlers
+#### 3.2 Add Bank Account Workflow
+1. Create conversation handler
+2. Use state: `ACCOUNT_ADD_BANK`
+3. Implement handlers:
+   - `account_add_bank_select_bank()` - Show bank list from `IRANIAN_BANKS`
+   - `account_add_bank_holder_name()` - Get account holder name
+   - `account_add_bank_number()` - Validate 16-digit account number
+   - `account_add_bank_type()` - Select savings/current
+   - `account_add_bank_confirm()` - Create BankAccount record
+4. Set `is_verified=False` by default
+5. Notify admin for verification
 
-### 4. مقیاس‌پذیری:
-- ✅ استفاده از Celery برای کارهای سنگین (اختیاری)
-- ✅ Redis برای Queue مدیریت نوتیفیکیشن‌ها (اختیاری)
-- ✅ استفاده از PostgreSQL به جای SQLite در Production
-- ✅ Backup منظم دیتابیس
+#### 3.3 Remove Bank Account
+1. Implement `remove_bank_account()` callback handler
+2. Show confirmation dialog
+3. Validate no pending transactions
+4. Delete record if allowed
+5. Show error if not allowed (pending transactions exist)
 
-### 5. Monitoring:
-- ✅ Logging مناسب برای تمام تراکنش‌ها
-- ✅ Alert برای تراکنش‌های مشکوک
-- ✅ گزارش‌گیری روزانه برای ادمین
-- ✅ پیگیری خطاها با Sentry (اختیاری)
+**Integration Points:**
+- Use `BankAccount` model in `users/models.py`
+- Check against `Transaction` and `WithdrawRequest` before deletion
+- Use `IRANIAN_BANKS` constant for bank selection
+
+**Testing Checklist:**
+- [ ] Bank account list displays correctly
+- [ ] Add account workflow completes successfully
+- [ ] BankAccount record created with correct data
+- [ ] Validation works for account number format
+- [ ] Remove account works for unverified accounts
+- [ ] Remove blocked for accounts with pending transactions
+- [ ] Admin notification sent for new accounts
 
 ---
 
-## 🎓 خلاصه و نتیجه‌گیری
+### Phase 4: History Enhancement 
+**Goal:** Improve order history display
 
-این دستورالعمل یک راهکار کامل و حرفه‌ای برای پیاده‌سازی سیستم کیف پول و مدیریت حساب کاربری در ربات تلگرام طلافروشی شما ارائه می‌دهد.
+**Tasks:**
+1. Modify `show_history()` function in `runbot.py`
+2. Increase limit from 5 to 10 orders
+3. Add pagination support (optional)
+4. Add inline keyboard with filter options (optional)
+5. Improve order detail formatting
 
-### ویژگی‌های کلیدی:
-✅ مدیریت چندین نوع دارایی (ریال، طلا، سکه، دلار)
-✅ سیستم کارت‌های بانکی با تایید ادمین
-✅ واریز و برداشت وجه با Workflow کامل
-✅ تاریخچه کامل تراکنش‌ها
-✅ موجودی‌های مسدود شده (Frozen) برای امنیت
-✅ پنل ادمین قدرتمند
-✅ سیستم نوتیفیکیشن دوطرفه
-✅ امنیت بالا با Atomic Transactions
-✅ مستندسازی کامل
+**Testing Checklist:**
+- [ ] History shows 10 orders instead of 5
+- [ ] Order information displayed clearly
+- [ ] Pagination works if implemented
 
-این سیستم با رعایت بهترین شیوه‌های برنامه‌نویسی، امنیت بالا، و قابلیت مقیاس‌پذیری طراحی شده است.
+---
+
+## 🎨 UI/UX Specifications
+
+### Design Principles
+1. **Consistency:** Use same emoji style across all buttons
+2. **Clarity:** Clear labeling in Persian
+3. **Feedback:** Immediate response to all user actions
+4. **Error Handling:** Friendly error messages in Persian
+5. **Confirmation:** Require confirmation for financial actions
+
+### Message Formatting Standards
+- Use Markdown for emphasis
+- Format numbers with Persian separators: `{number:,.0f}`
+- Use consistent emoji indicators:
+  - ✅ Success/Verified
+  - ⏳ Pending
+  - ❌ Failed/Cancelled
+  - 💰 Money/Rial
+  - 🪙 Gold
+  - 🥇 Coin
+  - 💵 Dollar
+  - 📥 Deposit
+  - 📤 Withdraw
+
+### Timeout Handling
+- Financial conversations: 5 minutes max
+- After timeout: Clear user_data and return to main menu
+- Show friendly timeout message
+
+---
+
+## 🔒 Security & Validation
+
+### Input Validation
+1. **Amount Fields:**
+   - Must be positive numbers
+   - Must be within min/max limits
+   - Decimal validation based on currency type
+
+2. **Bank Account Number:**
+   - Must be exactly 16 digits
+   - Must be numeric only
+   - No special characters
+
+3. **Balance Checks:**
+   - Always validate sufficient balance before proceeding
+   - Check available balance (not frozen)
+   - Prevent negative balances
+
+### Transaction Safety
+1. Use `@transaction.atomic` for all financial operations
+2. Freeze balance before processing withdrawals
+3. Log all balance changes
+4. Generate unique transaction/request numbers
+5. Admin approval required for deposits and withdrawals
+
+---
+
+## 📊 Success Metrics
+
+### Primary KPIs
+- **Menu Clarity:** Button count reduced from 5 to 4 ✓
+- **Feature Utilization:** Deposit/Withdraw features available ✓
+- **Redundancy:** Eliminated 80% overlap between Portfolio/Wallet ✓
+
+### Secondary KPIs (Track after launch)
+- Wallet interaction rate (target: 30% of users)
+- Deposit request completion rate (target: >80%)
+- Bank account addition rate (target: 50% of active users)
+- Settings menu utilization (target: >20%)
+- Support tickets reduction (target: 15% decrease)
+
+---
+
+## 📅 Implementation Timeline
+
+### Week 1
+- Phase 1: Menu restructuring (Days 1-2)
+- Phase 2: Wallet enhancement start (Days 3-5)
+
+### Week 2
+- Phase 2: Complete wallet features (Days 1-3)
+- Phase 3: Bank account management (Days 4-5)
+
+### Week 3
+- Phase 4: History enhancement (Day 1)
+- Testing and bug fixes (Days 2-4)
+- Documentation update (Day 5)
+
+**Total Estimate:** 15 working days (3 weeks)
+
+---
+
+## 🧪 Testing Requirements
+
+### Unit Tests Required
+- `WalletService` methods
+- Balance validation functions
+- Transaction number generation
+- Amount parsing and validation
+
+### Integration Tests Required
+- Deposit workflow end-to-end
+- Withdrawal workflow end-to-end
+- Bank account addition flow
+- Transaction history retrieval
+
+### Manual Testing Checklist
+- [ ] All 4 main menu buttons work
+- [ ] Prices button unchanged and working
+- [ ] Wallet shows inline actions
+- [ ] Deposit completes successfully
+- [ ] Withdrawal validates balance
+- [ ] Transaction history displays
+- [ ] Settings shows all 3 submenus
+- [ ] Profile displays correctly
+- [ ] Bank accounts can be added
+- [ ] Bank accounts can be removed
+- [ ] Statistics show correct data
+- [ ] History shows 10 orders
+- [ ] All error messages in Persian
+- [ ] All timeout handling works
+- [ ] Admin notifications sent
+- [ ] Database records created correctly
+
+---
+
+## 📚 Documentation Updates Required
+
+### User Documentation
+- Update bot usage guide with new menu structure
+- Create deposit tutorial
+- Create withdrawal tutorial
+- Update bank account management guide
+
+### Developer Documentation
+- Update `ARCHITECTURE.md` with new structure
+- Document new conversation handlers
+- Update `PROJECT_STRUCTURE.md`
+- Add inline comments to new functions
+
+### Admin Documentation
+- Update admin panel guide for deposit approvals
+- Update withdrawal processing guide
+- Document bank account verification process
+
+---
+
+## 🚀 Deployment Plan
+
+### Pre-Deployment
+1. Complete all phases
+2. Pass all tests
+3. Update documentation
+4. Backup database
+5. Test on staging bot
+
+### Deployment Steps
+1. Stop current bot process
+2. Pull latest code
+3. Run database migrations (if any)
+4. Update requirements.txt dependencies (if any)
+5. Restart bot process
+6. Monitor logs for errors
+7. Test all buttons in production
+
+### Rollback Plan
+1. Stop bot process
+2. Revert to previous code version
+3. Restore database if needed
+4. Restart bot
+5. Verify functionality
+
+---
+
+## ⚠️ Risks & Mitigation
+
+### Risk 1: User Confusion
+**Mitigation:** 
+- Send broadcast message announcing changes
+- Provide clear labels on all buttons
+- Add help text in Settings
+
+### Risk 2: Transaction Errors
+**Mitigation:**
+- Extensive testing before deployment
+- Use database transactions (atomic)
+- Add comprehensive error logging
+- Admin approval layer for all financial operations
+
+### Risk 3: Performance Issues
+**Mitigation:**
+- Optimize database queries
+- Add pagination to long lists
+- Cache frequently accessed data
+- Monitor bot response times
+
+---
+
+## 💡 Future Enhancements (Post-Launch)
+
+### Phase 5 (Optional)
+- Portfolio value tracker (total worth in Rial)
+- Price alerts/notifications
+- Recurring deposits
+- Export transaction history (PDF/Excel)
+- Multi-language support
+- Dark mode for messages
+- Transaction search functionality
+
+---
+
+## ✅ Definition of Done
+
+A feature is considered complete when:
+- ✓ Code implemented and follows project standards
+- ✓ All acceptance criteria met
+- ✓ Unit tests written and passing
+- ✓ Integration tests passing
+- ✓ Error handling implemented
+- ✓ Persian translations correct
+- ✓ Admin panel integration complete (if applicable)
+- ✓ Documentation updated
+- ✓ Code reviewed and approved
+- ✓ Tested on staging environment
+- ✓ No critical bugs remaining
+
+---
+
+## 📞 Stakeholder Sign-Off
+
+This PRD requires approval from:
+- [ ] Product Owner
+- [ ] Technical Lead
+- [ ] UX Designer
+- [ ] QA Lead
+
+---
+
+**Document Version:** 1.0  
+**Last Updated:** 2024-11-02  
+**Status:** Ready for Development  
+**Priority:** High
