@@ -410,7 +410,7 @@ class TransactionAdmin(admin.ModelAdmin):
                 WalletService.add_balance(
                     txn.profile,
                     txn.currency,
-                    float(txn.amount)
+                    txn.amount
                 )
                 
                 # Mark transaction as completed
@@ -552,7 +552,7 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
                 WalletService.process_withdrawal(
                     req.profile,
                     req.currency,
-                    float(req.amount)
+                    req.amount
                 )
                 
                 # Create transaction record
@@ -598,7 +598,7 @@ class WithdrawRequestAdmin(admin.ModelAdmin):
                 WalletService.unfreeze_balance(
                     req.profile,
                     req.currency,
-                    float(req.amount)
+                    req.amount
                 )
                 
                 # Mark as rejected

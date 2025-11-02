@@ -2,6 +2,7 @@
 Business logic services for users app
 """
 from typing import Optional, Tuple
+from decimal import Decimal
 from django.contrib.auth.models import User
 from django.db import transaction
 from .models import Profile
@@ -171,7 +172,7 @@ class WalletService:
     def freeze_balance(
         profile: Profile,
         currency: str,
-        amount: float
+        amount: Decimal
     ) -> None:
         """
         Freeze balance for pending withdrawal.
@@ -209,7 +210,7 @@ class WalletService:
     def unfreeze_balance(
         profile: Profile,
         currency: str,
-        amount: float
+        amount: Decimal
     ) -> None:
         """
         Unfreeze balance (e.g., when withdrawal is cancelled).
@@ -236,7 +237,7 @@ class WalletService:
     def process_withdrawal(
         profile: Profile,
         currency: str,
-        amount: float
+        amount: Decimal
     ) -> None:
         """
         Process withdrawal by deducting from both frozen and total balance.
@@ -265,7 +266,7 @@ class WalletService:
     def add_balance(
         profile: Profile,
         currency: str,
-        amount: float
+        amount: Decimal
     ) -> None:
         """
         Add balance to user's wallet (e.g., after deposit approval).

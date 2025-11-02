@@ -517,7 +517,7 @@ class WithdrawalService:
         
         # Freeze balance
         try:
-            WalletService.freeze_balance(profile, currency, float(amount))
+            WalletService.freeze_balance(profile, currency, amount)
         except ValueError as e:
             raise ValidationError(str(e))
         
