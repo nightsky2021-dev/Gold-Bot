@@ -12,11 +12,9 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 from django.core.exceptions import ValidationError
-from django.db.models import QuerySet
 
 from .models import Product, Order, Transaction, WithdrawRequest
 from users.models import Profile, BankAccount
-from users.wallet_services import WalletService
 
 logger = logging.getLogger('trading')
 
@@ -25,14 +23,14 @@ class ProductService:
     """Service class for Product-related operations."""
     
     @staticmethod
-    def get_active_products() -> QuerySet[Product]:
+    def get_active_products() -> List[Product]:
         """
         Get all active products available for trading.
         
         Returns:
-            QuerySet of active Product instances, ordered by name.
+            List of active Product instances, ordered by name.
         """
-        return Product.objects.filter(is_active=True).order_by('name')
+        return list(Product.objects.filter(is_active=True).order_by('name'))
     
     @staticmethod
     def get_product_by_id(product_id: int) -> Optional[Product]:
@@ -199,9 +197,94 @@ class OrderService:
         )
         
         logger.info(
-            f"Order {order.pk} created: {order_type} "
+            f"Order {order.id} created: {order_type} "  # type: ignore[attr-defined]
             f"{quantity_grams}g of {product.name} "
             f"by user {profile.get_display_name()}"
+        )
+        
+        return order
+    
+    @staticmethod
+    @transaction.atomic
+    def complete_order(
+        order: Order,
+        execute_immediately: bool = True
+    ) -> Order:
+        """
+        Complete an order and update balances.
+        
+        Args:
+            order: Order instance to complete.
+            execute_immediately: If True, execute balance changes immediately.
+                                If False, just mark as completed (for admin processing).
+            
+        Returns:
+            Updated Order instance.
+            
+        Raises:
+            ValidationError: If balance is insufficient or order is invalid.
+        """
+        if order.status == Order.OrderStatus.COMPLETED:
+            raise ValidationError("این سفارش قبلاً تکمیل شده است.")
+        
+        if order.status == Order.OrderStatus.CANCELLED:
+            raise ValidationError("این سفارش لغو شده است.")
+        
+        if execute_immediately:
+            # Validate and execute balance changes
+            if order.order_type == Order.OrderType.BUY:
+                # Buy: Deduct Rial, Add Product
+                if not order.profile.has_sufficient_rial_balance(order.total_amount):
+                    raise ValidationError(
+                        f"موجودی ریالی کافی نیست. "
+                        f"مورد نیاز: {order.total_amount:,} ریال"
+                    )
+                
+                # Deduct Rial
+                order.profile.rial_balance -= order.total_amount
+                
+                # Add Product
+                currency_type = OrderService.get_product_currency_type(order.product)
+                if currency_type == 'GOLD':
+                    order.profile.gold_balance_grams += order.quantity_grams
+                elif currency_type == 'COIN':
+                    order.profile.coin_balance += order.quantity_grams
+                elif currency_type == 'DOLLAR':
+                    order.profile.dollar_balance += order.quantity_grams
+                
+            elif order.order_type == Order.OrderType.SELL:
+                # Sell: Deduct Product, Add Rial
+                currency_type = OrderService.get_product_currency_type(order.product)
+                current_balance = OrderService.get_product_balance(order.profile, order.product)
+                
+                if current_balance < order.quantity_grams:
+                    raise ValidationError(
+                        f"موجودی {order.product.name} کافی نیست. "
+                        f"مورد نیاز: {order.quantity_grams}"
+                    )
+                
+                # Deduct Product
+                if currency_type == 'GOLD':
+                    order.profile.gold_balance_grams -= order.quantity_grams
+                elif currency_type == 'COIN':
+                    order.profile.coin_balance -= order.quantity_grams
+                elif currency_type == 'DOLLAR':
+                    order.profile.dollar_balance -= order.quantity_grams
+                
+                # Add Rial
+                order.profile.rial_balance += order.total_amount
+            
+            # Save profile with updated balances
+            order.profile.save()
+        
+        # Mark order as completed
+        order.status = Order.OrderStatus.COMPLETED
+        order.save()
+        
+        logger.info(
+            f"Order {order.id} completed: {order.order_type} "  # type: ignore[attr-defined]
+            f"{order.quantity_grams}g of {order.product.name} "
+            f"by user {order.profile.get_display_name()}"
         )
         
         return order
@@ -223,7 +306,7 @@ class OrderService:
         Returns:
             List of Order instances.
         """
-        queryset = profile.orders.all()
+        queryset = profile.orders.all()  # type: ignore[attr-defined]
         
         if status:
             queryset = queryset.filter(status=status)
@@ -246,10 +329,10 @@ class OrderService:
             Formatted string.
         """
         order_type_emoji = "📈" if order.order_type == Order.OrderType.BUY else "📉"
-        order_type_text = order.get_order_type_display()  # type: ignore
+        order_type_text = order.get_order_type_display()  # type: ignore[attr-defined]
         
         text = (
-            f"{order_type_emoji} *سفارش #{order.pk}*\n"
+            f"{order_type_emoji} *سفارش #{order.id}*\n"  # type: ignore[attr-defined]
             f"📦 محصول: {order.product.name}\n"
             f"⚖️ مقدار: {order.quantity_grams} گرم\n"
             f"💰 قیمت هر گرم: {order.price_per_gram:,} ریال\n"
@@ -264,7 +347,7 @@ class OrderService:
                 Order.OrderStatus.CANCELLED: "❌",
             }
             emoji = status_emoji.get(order.status, "")
-            text += f"{emoji} وضعیت: {order.get_status_display()}\n"  # type: ignore
+            text += f"{emoji} وضعیت: {order.get_status_display()}\n"  # type: ignore[attr-defined]
         
         return text
     
@@ -297,6 +380,199 @@ class OrderService:
             f"💵 مبلغ کل: *{total_amount:,} ریال*\n\n"
             f"آیا از ثبت این سفارش مطمئن هستید؟"
         )
+    
+    @staticmethod
+    def format_order_invoice(
+        profile: Profile,
+        product: Product,
+        order_type: str,
+        quantity_grams: Decimal,
+        price_per_gram: Decimal,
+        total_amount: Decimal
+    ) -> str:
+        """
+        Format detailed order invoice with balance information.
+        
+        Args:
+            profile: User profile.
+            product: Product instance.
+            order_type: 'BUY' or 'SELL'
+            quantity_grams: Quantity in grams.
+            price_per_gram: Price per gram.
+            total_amount: Total amount in Rial.
+            
+        Returns:
+            Formatted invoice string with balance details.
+        """
+        order_type_text = "خرید" if order_type == Order.OrderType.BUY else "فروش"
+        order_type_emoji = "📈" if order_type == Order.OrderType.BUY else "📉"
+        
+        # Get product currency type
+        product_currency = OrderService.get_product_currency_type(product)
+        
+        # Get current balances
+        current_rial = profile.rial_balance
+        current_product_balance = OrderService.get_product_balance(profile, product)
+        
+        # Calculate final balances
+        if order_type == Order.OrderType.BUY:
+            final_rial = current_rial - total_amount
+            final_product_balance = current_product_balance + quantity_grams
+            payment_text = f"💳 *پرداخت:* {total_amount:,} ریال"
+            receive_text = f"📥 *دریافت:* {quantity_grams} {OrderService.get_product_unit(product)}"
+        else:  # SELL
+            final_rial = current_rial + total_amount
+            final_product_balance = current_product_balance - quantity_grams
+            payment_text = f"📤 *تحویل:* {quantity_grams} {OrderService.get_product_unit(product)}"
+            receive_text = f"💰 *دریافت:* {total_amount:,} ریال"
+        
+        invoice = (
+            f"🧾 *فاکتور {order_type_text}*\n"
+            f"{'═' * 25}\n\n"
+            f"📦 *محصول:* {product.name}\n"
+            f"💎 *قیمت هر {OrderService.get_product_unit(product)}:* {price_per_gram:,} ریال\n"
+            f"⚖️ *مقدار:* {quantity_grams} {OrderService.get_product_unit(product)}\n"
+            f"💵 *مبلغ کل:* {total_amount:,} ریال\n\n"
+            f"{payment_text}\n"
+            f"{receive_text}\n\n"
+            f"{'─' * 25}\n"
+            f"💼 *موجودی‌ها:*\n\n"
+            f"*ریال:*\n"
+            f"  • فعلی: {current_rial:,} ریال\n"
+            f"  • پس از معامله: {final_rial:,} ریال\n\n"
+            f"*{product.name}:*\n"
+            f"  • فعلی: {current_product_balance} {OrderService.get_product_unit(product)}\n"
+            f"  • پس از معامله: {final_product_balance} {OrderService.get_product_unit(product)}\n"
+            f"{'═' * 25}\n\n"
+            f"آیا از انجام این معامله مطمئن هستید؟"
+        )
+        
+        return invoice
+    
+    @staticmethod
+    def get_product_currency_type(product: Product) -> str:
+        """
+        Get currency type for a product based on product code.
+        
+        Args:
+            product: Product instance.
+            
+        Returns:
+            Currency type string ('RIAL', 'GOLD', 'COIN', 'DOLLAR').
+        """
+        from bot.constants import PRODUCT_GOLD, PRODUCT_COIN, PRODUCT_DOLLAR
+        
+        if product.product_code == PRODUCT_GOLD:
+            return 'GOLD'
+        elif product.product_code == PRODUCT_COIN:
+            return 'COIN'
+        elif product.product_code == PRODUCT_DOLLAR:
+            return 'DOLLAR'
+        else:
+            return 'GOLD'  # Default to GOLD
+    
+    @staticmethod
+    def get_product_balance(profile: Profile, product: Product) -> Decimal:
+        """
+        Get user's balance for a specific product.
+        
+        Args:
+            profile: User profile.
+            product: Product instance.
+            
+        Returns:
+            Balance amount for the product.
+        """
+        currency_type = OrderService.get_product_currency_type(product)
+        
+        if currency_type == 'GOLD':
+            return profile.gold_balance_grams
+        elif currency_type == 'COIN':
+            return profile.coin_balance
+        elif currency_type == 'DOLLAR':
+            return profile.dollar_balance
+        else:
+            return Decimal('0')
+    
+    @staticmethod
+    def get_product_unit(product: Product) -> str:
+        """
+        Get unit text for a product.
+        
+        Args:
+            product: Product instance.
+            
+        Returns:
+            Unit text in Persian.
+        """
+        from bot.constants import PRODUCT_GOLD, PRODUCT_COIN, PRODUCT_DOLLAR
+        
+        if product.product_code == PRODUCT_GOLD:
+            return 'گرم'
+        elif product.product_code == PRODUCT_COIN:
+            return 'عدد'
+        elif product.product_code == PRODUCT_DOLLAR:
+            return 'دلار'
+        else:
+            return 'گرم'
+    
+    @staticmethod
+    def validate_buy_balance(
+        profile: Profile,
+        total_amount: Decimal
+    ) -> tuple[bool, str]:
+        """
+        Validate if user has sufficient Rial balance for buying.
+        
+        Args:
+            profile: User profile.
+            total_amount: Total amount in Rial required.
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not profile.has_sufficient_rial_balance(total_amount):
+            error_msg = (
+                f"❌ *موجودی ریالی کافی نیست!*\n\n"
+                f"💼 موجودی فعلی: {profile.rial_balance:,} ریال\n"
+                f"💰 مورد نیاز: {total_amount:,} ریال\n"
+                f"⚠️ کمبود: {(total_amount - profile.rial_balance):,} ریال\n\n"
+                f"لطفاً ابتدا کیف پول خود را شارژ کنید."
+            )
+            return False, error_msg
+        return True, ""
+    
+    @staticmethod
+    def validate_sell_balance(
+        profile: Profile,
+        product: Product,
+        quantity_grams: Decimal
+    ) -> tuple[bool, str]:
+        """
+        Validate if user has sufficient product balance for selling.
+        
+        Args:
+            profile: User profile.
+            product: Product instance.
+            quantity_grams: Quantity to sell.
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        currency_type = OrderService.get_product_currency_type(product)
+        current_balance = OrderService.get_product_balance(profile, product)
+        unit = OrderService.get_product_unit(product)
+        
+        if current_balance < quantity_grams:
+            error_msg = (
+                f"❌ *موجودی {product.name} کافی نیست!*\n\n"
+                f"💼 موجودی فعلی: {current_balance} {unit}\n"
+                f"📤 مورد نیاز: {quantity_grams} {unit}\n"
+                f"⚠️ کمبود: {(quantity_grams - current_balance)} {unit}\n\n"
+                f"شما نمی‌توانید بیشتر از موجودی خود بفروشید."
+            )
+            return False, error_msg
+        return True, ""
 
 
 class BalanceService:
@@ -357,47 +633,46 @@ class BalanceService:
 
 
 class TransactionService:
-    """Service class for transaction operations."""
+    """Service class for Transaction-related operations."""
     
     @staticmethod
     @transaction.atomic
-    def create_transaction(
+    def create_deposit(
         profile: Profile,
-        transaction_type: str,
-        currency_type: str,
+        currency: str,
         amount: Decimal,
-        **kwargs
+        bank_account: Optional[BankAccount] = None,
+        receipt_image = None,
+        description: str = ""
     ) -> Transaction:
         """
-        Create a new transaction.
+        Create a deposit transaction.
         
         Args:
-            profile: User profile.
-            transaction_type: Type of transaction.
-            currency_type: Type of currency.
-            amount: Transaction amount.
-            **kwargs: Additional fields (related_bank_account, related_order, etc.).
+            profile: User profile
+            currency: Currency type ('RIAL', 'GOLD', etc.)
+            amount: Amount to deposit
+            bank_account: Bank account used (optional)
+            receipt_image: Receipt image file (optional)
+            description: Additional description
             
         Returns:
-            Created Transaction instance.
+            Created Transaction instance
         """
-        # Get current balance
-        balance_before = WalletService.get_available_balance(profile, currency_type)
-        
-        # Create transaction
         transaction_obj = Transaction.objects.create(
             profile=profile,
-            transaction_type=transaction_type,
-            currency_type=currency_type,
+            transaction_type=Transaction.TransactionType.DEPOSIT,
+            currency=currency,
             amount=amount,
-            balance_before=balance_before,
-            balance_after=balance_before,  # Will be updated when completed
-            **kwargs
+            bank_account=bank_account,
+            receipt_image=receipt_image,
+            description=description,
+            status=Transaction.TransactionStatus.PENDING
         )
         
         logger.info(
-            f"Transaction {transaction_obj.transaction_number} created: "
-            f"{transaction_type} {amount} {currency_type} for {profile.get_display_name()}"
+            f"Deposit transaction {transaction_obj.id} created: "  # type: ignore[attr-defined]
+            f"{amount} {currency} by {profile.get_display_name()}"
         )
         
         return transaction_obj
@@ -405,566 +680,301 @@ class TransactionService:
     @staticmethod
     def get_user_transactions(
         profile: Profile,
-        currency_type: Optional[str] = None,
-        limit: int = 20,
-        status: Optional[str] = None
+        limit: Optional[int] = None,
+        status: Optional[str] = None,
+        transaction_type: Optional[str] = None
     ) -> List[Transaction]:
         """
-        Get user's transactions with filtering.
+        Get transactions for a specific user.
         
         Args:
-            profile: User profile.
-            currency_type: Filter by currency type.
-            limit: Maximum number of transactions to return.
-            status: Filter by status.
+            profile: User profile
+            limit: Maximum number of transactions (None for all)
+            status: Filter by status (None for all)
+            transaction_type: Filter by type (None for all)
             
         Returns:
-            List of Transaction instances.
+            List of Transaction instances
         """
-        queryset = profile.transactions.all()
-        
-        if currency_type:
-            queryset = queryset.filter(currency_type=currency_type)
+        queryset = profile.transactions.all()  # type: ignore[attr-defined]
         
         if status:
             queryset = queryset.filter(status=status)
         
-        return list(queryset[:limit])
+        if transaction_type:
+            queryset = queryset.filter(transaction_type=transaction_type)
+        
+        if limit:
+            queryset = queryset[:limit]
+        
+        return list(queryset)
     
     @staticmethod
-    @transaction.atomic
-    def complete_transaction(transaction_id: int, admin_user=None) -> Transaction:
-        """
-        Complete a transaction.
-        
-        Args:
-            transaction_id: ID of the transaction.
-            admin_user: Admin user completing the transaction.
-            
-        Returns:
-            Updated Transaction instance.
-        """
-        transaction_obj = Transaction.objects.get(id=transaction_id)
-        
-        if not transaction_obj.is_pending():
-            raise ValidationError("تراکنش در وضعیت نامناسب برای تکمیل است.")
-        
-        # Update balance based on transaction type
-        if transaction_obj.transaction_type in ['DEPOSIT', 'SELL', 'TRANSFER_RECEIVE']:
-            WalletService.add_balance(
-                transaction_obj.profile,
-                transaction_obj.currency_type,
-                transaction_obj.amount
-            )
-        elif transaction_obj.transaction_type in ['WITHDRAW', 'BUY', 'TRANSFER_SEND']:
-            WalletService.deduct_balance(
-                transaction_obj.profile,
-                transaction_obj.currency_type,
-                transaction_obj.amount
-            )
-        
-        # Update transaction
-        transaction_obj.status = Transaction.TransactionStatus.COMPLETED
-        transaction_obj.completed_at = timezone.now()
-        transaction_obj.balance_after = WalletService.get_available_balance(
-            transaction_obj.profile,
-            transaction_obj.currency_type
-        )
-        transaction_obj.save()
-        
-        logger.info(
-            f"Transaction {transaction_obj.transaction_number} completed by {admin_user}"
-        )
-        
-        return transaction_obj
-    
-    @staticmethod
-    @transaction.atomic
-    def cancel_transaction(transaction_id: int, reason: str, admin_user=None) -> Transaction:
-        """
-        Cancel a transaction.
-        
-        Args:
-            transaction_id: ID of the transaction.
-            reason: Reason for cancellation.
-            admin_user: Admin user cancelling the transaction.
-            
-        Returns:
-            Updated Transaction instance.
-        """
-        transaction_obj = Transaction.objects.get(id=transaction_id)
-        
-        if not transaction_obj.can_be_cancelled():
-            raise ValidationError("تراکنش قابل لغو نیست.")
-        
-        # If it's a withdraw transaction, unfreeze the balance
-        if transaction_obj.transaction_type == 'WITHDRAW':
-            WalletService.unfreeze_balance(
-                transaction_obj.profile,
-                transaction_obj.currency_type,
-                transaction_obj.amount
-            )
-        
-        # Update transaction
-        transaction_obj.status = Transaction.TransactionStatus.CANCELLED
-        transaction_obj.admin_note = reason
-        transaction_obj.save()
-        
-        logger.info(
-            f"Transaction {transaction_obj.transaction_number} cancelled: {reason}"
-        )
-        
-        return transaction_obj
-    
-    @staticmethod
-    def format_transaction_for_display(transaction_obj: Transaction) -> str:
+    def format_transaction_for_display(transaction: Transaction) -> str:
         """
         Format transaction for display in Telegram.
         
         Args:
-            transaction_obj: Transaction instance.
+            transaction: Transaction instance
             
         Returns:
-            Formatted string.
+            Formatted string
         """
-        status_emoji = {
-            Transaction.TransactionStatus.PENDING: "🕐",
-            Transaction.TransactionStatus.COMPLETED: "✅",
-            Transaction.TransactionStatus.CANCELLED: "❌",
-            Transaction.TransactionStatus.FAILED: "⚠️",
-        }
-        
         type_emoji = {
-            Transaction.TransactionType.DEPOSIT: "💰",
-            Transaction.TransactionType.WITHDRAW: "💸",
-            Transaction.TransactionType.BUY: "📈",
-            Transaction.TransactionType.SELL: "📉",
-            Transaction.TransactionType.TRANSFER_SEND: "📤",
-            Transaction.TransactionType.TRANSFER_RECEIVE: "📥",
+            'DEPOSIT': '📥',
+            'WITHDRAW': '📤',
+            'BUY': '📈',
+            'SELL': '📉',
+            'ADJUSTMENT': '⚙️'
         }
         
-        emoji = type_emoji.get(transaction_obj.transaction_type, "💳")
-        status_icon = status_emoji.get(transaction_obj.status, "")
+        status_emoji = {
+            'PENDING': '⏳',
+            'COMPLETED': '✅',
+            'CANCELLED': '❌',
+            'REJECTED': '🚫'
+        }
         
-        text = f"┌─────────────────────────\n"
-        text += f"│ {emoji} {transaction_obj.get_transaction_type_display()}\n"  # type: ignore
-        text += f"│ 💰 مبلغ: {transaction_obj.amount:,.4f} {transaction_obj.get_currency_type_display()}\n"  # type: ignore
-        text += f"│ 📅 {transaction_obj.created_at.strftime('%Y/%m/%d - %H:%M')}\n"
-        text += f"│ {status_icon} {transaction_obj.get_status_display()}\n"  # type: ignore
-        text += f"│ 🔢 {transaction_obj.transaction_number}\n"
-        text += f"└─────────────────────────"
+        emoji = type_emoji.get(transaction.transaction_type, '💳')
+        status_icon = status_emoji.get(transaction.status, '')
+        
+        text = (
+            f"{emoji} *تراکنش #{transaction.id}*\n"  # type: ignore[attr-defined]
+            f"نوع: {transaction.get_transaction_type_display()}\n"  # type: ignore[attr-defined]
+            f"ارز: {transaction.get_currency_display_name()}\n"
+            f"مقدار: {transaction.amount:,.2f}\n"
+            f"وضعیت: {status_icon} {transaction.get_status_display()}\n"  # type: ignore[attr-defined]
+            f"تاریخ: {transaction.created_at.strftime('%Y/%m/%d %H:%M')}\n"
+        )
+        
+        if transaction.description:
+            text += f"توضیحات: {transaction.description}\n"
         
         return text
 
 
-class DepositService:
-    """Service class for deposit operations."""
-    
-    @staticmethod
-    @transaction.atomic
-    def create_deposit_request(
-        profile: Profile,
-        currency_type: str,
-        amount: Decimal,
-        bank_account_id: int,
-        receipt_image=None
-    ) -> Transaction:
-        """
-        Create a deposit request.
-        
-        Args:
-            profile: User profile.
-            currency_type: Type of currency to deposit.
-            amount: Amount to deposit.
-            bank_account_id: ID of source bank account.
-            receipt_image: Optional receipt image.
-            
-        Returns:
-            Created Transaction instance.
-            
-        Raises:
-            ValidationError: If validation fails.
-        """
-        # Validate bank account
-        try:
-            bank_account = BankAccount.objects.get(
-                id=bank_account_id,
-                profile=profile,
-                is_verified=True,
-                is_active=True
-            )
-        except BankAccount.DoesNotExist:
-            raise ValidationError("حساب بانکی تایید شده یافت نشد.")
-        
-        # Create transaction
-        transaction_obj = TransactionService.create_transaction(
-            profile=profile,
-            transaction_type=Transaction.TransactionType.DEPOSIT,
-            currency_type=currency_type,
-            amount=amount,
-            related_bank_account=bank_account,
-            user_note=f"واریز از حساب {bank_account.bank_name}"
-        )
-        
-        # TODO: Send notification to admin
-        
-        return transaction_obj
-    
-    @staticmethod
-    @transaction.atomic
-    def approve_deposit(transaction_id: int, admin_user) -> Transaction:
-        """
-        Approve a deposit request.
-        
-        Args:
-            transaction_id: ID of the deposit transaction.
-            admin_user: Admin user approving the deposit.
-            
-        Returns:
-            Updated Transaction instance.
-        """
-        return TransactionService.complete_transaction(transaction_id, admin_user)
-    
-    @staticmethod
-    def reject_deposit(transaction_id: int, reason: str, admin_user) -> Transaction:
-        """
-        Reject a deposit request.
-        
-        Args:
-            transaction_id: ID of the deposit transaction.
-            reason: Reason for rejection.
-            admin_user: Admin user rejecting the deposit.
-            
-        Returns:
-            Updated Transaction instance.
-        """
-        return TransactionService.cancel_transaction(transaction_id, reason, admin_user)
-
-
-class WithdrawService:
-    """Service class for withdrawal operations."""
+class WithdrawalService:
+    """Service class for withdrawal-related operations."""
     
     @staticmethod
     @transaction.atomic
     def create_withdraw_request(
         profile: Profile,
-        currency_type: str,
+        currency: str,
         amount: Decimal,
-        bank_account_id: int
+        bank_account: BankAccount
     ) -> WithdrawRequest:
         """
-        Create a withdrawal request.
+        Create a withdrawal request and freeze balance.
         
         Args:
-            profile: User profile.
-            currency_type: Type of currency to withdraw.
-            amount: Amount to withdraw.
-            bank_account_id: ID of destination bank account.
+            profile: User profile
+            currency: Currency type
+            amount: Amount to withdraw
+            bank_account: Destination bank account
             
         Returns:
-            Created WithdrawRequest instance.
+            Created WithdrawRequest instance
             
         Raises:
-            ValidationError: If validation fails.
+            ValidationError: If insufficient balance or bank account not verified
         """
+        from users.services import WalletService
+        
         # Validate bank account
+        if not bank_account.is_verified:
+            raise ValidationError("حساب بانکی تأیید نشده است.")
+        
+        if bank_account.profile != profile:
+            raise ValidationError("این حساب بانکی متعلق به شما نیست.")
+        
+        # Freeze balance
         try:
-            bank_account = BankAccount.objects.get(
-                id=bank_account_id,
-                profile=profile,
-                is_verified=True,
-                is_active=True
-            )
-        except BankAccount.DoesNotExist:
-            raise ValidationError("حساب بانکی تایید شده یافت نشد.")
-        
-        # Check sufficient balance
-        if not WalletService.check_sufficient_balance(profile, currency_type, amount):
-            raise ValidationError(f"موجودی {currency_type} کافی نیست.")
-        
-        # Freeze the balance
-        WalletService.freeze_balance(profile, currency_type, amount)
+            WalletService.freeze_balance(profile, currency, amount)
+        except ValueError as e:
+            raise ValidationError(str(e))
         
         # Create withdraw request
         withdraw_request = WithdrawRequest.objects.create(
             profile=profile,
+            currency=currency,
+            amount=amount,
             bank_account=bank_account,
-            currency_type=currency_type,
-            amount=amount
+            status=WithdrawRequest.WithdrawStatus.PENDING
         )
         
-        # Create related transaction
-        transaction_obj = TransactionService.create_transaction(
-            profile=profile,
-            transaction_type=Transaction.TransactionType.WITHDRAW,
-            currency_type=currency_type,
-            amount=amount,
-            related_bank_account=bank_account
+        logger.info(
+            f"Withdraw request {withdraw_request.id} created: "  # type: ignore[attr-defined]
+            f"{amount} {currency} by {profile.get_display_name()}"
         )
-        
-        # Link transaction to withdraw request
-        withdraw_request.related_transaction = transaction_obj
-        withdraw_request.save()
-        
-        # TODO: Send notification to admin
         
         return withdraw_request
+    
+    @staticmethod
+    def get_user_withdraw_requests(
+        profile: Profile,
+        limit: Optional[int] = None,
+        status: Optional[str] = None
+    ) -> List[WithdrawRequest]:
+        """
+        Get withdrawal requests for a specific user.
+        
+        Args:
+            profile: User profile
+            limit: Maximum number of requests (None for all)
+            status: Filter by status (None for all)
+            
+        Returns:
+            List of WithdrawRequest instances
+        """
+        queryset = profile.withdraw_requests.all()  # type: ignore[attr-defined]
+        
+        if status:
+            queryset = queryset.filter(status=status)
+        
+        if limit:
+            queryset = queryset[:limit]
+        
+        return list(queryset)
+    
+    @staticmethod
+    def format_withdraw_request_for_display(request: WithdrawRequest) -> str:
+        """
+        Format withdrawal request for display.
+        
+        Args:
+            request: WithdrawRequest instance
+            
+        Returns:
+            Formatted string
+        """
+        status_emoji = {
+            'PENDING': '⏳',
+            'PROCESSING': '🔄',
+            'COMPLETED': '✅',
+            'CANCELLED': '❌',
+            'REJECTED': '🚫'
+        }
+        
+        status_icon = status_emoji.get(request.status, '')
+        
+        text = (
+            f"📤 *درخواست برداشت #{request.id}*\n"  # type: ignore[attr-defined]
+            f"ارز: {request.get_currency_display()}\n"  # type: ignore[attr-defined]
+            f"مقدار: {request.amount:,.2f}\n"
+            f"بانک: {request.bank_account.bank_name}\n"
+            f"شماره حساب: {request.bank_account.get_masked_account_number()}\n"
+            f"وضعیت: {status_icon} {request.get_status_display()}\n"  # type: ignore[attr-defined]
+            f"تاریخ: {request.created_at.strftime('%Y/%m/%d %H:%M')}\n"
+        )
+        
+        if request.rejection_reason:
+            text += f"\nدلیل رد: {request.rejection_reason}\n"
+        
+        return text
+
+
+class BankAccountService:
+    """Service class for bank account operations."""
     
     @staticmethod
     @transaction.atomic
-    def approve_withdraw(withdraw_request_id: int, admin_user) -> WithdrawRequest:
+    def create_bank_account(
+        profile: Profile,
+        bank_name: str,
+        account_holder_name: str,
+        account_number: str,
+        iban: str = "",
+        account_type: str = "SAVINGS"
+    ) -> BankAccount:
         """
-        Approve a withdrawal request.
+        Create a new bank account for user.
         
         Args:
-            withdraw_request_id: ID of the withdraw request.
-            admin_user: Admin user approving the withdrawal.
+            profile: User profile
+            bank_name: Name of the bank
+            account_holder_name: Name of account holder
+            account_number: 16-digit account number
+            iban: IBAN number (optional)
+            account_type: Type of account (SAVINGS or CURRENT)
             
         Returns:
-            Updated WithdrawRequest instance.
-        """
-        withdraw_request = WithdrawRequest.objects.get(id=withdraw_request_id)
-        
-        if not withdraw_request.can_be_approved():
-            raise ValidationError("درخواست قابل تایید نیست.")
-        
-        # Complete the transaction (this will deduct from frozen balance)
-        TransactionService.complete_transaction(
-            withdraw_request.related_transaction.id,
-            admin_user
-        )
-        
-        # Update withdraw request
-        withdraw_request.status = WithdrawRequest.WithdrawStatus.COMPLETED
-        withdraw_request.processed_at = timezone.now()
-        withdraw_request.completed_at = timezone.now()
-        withdraw_request.save()
-        
-        # TODO: Send notification to user
-        
-        return withdraw_request
-    
-    @staticmethod
-    @transaction.atomic
-    def reject_withdraw(withdraw_request_id: int, reason: str, admin_user) -> WithdrawRequest:
-        """
-        Reject a withdrawal request.
-        
-        Args:
-            withdraw_request_id: ID of the withdraw request.
-            reason: Reason for rejection.
-            admin_user: Admin user rejecting the withdrawal.
+            Created BankAccount instance
             
-        Returns:
-            Updated WithdrawRequest instance.
+        Raises:
+            ValidationError: If account number is invalid or duplicate
         """
-        withdraw_request = WithdrawRequest.objects.get(id=withdraw_request_id)
+        # Validate account number
+        if not account_number.isdigit() or len(account_number) != 16:
+            raise ValidationError("شماره حساب باید دقیقاً 16 رقم باشد.")
         
-        if not withdraw_request.can_be_rejected():
-            raise ValidationError("درخواست قابل رد نیست.")
-        
-        # Unfreeze the balance
-        WalletService.unfreeze_balance(
-            withdraw_request.profile,
-            withdraw_request.currency_type,
-            withdraw_request.amount
-        )
-        
-        # Cancel the transaction
-        TransactionService.cancel_transaction(
-            withdraw_request.related_transaction.id,
-            reason,
-            admin_user
-        )
-        
-        # Update withdraw request
-        withdraw_request.status = WithdrawRequest.WithdrawStatus.REJECTED
-        withdraw_request.processed_at = timezone.now()
-        withdraw_request.admin_note = reason
-        withdraw_request.save()
-        
-        # TODO: Send notification to user
-        
-        return withdraw_request
-
-
-class TradingService:
-    """Main service class for trading operations."""
-    
-    @staticmethod
-    def get_active_products():
-        """Get all active products."""
-        return ProductService.get_active_products()
-    
-    @staticmethod
-    def update_all_prices():
-        """
-        Update all product prices from external API.
-        
-        Returns:
-            bool: True if successful, False otherwise.
-        """
-        try:
-            from .price_providers import get_active_provider
-            from .price_calculator import PriceCalculator
-            
-            provider = get_active_provider()
-            if not provider:
-                logger.error("No active price provider found")
-                return False
-            
-            # Get current prices from API
-            api_prices = provider.get_all_prices()
-            if not api_prices:
-                logger.error("Failed to fetch prices from API")
-                return False
-            
-            # Calculate our buy/sell prices
-            calculator = PriceCalculator()
-            
-            # Update each product
-            products_updated = 0
-            for product in Product.objects.filter(is_active=True):
-                try:
-                    if product.product_code == Product.PRODUCT_CODE_GOLD:
-                        if 'gold' in api_prices and api_prices['gold']:
-                            prices = calculator.calculate_gold_abshodeh_prices(
-                                api_prices['gold']
-                            )
-                            product.buy_price = prices.buy_price
-                            product.sell_price = prices.sell_price
-                            product.save()
-                            products_updated += 1
-                    
-                    elif product.product_code == Product.PRODUCT_CODE_COIN:
-                        if 'gold' in api_prices and api_prices['gold']:
-                            prices = calculator.calculate_coin_full_prices(
-                                api_prices['gold']
-                            )
-                            product.buy_price = prices.buy_price
-                            product.sell_price = prices.sell_price
-                            product.save()
-                            products_updated += 1
-                    
-                    elif product.product_code == Product.PRODUCT_CODE_DOLLAR:
-                        if 'dollar_buy' in api_prices and 'dollar_sell' in api_prices and api_prices['dollar_buy'] and api_prices['dollar_sell']:
-                            prices = calculator.calculate_dollar_prices(
-                                api_prices['dollar_buy'], api_prices['dollar_sell']
-                            )
-                            product.buy_price = prices.buy_price
-                            product.sell_price = prices.sell_price
-                            product.save()
-                            products_updated += 1
-                
-                except Exception as e:
-                    logger.error(f"Error updating prices for {product.name}: {e}")
-                    continue
-            
-            logger.info(f"Updated prices for {products_updated} products")
-            return products_updated > 0
-            
-        except Exception as e:
-            logger.error(f"Error in update_all_prices: {e}", exc_info=True)
-            return False
-    
-    @staticmethod
-    def calculate_buy_details(product, amount_type, amount):
-        """
-        Calculate buy order details.
-        
-        Args:
-            product: Product instance.
-            amount_type: 'grams' or 'rial'.
-            amount: Amount value.
-            
-        Returns:
-            Tuple of (quantity_grams, total_amount).
-        """
-        return OrderService.calculate_order_details(
-            product=product,
-            order_type=Order.OrderType.BUY,
-            amount=amount,
-            calculation_method=amount_type
-        )
-    
-    @staticmethod
-    def calculate_sell_details(product, amount_type, amount):
-        """
-        Calculate sell order details.
-        
-        Args:
-            product: Product instance.
-            amount_type: 'grams' or 'rial'.
-            amount: Amount value.
-            
-        Returns:
-            Tuple of (quantity_grams, total_amount).
-        """
-        return OrderService.calculate_order_details(
-            product=product,
-            order_type=Order.OrderType.SELL,
-            amount=amount,
-            calculation_method=amount_type
-        )
-    
-    @staticmethod
-    def create_buy_order(profile, product, quantity_grams, total_amount):
-        """
-        Create a buy order.
-        
-        Args:
-            profile: User profile.
-            product: Product instance.
-            quantity_grams: Quantity in grams.
-            total_amount: Total amount in Rial.
-            
-        Returns:
-            Created Order instance.
-        """
-        price_per_gram = product.sell_price
-        return OrderService.create_order(
+        # Check for duplicate
+        if BankAccount.objects.filter(
             profile=profile,
-            product=product,
-            order_type=Order.OrderType.BUY,
-            quantity_grams=quantity_grams,
-            price_per_gram=price_per_gram,
-            total_amount=total_amount
-        )
-    
-    @staticmethod
-    def create_sell_order(profile, product, quantity_grams, total_amount):
-        """
-        Create a sell order.
+            account_number=account_number
+        ).exists():
+            raise ValidationError("این حساب بانکی قبلاً ثبت شده است.")
         
-        Args:
-            profile: User profile.
-            product: Product instance.
-            quantity_grams: Quantity in grams.
-            total_amount: Total amount in Rial.
-            
-        Returns:
-            Created Order instance.
-        """
-        price_per_gram = product.buy_price
-        return OrderService.create_order(
+        # Create bank account
+        bank_account = BankAccount.objects.create(
             profile=profile,
-            product=product,
-            order_type=Order.OrderType.SELL,
-            quantity_grams=quantity_grams,
-            price_per_gram=price_per_gram,
-            total_amount=total_amount
+            bank_name=bank_name,
+            account_holder_name=account_holder_name,
+            account_number=account_number,
+            iban=iban,
+            account_type=account_type,
+            is_verified=False  # Must be verified by admin
         )
+        
+        logger.info(
+            f"Bank account {bank_account.id} created for {profile.get_display_name()}: "  # type: ignore[attr-defined]
+            f"{bank_name} - {account_number[-4:]}"
+        )
+        
+        return bank_account
     
     @staticmethod
-    def get_user_recent_orders(profile, limit=5):
+    def get_user_bank_accounts(
+        profile: Profile,
+        verified_only: bool = False
+    ) -> List[BankAccount]:
         """
-        Get user's recent orders.
+        Get bank accounts for a user.
         
         Args:
-            profile: User profile.
-            limit: Maximum number of orders to return.
+            profile: User profile
+            verified_only: Only return verified accounts
             
         Returns:
-            List of Order instances.
+            List of BankAccount instances
         """
-        return OrderService.get_user_orders(profile, limit=limit)
+        queryset = profile.bank_accounts.all()  # type: ignore[attr-defined]
+        
+        if verified_only:
+            queryset = queryset.filter(is_verified=True)
+        
+        return list(queryset)
+    
+    @staticmethod
+    def format_bank_account_for_display(bank_account: BankAccount) -> str:
+        """
+        Format bank account for display.
+        
+        Args:
+            bank_account: BankAccount instance
+            
+        Returns:
+            Formatted string
+        """
+        status_icon = '✅' if bank_account.is_verified else '⏳'
+        status_text = 'تأیید شده' if bank_account.is_verified else 'در انتظار تأیید'
+        
+        text = (
+            f"🏦 *{bank_account.bank_name}*\n"
+            f"صاحب حساب: {bank_account.account_holder_name}\n"
+            f"شماره حساب: {bank_account.get_masked_account_number()}\n"
+            f"نوع حساب: {bank_account.get_account_type_display()}\n"  # type: ignore[attr-defined]
+            f"وضعیت: {status_icon} {status_text}\n"
+        )
+        
+        return text

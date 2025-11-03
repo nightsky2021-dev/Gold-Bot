@@ -2,11 +2,10 @@
 Business logic services for users app
 """
 from typing import Optional, Tuple
+from decimal import Decimal
 from django.contrib.auth.models import User
-from django.core.exceptions import ValidationError
 from django.db import transaction
-from asgiref.sync import sync_to_async
-from .models import Profile, BankAccount
+from .models import Profile
 
 
 def get_or_create_profile_by_telegram(
@@ -127,190 +126,176 @@ def update_user_balance(
     return profile
 
 
-class BankAccountService:
-    """Service class for bank account operations."""
+class WalletService:
+    """
+    Service for wallet operations including balance display,
+    freezing/unfreezing balances, and formatting wallet information.
+    """
     
     @staticmethod
-    def add_bank_account(
+    def format_wallet_display(profile: Profile) -> str:
+        """
+        Format complete wallet display with all balances.
+        
+        Args:
+            profile: User profile
+            
+        Returns:
+            Formatted wallet string with all currencies
+        """
+        rial_available = profile.get_available_rial_balance()
+        rial_frozen = profile.frozen_rial_balance
+        
+        gold_available = profile.get_available_gold_balance()
+        gold_frozen = profile.frozen_gold_balance
+        
+        wallet_text = "💼 *کیف پول شما:*\n\n"
+        
+        # Rial balance
+        wallet_text += f"💰 *ریال:*\n"
+        wallet_text += f"   موجودی کل: {profile.rial_balance:,.0f} ریال\n"
+        wallet_text += f"   قابل استفاده: {rial_available:,.0f} ریال\n"
+        if rial_frozen > 0:
+            wallet_text += f"   مسدود شده: {rial_frozen:,.0f} ریال\n"
+        wallet_text += "\n"
+        
+        # Gold balance
+        wallet_text += f"🪙 *طلا:*\n"
+        wallet_text += f"   موجودی کل: {profile.gold_balance_grams} گرم\n"
+        wallet_text += f"   قابل استفاده: {gold_available} گرم\n"
+        if gold_frozen > 0:
+            wallet_text += f"   مسدود شده: {gold_frozen} گرم\n"
+        
+        return wallet_text
+    
+    @staticmethod
+    def freeze_balance(
         profile: Profile,
-        account_holder_name: str,
-        bank_name: str,
-        account_number: str,
-        account_type: str
-    ) -> BankAccount:
+        currency: str,
+        amount: Decimal
+    ) -> None:
         """
-        Add a new bank account for a user.
+        Freeze balance for pending withdrawal.
         
         Args:
-            profile: User profile.
-            account_holder_name: Name of account holder.
-            bank_name: Name of the bank.
-            account_number: Account number (card or IBAN).
-            account_type: Type of account ('CARD' or 'IBAN').
-            
-        Returns:
-            Created BankAccount instance.
+            profile: User profile
+            currency: Currency type ('RIAL', 'GOLD', 'COIN', 'DOLLAR')
+            amount: Amount to freeze
             
         Raises:
-            ValidationError: If validation fails.
+            ValueError: If insufficient available balance
         """
-        # Check if account already exists
-        if BankAccount.objects.filter(
-            profile=profile,
-            account_number=account_number
-        ).exists():
-            raise ValidationError("این حساب بانکی قبلاً ثبت شده است.")
+        from django.db import transaction as db_transaction
         
-        # Validate account holder name matches user name
-        user = profile.user
-        user_full_name = f"{user.first_name} {user.last_name}".strip()
-        if user_full_name and account_holder_name.strip() != user_full_name:
-            raise ValidationError(
-                f"نام صاحب حساب باید با نام کاربر ({user_full_name}) مطابقت داشته باشد."
-            )
-        
-        # Create bank account
-        bank_account = BankAccount.objects.create(
-            profile=profile,
-            account_holder_name=account_holder_name,
-            bank_name=bank_name,
-            account_number=account_number,
-            account_type=account_type,
-            is_verified=False,
-            is_active=True
-        )
-        
-        return bank_account
+        with db_transaction.atomic():
+            # Refresh from database to avoid race conditions
+            profile.refresh_from_db()
+            
+            if currency == 'RIAL':
+                if not profile.has_sufficient_available_rial(amount):
+                    raise ValueError("موجودی ریالی قابل برداشت کافی نیست.")
+                profile.frozen_rial_balance += amount
+                profile.save(update_fields=['frozen_rial_balance'])
+                
+            elif currency in ['GOLD', 'COIN']:
+                if not profile.has_sufficient_available_gold(amount):
+                    raise ValueError("موجودی طلای قابل برداشت کافی نیست.")
+                profile.frozen_gold_balance += amount
+                profile.save(update_fields=['frozen_gold_balance'])
+            
+            else:
+                raise ValueError(f"ارز {currency} پشتیبانی نمی‌شود.")
     
     @staticmethod
-    def get_user_bank_accounts(profile: Profile, only_verified: bool = False) -> list:
+    def unfreeze_balance(
+        profile: Profile,
+        currency: str,
+        amount: Decimal
+    ) -> None:
         """
-        Get user's bank accounts.
+        Unfreeze balance (e.g., when withdrawal is cancelled).
         
         Args:
-            profile: User profile.
-            only_verified: If True, return only verified accounts.
-            
-        Returns:
-            List of BankAccount instances.
+            profile: User profile
+            currency: Currency type
+            amount: Amount to unfreeze
         """
-        queryset = profile.bank_accounts.filter(is_active=True)
+        from django.db import transaction as db_transaction
         
-        if only_verified:
-            queryset = queryset.filter(is_verified=True)
-        
-        return list(queryset.order_by('-created_at'))
+        with db_transaction.atomic():
+            profile.refresh_from_db()
+            
+            if currency == 'RIAL':
+                profile.frozen_rial_balance = max(0, profile.frozen_rial_balance - amount)
+                profile.save(update_fields=['frozen_rial_balance'])
+                
+            elif currency in ['GOLD', 'COIN']:
+                profile.frozen_gold_balance = max(0, profile.frozen_gold_balance - amount)
+                profile.save(update_fields=['frozen_gold_balance'])
     
     @staticmethod
-    def verify_bank_account(bank_account_id: int, admin_user) -> BankAccount:
+    def process_withdrawal(
+        profile: Profile,
+        currency: str,
+        amount: Decimal
+    ) -> None:
         """
-        Verify a bank account by admin.
+        Process withdrawal by deducting from both frozen and total balance.
         
         Args:
-            bank_account_id: ID of the bank account.
-            admin_user: Admin user performing the verification.
-            
-        Returns:
-            Updated BankAccount instance.
-            
-        Raises:
-            BankAccount.DoesNotExist: If account not found.
+            profile: User profile
+            currency: Currency type
+            amount: Amount to withdraw
         """
-        bank_account = BankAccount.objects.get(id=bank_account_id)
-        bank_account.is_verified = True
-        bank_account.save()
+        from django.db import transaction as db_transaction
         
-        # TODO: Send notification to user
-        
-        return bank_account
+        with db_transaction.atomic():
+            profile.refresh_from_db()
+            
+            if currency == 'RIAL':
+                profile.rial_balance -= amount
+                profile.frozen_rial_balance -= amount
+                profile.save(update_fields=['rial_balance', 'frozen_rial_balance'])
+                
+            elif currency in ['GOLD', 'COIN']:
+                profile.gold_balance_grams -= amount
+                profile.frozen_gold_balance -= amount
+                profile.save(update_fields=['gold_balance_grams', 'frozen_gold_balance'])
     
     @staticmethod
-    def remove_bank_account(bank_account_id: int, profile: Profile) -> bool:
+    def add_balance(
+        profile: Profile,
+        currency: str,
+        amount: Decimal
+    ) -> None:
         """
-        Remove a bank account (soft delete).
+        Add balance to user's wallet (e.g., after deposit approval).
         
         Args:
-            bank_account_id: ID of the bank account.
-            profile: User profile.
-            
-        Returns:
-            True if removed successfully.
-            
-        Raises:
-            BankAccount.DoesNotExist: If account not found.
-            ValidationError: If account has pending transactions.
+            profile: User profile
+            currency: Currency type
+            amount: Amount to add
         """
-        bank_account = BankAccount.objects.get(
-            id=bank_account_id,
-            profile=profile
-        )
+        from django.db import transaction as db_transaction
         
-        # Check for pending transactions
-        if bank_account.transactions.filter(
-            status__in=['PENDING', 'COMPLETED']
-        ).exists():
-            raise ValidationError(
-                "این حساب بانکی دارای تراکنش‌های فعال است و نمی‌توان آن را حذف کرد."
-            )
-        
-        # Soft delete
-        bank_account.is_active = False
-        bank_account.save()
-        
-        return True
-
-
-class UserService:
-    """Service class for user operations."""
+        with db_transaction.atomic():
+            profile.refresh_from_db()
+            
+            if currency == 'RIAL':
+                profile.rial_balance += amount
+                profile.save(update_fields=['rial_balance'])
+                
+            elif currency in ['GOLD', 'COIN']:
+                profile.gold_balance_grams += amount
+                profile.save(update_fields=['gold_balance_grams'])
     
     @staticmethod
-    async def acheck_user_approval_status(telegram_id: str) -> Tuple[bool, Optional[Profile]]:
-        """
-        Async version of checking user approval status
-        
-        Args:
-            telegram_id: شناسه عددی تلگرام
-        
-        Returns:
-            Tuple[bool, Optional[Profile]]: (is_approved, profile)
-        """
-        profile = await sync_to_async(get_profile_by_telegram_id)(telegram_id)
-        if profile:
-            return profile.is_approved, profile
-        return False, None
-    
-    @staticmethod
-    def create_user_from_telegram(
-        telegram_id: str,
-        phone_number: str,
-        telegram_username: Optional[str] = None,
-        first_name: str = "",
-        last_name: str = "",
-        national_code: str = ""
-    ) -> Tuple[User, Profile, bool]:
-        """
-        Create user and profile from telegram data
-        
-        Args:
-            telegram_id: شناسه عددی تلگرام
-            phone_number: شماره تماس کاربر
-            telegram_username: نام کاربری تلگرام (اختیاری)
-            first_name: نام کاربر
-            last_name: نام خانوادگی کاربر
-            national_code: کد ملی کاربر (currently not stored in model)
-        
-        Returns:
-            Tuple[User, Profile, bool]: (user, profile, created)
-        """
-        profile, created = get_or_create_profile_by_telegram(
-            telegram_id=telegram_id,
-            phone_number=phone_number,
-            first_name=first_name,
-            last_name=last_name,
-            telegram_username=telegram_username
-        )
-        
-        # Note: national_code field was removed from Profile model in migration 0004
-        # The parameter is kept for compatibility but not stored
-        
-        return profile.user, profile, created
+    def get_currency_display_name(currency: str) -> str:
+        """Get Persian display name for currency."""
+        currency_names = {
+            'RIAL': 'ریال',
+            'GOLD': 'طلا',
+            'COIN': 'سکه',
+            'DOLLAR': 'دلار'
+        }
+        return currency_names.get(currency, currency)
