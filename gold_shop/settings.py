@@ -33,12 +33,22 @@ ALLOWED_HOSTS = env.list('ALLOWED_HOSTS') or ['localhost', '127.0.0.1']
 
 # Application definition
 INSTALLED_APPS = [
+    # Admin enhancements (must be before django.contrib.admin)
+    'jazzmin',
+    
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    
+    # Third-party apps for admin enhancements
+    'import_export',
+    'rangefilter',
+    'adminactions',
+    'auditlog',
+    'django_filters',
     
     # Local apps
     'users.apps.UsersConfig',
@@ -54,6 +64,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Audit logging middleware
+    'auditlog.middleware.AuditlogMiddleware',
 ]
 
 ROOT_URLCONF = 'gold_shop.urls'
@@ -122,4 +134,145 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 
 # Navasan API Configuration
 NAVASAN_API_KEY = os.getenv('NAVASAN_API_KEY', 'freeTET7c1g57cU7kPnjQa4KAMP7BWaS')
+
+# ============================================
+# ADMIN PANEL ENHANCEMENTS
+# ============================================
+
+# Jazzmin Admin Theme Configuration
+JAZZMIN_SETTINGS = {
+    # Title on the login screen and browser tab
+    "site_title": "??? ?????? ???",
+    "site_header": "????? ??????? ???",
+    "site_brand": "?????? ???",
+    "site_logo": None,
+    "login_logo": None,
+    "site_logo_classes": "img-circle",
+    "site_icon": None,
+    
+    # Welcome text on the login screen
+    "welcome_sign": "??? ????? ?? ??? ??????",
+    
+    # Copyright on the footer
+    "copyright": "????? ??????? ???",
+    
+    # Links to put along the top menu
+    "topmenu_links": [
+        {"name": "????", "url": "admin:index", "permissions": ["auth.view_user"]},
+        {"name": "?? ???????", "url": "/admin/dashboard/", "permissions": ["auth.view_user"]},
+        {"model": "auth.User"},
+        {"app": "trading"},
+    ],
+    
+    # Whether to display the side menu
+    "show_sidebar": True,
+    
+    # Whether to aut expand the menu
+    "navigation_expanded": True,
+    
+    # Hide these apps when generating side menu
+    "hide_apps": [],
+    
+    # Hide these models when generating side menu
+    "hide_models": [],
+    
+    # Order of apps and models in side menu
+    "order_with_respect_to": ["users", "trading", "auth"],
+    
+    # Custom icons for apps/models
+    "icons": {
+        "auth": "fas fa-users-cog",
+        "auth.user": "fas fa-user",
+        "auth.Group": "fas fa-users",
+        "users.profile": "fas fa-user-circle",
+        "users.bankaccount": "fas fa-university",
+        "trading.product": "fas fa-coins",
+        "trading.order": "fas fa-shopping-cart",
+        "trading.transaction": "fas fa-exchange-alt",
+        "trading.withdrawrequest": "fas fa-money-check-alt",
+    },
+    
+    # Icons that are used when one is not manually specified
+    "default_icon_parents": "fas fa-chevron-circle-right",
+    "default_icon_children": "fas fa-circle",
+    
+    # UI Customizer Options
+    "show_ui_builder": False,
+    
+    # Change view button behavior
+    "changeform_format": "horizontal_tabs",
+    "changeform_format_overrides": {
+        "auth.user": "collapsible",
+        "auth.group": "vertical_tabs",
+    },
+    
+    # Language chooser
+    "language_chooser": False,
+    
+    # Custom CSS/JS
+    "custom_css": None,
+    "custom_js": None,
+    
+    # Theme settings
+    "theme": "flatly",  # Options: default, darkly, flatly, journal, litera, lux, materia, minty, pulse, sandstone, simplex, slate, spacelab, superhero, united, yeti
+    
+    # Color theme for navigation bar
+    "navbar": "navbar-dark",  # navbar-dark or navbar-light
+    "navbar_fixed": True,
+    "footer_fixed": False,
+    "body_small_text": False,
+    
+    # Sidebar settings
+    "sidebar": "sidebar-dark-primary",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": True,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    
+    # Additional links in user menu
+    "usermenu_links": [
+        {"name": "????????", "url": "https://example.com/support", "new_window": True},
+        {"model": "auth.user"}
+    ],
+}
+
+JAZZMIN_UI_TWEAKS = {
+    "navbar_small_text": False,
+    "footer_small_text": False,
+    "body_small_text": False,
+    "brand_small_text": False,
+    "brand_colour": "navbar-primary",
+    "accent": "accent-primary",
+    "navbar": "navbar-dark navbar-primary",
+    "no_navbar_border": False,
+    "navbar_fixed": True,
+    "layout_boxed": False,
+    "footer_fixed": False,
+    "sidebar_fixed": True,
+    "sidebar": "sidebar-dark-primary",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": True,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    "theme": "flatly",
+    "dark_mode_theme": None,
+    "button_classes": {
+        "primary": "btn-primary",
+        "secondary": "btn-secondary",
+        "info": "btn-info",
+        "warning": "btn-warning",
+        "danger": "btn-danger",
+        "success": "btn-success"
+    }
+}
+
+# Import/Export Settings
+IMPORT_EXPORT_USE_TRANSACTIONS = True
+
+# Admin Actions Settings
+ADMINACTIONS_MERGE_DUPLICATE = True
 
