@@ -8,10 +8,64 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 from django.utils.html import format_html
-from django.db.models import Q
+from django.db.models import Q, Count, Sum, Avg
+from django.urls import reverse
+from django.utils.safestring import mark_safe
 from typing import Optional
+from rangefilter.filters import DateRangeFilter, NumericRangeFilter
+from import_export import resources, fields
+from import_export.admin import ImportExportModelAdmin, ExportActionMixin
 
 from .models import Profile, BankAccount
+
+
+# ============================================
+# IMPORT/EXPORT RESOURCES
+# ============================================
+
+class ProfileResource(resources.ModelResource):
+    """Resource for importing/exporting Profile data."""
+    
+    user_full_name = fields.Field(
+        column_name='نام کامل',
+        attribute='user',
+        readonly=True
+    )
+    user_email = fields.Field(
+        column_name='ایمیل',
+        attribute='user__email',
+        readonly=True
+    )
+    
+    class Meta:
+        model = Profile
+        fields = (
+            'id', 'user_full_name', 'user_email', 'telegram_id', 
+            'telegram_username', 'phone_number', 'is_approved',
+            'rial_balance', 'gold_balance_grams', 'coin_balance', 'dollar_balance',
+            'frozen_rial_balance', 'frozen_gold_balance', 'frozen_coin_balance', 
+            'frozen_dollar_balance', 'created_at', 'updated_at'
+        )
+        export_order = fields
+
+
+class BankAccountResource(resources.ModelResource):
+    """Resource for importing/exporting BankAccount data."""
+    
+    user_name = fields.Field(
+        column_name='نام کاربر',
+        attribute='profile__user',
+        readonly=True
+    )
+    
+    class Meta:
+        model = BankAccount
+        fields = (
+            'id', 'user_name', 'bank_name', 'account_holder_name',
+            'account_number', 'iban', 'account_type', 'is_verified',
+            'created_at', 'updated_at'
+        )
+        export_order = fields
 
 
 class ProfileInline(admin.StackedInline):
@@ -40,27 +94,34 @@ admin.site.register(User, CustomUserAdmin)
 
 
 @admin.register(Profile)
-class ProfileAdmin(admin.ModelAdmin):
+class ProfileAdmin(ImportExportModelAdmin):
     """
     Admin interface for Profile model.
     
     Provides filtering, searching, and bulk actions for user profiles.
+    Enhanced with import/export, advanced filters, and analytics.
     """
+    
+    resource_class = ProfileResource
     
     list_display = (
         'get_user_display',
         'phone_number',
         'telegram_username',
-        'is_approved',
+        'approval_status_badge',
         'formatted_rial_balance',
         'formatted_gold_balance',
+        'total_orders_count',
+        'view_user_details',
         'created_at'
     )
     
     list_filter = (
         'is_approved',
-        'created_at',
-        'updated_at'
+        ('created_at', DateRangeFilter),
+        ('updated_at', DateRangeFilter),
+        ('rial_balance', NumericRangeFilter),
+        ('gold_balance_grams', NumericRangeFilter),
     )
     
     search_fields = (
@@ -122,16 +183,35 @@ class ProfileAdmin(admin.ModelAdmin):
         return obj.user.username
     get_user_display.short_description = 'نام کاربر'
     
-    def approval_status(self, obj: Profile) -> str:
-        """Display approval status with color."""
+    def approval_status_badge(self, obj: Profile) -> str:
+        """Display approval status with badge."""
         if obj.is_approved:
             return format_html(
-                '<span style="color: green; font-weight: bold;">✓ تأیید شده</span>'
+                '<span class="badge badge-success" style="background-color: #28a745; color: white; padding: 5px 10px; border-radius: 12px;">✓ تأیید شده</span>'
             )
         return format_html(
-            '<span style="color: red; font-weight: bold;">✗ تأیید نشده</span>'
+            '<span class="badge badge-warning" style="background-color: #ffc107; color: black; padding: 5px 10px; border-radius: 12px;">⏳ در انتظار</span>'
         )
-    approval_status.short_description = 'وضعیت تأیید'
+    approval_status_badge.short_description = 'وضعیت'
+    
+    def total_orders_count(self, obj: Profile) -> str:
+        """Display total orders with link."""
+        count = obj.orders.count()
+        url = reverse('admin:trading_order_changelist') + f'?profile__id__exact={obj.id}'
+        return format_html(
+            '<a href="{}" style="color: #007bff; font-weight: bold;">{} سفارش</a>',
+            url, count
+        )
+    total_orders_count.short_description = 'تعداد سفارشات'
+    
+    def view_user_details(self, obj: Profile) -> str:
+        """Quick view link."""
+        url = reverse('admin:users_profile_change', args=[obj.id])
+        return format_html(
+            '<a class="button" href="{}" style="background-color: #17a2b8; color: white; padding: 3px 8px; border-radius: 4px; text-decoration: none;">مشاهده</a>',
+            url
+        )
+    view_user_details.short_description = 'عملیات'
     
     def formatted_rial_balance(self, obj: Profile) -> str:
         """Format Rial balance with thousand separators."""
@@ -175,12 +255,15 @@ class ProfileAdmin(admin.ModelAdmin):
 
 
 @admin.register(BankAccount)
-class BankAccountAdmin(admin.ModelAdmin):
+class BankAccountAdmin(ImportExportModelAdmin):
     """
     Admin interface for BankAccount model.
     
     Manages user bank accounts and verification.
+    Enhanced with import/export and advanced filters.
     """
+    
+    resource_class = BankAccountResource
     
     list_display = (
         'id',
@@ -188,8 +271,9 @@ class BankAccountAdmin(admin.ModelAdmin):
         'bank_name',
         'account_holder_name',
         'masked_account_number',
-        'is_verified',
+        'verification_status_badge',
         'account_type',
+        'pending_txns_indicator',
         'created_at'
     )
     
@@ -197,7 +281,8 @@ class BankAccountAdmin(admin.ModelAdmin):
         'is_verified',
         'account_type',
         'bank_name',
-        'created_at'
+        ('created_at', DateRangeFilter),
+        ('updated_at', DateRangeFilter),
     )
     
     search_fields = (
@@ -250,26 +335,28 @@ class BankAccountAdmin(admin.ModelAdmin):
         return obj.get_masked_account_number()
     masked_account_number.short_description = 'شماره حساب'
     
-    def verification_status(self, obj: BankAccount) -> str:
-        """Display verification status with color."""
+    def verification_status_badge(self, obj: BankAccount) -> str:
+        """Display verification status with badge."""
         if obj.is_verified:
             return format_html(
-                '<span style="color: green; font-weight: bold;">✓ تأیید شده</span>'
+                '<span class="badge badge-success" style="background-color: #28a745; color: white; padding: 5px 10px; border-radius: 12px;">✓ تأیید شده</span>'
             )
         return format_html(
-            '<span style="color: orange; font-weight: bold;">⏳ در انتظار</span>'
+            '<span class="badge badge-warning" style="background-color: #ffc107; color: black; padding: 5px 10px; border-radius: 12px;">⏳ در انتظار</span>'
         )
-    verification_status.short_description = 'وضعیت تأیید'
-    verification_status.admin_order_field = 'is_verified'
+    verification_status_badge.short_description = 'وضعیت'
+    verification_status_badge.admin_order_field = 'is_verified'
     
-    def has_pending_txns(self, obj: BankAccount) -> str:
-        """Check if account has pending transactions."""
+    def pending_txns_indicator(self, obj: BankAccount) -> str:
+        """Show if account has pending transactions."""
         if obj.has_pending_transactions():
             return format_html(
-                '<span style="color: red;">✓ دارد</span>'
+                '<span class="badge badge-danger" style="background-color: #dc3545; color: white; padding: 5px 10px; border-radius: 12px;">⚠ دارد</span>'
             )
-        return '✗ ندارد'
-    has_pending_txns.short_description = 'تراکنش‌های در انتظار'
+        return format_html(
+            '<span class="badge badge-secondary" style="background-color: #6c757d; color: white; padding: 5px 10px; border-radius: 12px;">✓ ندارد</span>'
+        )
+    pending_txns_indicator.short_description = 'تراکنش‌های در انتظار'
     
     def verify_accounts(self, request, queryset):
         """Bulk action to verify bank accounts."""
