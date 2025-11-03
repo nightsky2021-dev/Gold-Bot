@@ -158,6 +158,9 @@ class TelegramBotCommand(BaseCommand):
             ],
             states={
                 SELECTING_PRODUCT: [
+                    # For buy flow, use buy_product_selected; for sell, we need sell_product_selected
+                    # But since both use same pattern, we need to check context to determine which handler
+                    # For now, keep as unified for simplicity
                     CallbackQueryHandler(buy_product_selected, pattern=f"^{PRODUCT_PREFIX}"),
                     CallbackQueryHandler(trade_cancel, pattern=f"^{CANCEL_PREFIX}")
                 ],
