@@ -5,7 +5,7 @@ This module contains Product and Order models for managing
 gold products and user orders.
 """
 
-from typing import Optional
+from typing import Optional, cast
 from decimal import Decimal
 
 from django.db import models
@@ -23,6 +23,9 @@ class Product(models.Model):
     Stores product information including name, prices, and availability.
     Prices are updated periodically via management command.
     """
+    
+    # Type annotations for auto-generated Django fields
+    id: int
     
     # Product code constants for standardized product identification
     PRODUCT_CODE_GOLD = 'gold'  # طلای آبشده
@@ -143,6 +146,9 @@ class Order(models.Model):
     Orders are created in PENDING status and processed by admin.
     Upon completion, user balances are updated atomically.
     """
+    
+    # Type annotations for auto-generated Django fields
+    id: int
     
     class OrderType(models.TextChoices):
         BUY = 'BUY', 'خرید از ما'
@@ -267,11 +273,11 @@ class Order(models.Model):
     
     def get_order_type_display(self) -> str:
         """Get display value for order_type field (Django auto-generated method stub for type checking)."""
-        return dict(self.OrderType.choices).get(self.order_type, self.order_type)
+        return cast(str, dict(self.OrderType.choices).get(self.order_type, self.order_type))
     
     def get_status_display(self) -> str:
         """Get display value for status field (Django auto-generated method stub for type checking)."""
-        return dict(self.OrderStatus.choices).get(self.status, self.status)
+        return cast(str, dict(self.OrderStatus.choices).get(self.status, self.status))
 
 
 class Transaction(models.Model):
@@ -280,6 +286,9 @@ class Transaction(models.Model):
     
     Tracks all balance changes with full audit trail.
     """
+    
+    # Type annotations for auto-generated Django fields
+    id: int
     
     class TransactionType(models.TextChoices):
         DEPOSIT = 'DEPOSIT', 'واریز'
@@ -426,19 +435,19 @@ class Transaction(models.Model):
             'COIN': 'سکه',
             'DOLLAR': 'دلار'
         }
-        return currency_names.get(self.currency, self.currency)
+        return cast(str, currency_names.get(self.currency, self.currency))
     
     def get_transaction_type_display(self) -> str:
         """Get display value for transaction_type field (Django auto-generated method stub for type checking)."""
-        return dict(self.TransactionType.choices).get(self.transaction_type, self.transaction_type)
+        return cast(str, dict(self.TransactionType.choices).get(self.transaction_type, self.transaction_type))
     
     def get_currency_display(self) -> str:
         """Get display value for currency field (Django auto-generated method stub for type checking)."""
-        return dict(self.CurrencyType.choices).get(self.currency, self.currency)
+        return cast(str, dict(self.CurrencyType.choices).get(self.currency, self.currency))
     
     def get_status_display(self) -> str:
         """Get display value for status field (Django auto-generated method stub for type checking)."""
-        return dict(self.TransactionStatus.choices).get(self.status, self.status)
+        return cast(str, dict(self.TransactionStatus.choices).get(self.status, self.status))
 
 
 class WithdrawRequest(models.Model):
@@ -447,6 +456,9 @@ class WithdrawRequest(models.Model):
     
     User initiates withdrawal, balance is frozen, admin processes it.
     """
+    
+    # Type annotations for auto-generated Django fields
+    id: int
     
     class WithdrawStatus(models.TextChoices):
         PENDING = 'PENDING', 'در انتظار'
@@ -567,8 +579,8 @@ class WithdrawRequest(models.Model):
     
     def get_currency_display(self) -> str:
         """Get display value for currency field (Django auto-generated method stub for type checking)."""
-        return dict(self.CurrencyType.choices).get(self.currency, self.currency)
+        return cast(str, dict(self.CurrencyType.choices).get(self.currency, self.currency))
     
     def get_status_display(self) -> str:
         """Get display value for status field (Django auto-generated method stub for type checking)."""
-        return dict(self.WithdrawStatus.choices).get(self.status, self.status)
+        return cast(str, dict(self.WithdrawStatus.choices).get(self.status, self.status))

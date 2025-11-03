@@ -19,6 +19,94 @@ from users.models import Profile, BankAccount
 logger = logging.getLogger('trading')
 
 
+class TradingService:
+    """Service class for trading-related operations like price updates."""
+    
+    @staticmethod
+    def update_all_prices() -> bool:
+        """
+        Update all product prices from the API.
+        
+        Fetches current prices from the configured price provider,
+        calculates final prices with margins, and updates all products.
+        
+        Returns:
+            bool: True if prices were updated successfully, False otherwise.
+        """
+        from .price_providers import get_active_provider
+        from .price_calculator import PriceCalculator
+        
+        try:
+            # Get price provider
+            provider = get_active_provider()
+            logger.info("Fetching prices from API...")
+            
+            # Fetch API prices
+            api_prices = provider.get_all_prices()
+            api_gold_price = api_prices.get('gold')
+            api_dollar_buy = api_prices.get('dollar_buy')
+            api_dollar_sell = api_prices.get('dollar_sell')
+            
+            # Validate that we got all prices
+            if not all([api_gold_price, api_dollar_buy, api_dollar_sell]):
+                logger.error("Failed to fetch all required prices from API")
+                return False
+            
+            # Calculate final prices with margins
+            all_prices = PriceCalculator.calculate_all_prices(
+                api_gold_price,
+                api_dollar_buy,
+                api_dollar_sell
+            )
+            
+            if not all_prices:
+                logger.error("Failed to calculate prices")
+                return False
+            
+            # Update products
+            updated_count = 0
+            
+            # Update gold product
+            try:
+                gold = Product.objects.get(product_code=Product.PRODUCT_CODE_GOLD)
+                gold.buy_price = all_prices.gold_abshodeh.buy_price
+                gold.sell_price = all_prices.gold_abshodeh.sell_price
+                gold.save()
+                logger.info(f"Updated gold prices: Buy={gold.buy_price}, Sell={gold.sell_price}")
+                updated_count += 1
+            except Product.DoesNotExist:
+                logger.warning("Gold product not found in database")
+            
+            # Update coin product
+            try:
+                coin = Product.objects.get(product_code=Product.PRODUCT_CODE_COIN)
+                coin.buy_price = all_prices.coin_full.buy_price
+                coin.sell_price = all_prices.coin_full.sell_price
+                coin.save()
+                logger.info(f"Updated coin prices: Buy={coin.buy_price}, Sell={coin.sell_price}")
+                updated_count += 1
+            except Product.DoesNotExist:
+                logger.warning("Coin product not found in database")
+            
+            # Update dollar product
+            try:
+                dollar = Product.objects.get(product_code=Product.PRODUCT_CODE_DOLLAR)
+                dollar.buy_price = all_prices.dollar.buy_price
+                dollar.sell_price = all_prices.dollar.sell_price
+                dollar.save()
+                logger.info(f"Updated dollar prices: Buy={dollar.buy_price}, Sell={dollar.sell_price}")
+                updated_count += 1
+            except Product.DoesNotExist:
+                logger.warning("Dollar product not found in database")
+            
+            logger.info(f"Successfully updated {updated_count} products")
+            return updated_count > 0
+            
+        except Exception as e:
+            logger.error(f"Error updating prices: {e}", exc_info=True)
+            return False
+
+
 class ProductService:
     """Service class for Product-related operations."""
     
