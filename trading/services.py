@@ -306,7 +306,8 @@ class OrderService:
         Returns:
             List of Order instances.
         """
-        queryset = profile.orders.all()  # type: ignore[attr-defined]
+        # Use select_related to prefetch related product to avoid N+1 queries
+        queryset = profile.orders.select_related('product').all()  # type: ignore[attr-defined]
         
         if status:
             queryset = queryset.filter(status=status)
