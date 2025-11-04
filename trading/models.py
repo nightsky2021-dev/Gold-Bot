@@ -5,7 +5,7 @@ This module contains Product and Order models for managing
 gold products and user orders.
 """
 
-from typing import Optional, cast
+from typing import Optional, cast, TYPE_CHECKING
 from decimal import Decimal
 
 from django.db import models
@@ -14,6 +14,9 @@ from django.core.validators import MinValueValidator
 from django.utils import timezone
 
 from users.models import Profile
+
+if TYPE_CHECKING:
+    from django.db.models import Manager
 
 
 class Product(models.Model):
@@ -26,6 +29,10 @@ class Product(models.Model):
     
     # Type annotations for auto-generated Django fields
     id: int
+    
+    if TYPE_CHECKING:
+        # Reverse relationship from Order model
+        orders: 'Manager["Order"]'
     
     # Product code constants for standardized product identification
     PRODUCT_CODE_GOLD = 'gold'  # طلای آبشده

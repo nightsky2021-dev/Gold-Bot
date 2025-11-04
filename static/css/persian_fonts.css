@@ -1,0 +1,102 @@
+/* Import Persian Fonts from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700&display=swap');
+
+/* Import Font Awesome to ensure icons load properly */
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css');
+
+/* Apply Persian font to all elements EXCEPT icons */
+*:not(.fa):not(.fas):not(.far):not(.fal):not(.fab):not(.fad):not([class*="fa-"]):not(i[class*="icon"]) {
+    font-family: 'Vazirmatn', 'Segoe UI', Tahoma, Arial, sans-serif !important;
+}
+
+/* Ensure Font Awesome icons use their own font */
+.fa, .fas, .far, .fal, .fab, .fad,
+[class*="fa-"],
+i[class*="icon"],
+.jazzmin-sidebar i,
+.nav-icon,
+.sidebar i {
+    font-family: "Font Awesome 5 Free", "Font Awesome 5 Brands", "FontAwesome" !important;
+    font-style: normal;
+}
+
+/* Ensure RTL direction for Persian text */
+html[lang="fa"], 
+body[dir="rtl"],
+.rtl {
+    direction: rtl;
+    text-align: right;
+}
+
+/* Override Bootstrap and AdminLTE font settings */
+body, 
+.content-wrapper,
+.main-header,
+.main-sidebar,
+.sidebar,
+.navbar,
+.nav,
+.dropdown-menu,
+.form-control,
+.btn:not(.btn i),
+table,
+.card,
+.card-title,
+.card-text,
+h1, h2, h3, h4, h5, h6,
+p:not(i), span:not(.fa):not(.fas):not(.far):not([class*="fa-"]), 
+div:not([class*="icon"]), 
+a:not(.nav-link i), 
+li:not(.nav-item i), 
+td, th,
+.brand-text,
+.sidebar-mini .nav-sidebar .nav-link:not(i),
+.nav-link:not(i),
+.navbar-nav .nav-link:not(i),
+input, textarea, select, option,
+label {
+    font-family: 'Vazirmatn', 'Segoe UI', Tahoma, Arial, sans-serif !important;
+}
+
+/* Fix number display in Persian */
+.persian-numbers {
+    font-feature-settings: 'ss02';
+}
+
+/* Improve readability */
+body {
+    line-height: 1.7;
+}
+
+/* Fix Jazzmin specific elements */
+.jazzmin-sidebar,
+.main-sidebar .brand-link,
+.sidebar .nav-link,
+.content-header h1,
+.card-header,
+.btn,
+.form-group label {
+    font-family: 'Vazirmatn', 'Segoe UI', Tahoma, Arial, sans-serif !important;
+}
+
+/* Ensure proper display of Persian characters in admin */
+.django-admin {
+    font-family: 'Vazirmatn', 'Segoe UI', Tahoma, Arial, sans-serif !important;
+}
+
+/* Strong icon font preservation rules */
+i.fa, i.fas, i.far, i.fal, i.fab, i.fad,
+i[class^="fa-"], i[class*=" fa-"],
+.nav-icon, .sidebar-mini i,
+.info-box-icon i,
+.small-box-icon i,
+.btn i, button i,
+[class*="icon-"] {
+    font-family: "Font Awesome 5 Free", "Font Awesome 5 Brands", "FontAwesome" !important;
+    font-weight: 900;
+    font-style: normal;
+    font-variant: normal;
+    text-rendering: auto;
+    -webkit-font-smoothing: antialiased;
+}
+
