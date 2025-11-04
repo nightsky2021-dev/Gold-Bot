@@ -18,6 +18,7 @@ from import_export import resources, fields  # type: ignore[import-untyped]
 from import_export.admin import ImportExportModelAdmin, ExportActionMixin  # type: ignore[import-untyped]
 
 from .models import Product, Order, Transaction, WithdrawRequest
+from users.models import Profile
 
 
 # ============================================
@@ -273,7 +274,7 @@ class OrderAdmin(ImportExportModelAdmin):
         }),
     )
     
-    actions = ['complete_orders', 'cancel_orders']
+    actions = []  # Remove bulk actions for instant execution model
     
     date_hierarchy = 'created_at'
     
@@ -298,9 +299,9 @@ class OrderAdmin(ImportExportModelAdmin):
     def status_badge(self, obj: Order) -> str:
         """Display status with badge."""
         badges = {
-            Order.OrderStatus.PENDING: '<span class="badge badge-warning" style="background-color: #ffc107; color: black; padding: 5px 10px; border-radius: 12px;">⏳ در انتظار</span>',
             Order.OrderStatus.COMPLETED: '<span class="badge badge-success" style="background-color: #28a745; color: white; padding: 5px 10px; border-radius: 12px;">✓ تکمیل</span>',
             Order.OrderStatus.CANCELLED: '<span class="badge badge-danger" style="background-color: #dc3545; color: white; padding: 5px 10px; border-radius: 12px;">✗ لغو</span>',
+            Order.OrderStatus.REJECTED: '<span class="badge badge-warning" style="background-color: #ffc107; color: black; padding: 5px 10px; border-radius: 12px;">✗ رد</span>',
         }
         return format_html(badges.get(obj.status, ''))
     status_badge.short_description = 'وضعیت'
@@ -333,72 +334,74 @@ class OrderAdmin(ImportExportModelAdmin):
     formatted_total.short_description = 'مبلغ کل'
     formatted_total.admin_order_field = 'total_amount'
     
-    @db_transaction.atomic
-    def complete_orders(self, request, queryset):
-        """
-        Bulk action to complete selected pending orders.
-        
-        Updates user balances atomically.
-        """
-        pending_orders = queryset.filter(status=Order.OrderStatus.PENDING)
-        completed_count = 0
-        
-        for order in pending_orders:
-            try:
-                profile = order.profile
-                
-                if order.order_type == Order.OrderType.BUY:
-                    # User buys gold from us
-                    # Deduct Rial, add Gold
-                    if profile.has_sufficient_rial_balance(order.total_amount):
-                        profile.rial_balance -= order.total_amount
-                        profile.gold_balance_grams += order.quantity_grams
-                        profile.save()
-                        
-                        order.status = Order.OrderStatus.COMPLETED
-                        order.completed_at = timezone.now()
-                        order.save()
-                        completed_count += 1
-                    else:
-                        order.notes += f"\n[{timezone.now()}] موجودی ریالی ناکافی."
-                        order.save()
-                        
-                elif order.order_type == Order.OrderType.SELL:
-                    # User sells gold to us
-                    # Deduct Gold, add Rial
-                    if profile.has_sufficient_gold_balance(order.quantity_grams):
-                        profile.gold_balance_grams -= order.quantity_grams
-                        profile.rial_balance += order.total_amount
-                        profile.save()
-                        
-                        order.status = Order.OrderStatus.COMPLETED
-                        order.completed_at = timezone.now()
-                        order.save()
-                        completed_count += 1
-                    else:
-                        order.notes += f"\n[{timezone.now()}] موجودی طلا ناکافی."
-                        order.save()
-                        
-            except Exception as e:
-                order.notes += f"\n[{timezone.now()}] خطا: {str(e)}"
-                order.save()
-        
-        self.message_user(
-            request,
-            f'{completed_count} سفارش با موفقیت تکمیل شد.'
-        )
-    complete_orders.short_description = 'تکمیل سفارشات انتخاب شده'
+    def get_readonly_fields(self, request, obj=None):
+        """Make all fields readonly since orders are executed instantly."""
+        if obj:  # Editing existing order
+            return [f.name for f in self.model._meta.fields]
+        return self.readonly_fields
     
-    def cancel_orders(self, request, queryset):
-        """Bulk action to cancel selected pending orders."""
-        pending_orders = queryset.filter(status=Order.OrderStatus.PENDING)
-        updated = pending_orders.update(status=Order.OrderStatus.CANCELLED)
+    def has_add_permission(self, request):
+        """Allow adding transactions for manual adjustments by superusers."""
+        return request.user.is_superuser
+    
+    def has_delete_permission(self, request, obj=None):
+        """Disable deleting completed orders for audit trail."""
+        return False
+    
+    def changelist_view(self, request, extra_context=None):
+        """Add live trade feed statistics to the changelist view."""
+        extra_context = extra_context or {}
         
-        self.message_user(
-            request,
-            f'{updated} سفارش لغو شد.'
+        # Get statistics for the dashboard
+        from django.db.models import Count, Sum
+        from datetime import timedelta
+        
+        now = timezone.now()
+        last_24h = now - timedelta(hours=24)
+        last_7d = now - timedelta(days=7)
+        last_30d = now - timedelta(days=30)
+        
+        # Trade volume statistics
+        stats_24h = Order.objects.filter(
+            created_at__gte=last_24h,
+            status=Order.OrderStatus.COMPLETED
+        ).aggregate(
+            count=Count('id'),
+            volume=Sum('total_amount')
         )
-    cancel_orders.short_description = 'لغو سفارشات انتخاب شده'
+        
+        stats_7d = Order.objects.filter(
+            created_at__gte=last_7d,
+            status=Order.OrderStatus.COMPLETED
+        ).aggregate(
+            count=Count('id'),
+            volume=Sum('total_amount')
+        )
+        
+        stats_30d = Order.objects.filter(
+            created_at__gte=last_30d,
+            status=Order.OrderStatus.COMPLETED
+        ).aggregate(
+            count=Count('id'),
+            volume=Sum('total_amount')
+        )
+        
+        # Buy vs Sell statistics
+        buy_sell_stats = Order.objects.filter(
+            status=Order.OrderStatus.COMPLETED
+        ).values('order_type').annotate(
+            count=Count('id'),
+            volume=Sum('total_amount')
+        )
+        
+        extra_context['trade_stats'] = {
+            '24h': stats_24h,
+            '7d': stats_7d,
+            '30d': stats_30d,
+            'buy_sell': list(buy_sell_stats)
+        }
+        
+        return super().changelist_view(request, extra_context=extra_context)
 
 
 @admin.register(Transaction)
@@ -452,13 +455,15 @@ class TransactionAdmin(ImportExportModelAdmin):
     
     fieldsets = (
         ('اطلاعات تراکنش', {
-            'fields': ('profile', 'transaction_type', 'currency', 'amount')
+            'fields': ('profile', 'transaction_type', 'currency', 'amount'),
+            'description': '⚠️ برای تعدیل دستی موجودی، نوع تراکنش را "تعدیل" انتخاب کنید و دلیل را در توضیحات بنویسید.'
         }),
         ('جزئیات', {
             'fields': ('bank_account', 'related_order', 'receipt_image', 'description')
         }),
         ('وضعیت', {
-            'fields': ('status', 'admin_notes')
+            'fields': ('status', 'admin_notes'),
+            'description': 'برای تعدیل دستی، وضعیت باید "تکمیل شده" باشد.'
         }),
         ('تاریخچه', {
             'fields': ('created_at', 'updated_at', 'completed_at'),
@@ -466,7 +471,7 @@ class TransactionAdmin(ImportExportModelAdmin):
         }),
     )
     
-    actions = ['approve_transactions', 'reject_transactions']
+    actions = ['approve_transactions', 'reject_transactions', 'create_manual_adjustment']
     
     date_hierarchy = 'created_at'
     
@@ -536,6 +541,49 @@ class TransactionAdmin(ImportExportModelAdmin):
         return '-'
     bank_account_display.short_description = 'حساب بانکی'
     
+    def save_model(self, request, obj, form, change):
+        """
+        Override save to handle manual adjustments.
+        For ADJUSTMENT type transactions, automatically update user balance.
+        """
+        is_new = obj.pk is None
+        
+        # Save the transaction first
+        super().save_model(request, obj, form, change)
+        
+        # If it's a new ADJUSTMENT transaction with COMPLETED status, update balance
+        if is_new and obj.transaction_type == Transaction.TransactionType.ADJUSTMENT and obj.status == Transaction.TransactionStatus.COMPLETED:
+            from users.services import WalletService
+            
+            # Log the admin who made the adjustment
+            obj.admin_notes = f"Manual adjustment by {request.user.username} at {timezone.now()}\n{obj.admin_notes}"
+            
+            # Update user balance
+            try:
+                WalletService.add_balance(
+                    obj.profile,
+                    obj.currency,
+                    obj.amount
+                )
+                obj.completed_at = timezone.now()
+                obj.save()
+                
+                self.message_user(
+                    request,
+                    f'تعدیل دستی با موفقیت اعمال شد. موجودی {obj.profile.get_display_name()} به‌روزرسانی گردید.',
+                    level='success'
+                )
+            except Exception as e:
+                obj.status = Transaction.TransactionStatus.REJECTED
+                obj.admin_notes += f"\nError: {str(e)}"
+                obj.save()
+                
+                self.message_user(
+                    request,
+                    f'خطا در اعمال تعدیل: {str(e)}',
+                    level='error'
+                )
+    
     @db_transaction.atomic
     def approve_transactions(self, request, queryset):
         """Approve pending deposit transactions and credit user balances."""
@@ -582,6 +630,28 @@ class TransactionAdmin(ImportExportModelAdmin):
             f'{updated} تراکنش رد شد.'
         )
     reject_transactions.short_description = 'رد تراکنش‌های انتخاب شده'
+    
+    def create_manual_adjustment(self, request, queryset):
+        """
+        Create manual balance adjustments with mandatory reason.
+        This is for exceptional circumstances only and requires superuser permission.
+        """
+        if not request.user.is_superuser:
+            self.message_user(
+                request,
+                'فقط مدیران کل می‌توانند تعدیل دستی ایجاد کنند.',
+                level='error'
+            )
+            return
+        
+        # Redirect to a custom form for manual adjustment
+        # For now, display a message that this requires custom implementation
+        self.message_user(
+            request,
+            'برای ایجاد تعدیل دستی، از بخش "افزودن تراکنش" استفاده کنید و نوع را "تعدیل" انتخاب کنید.',
+            level='info'
+        )
+    create_manual_adjustment.short_description = '⚙️ ایجاد تعدیل دستی موجودی'
 
 
 @admin.register(WithdrawRequest)

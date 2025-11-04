@@ -47,37 +47,26 @@ async def buy_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             await query.edit_message_text(ERROR_GENERAL, parse_mode='Markdown')
             return ConversationHandler.END
         
-        quantity_grams = ctx.quantity_grams
-        price_per_gram = ctx.price_per_gram
-        total_amount = ctx.total_amount
+        # Get context values
+        calculation_method = ctx.calculation_method or 'grams'
         
-        if not quantity_grams or not price_per_gram or not total_amount:
+        # Use the calculation method to determine what was entered
+        if calculation_method == 'rial':
+            amount = ctx.total_amount
+        else:  # grams or count
+            amount = ctx.quantity_grams
+        
+        if not amount:
             await query.edit_message_text(ERROR_GENERAL, parse_mode='Markdown')
             return ConversationHandler.END
         
-        # Re-validate balance before execution (safety check)
-        is_valid, error_msg = await sync_to_async(OrderService.validate_buy_balance)(
-            profile=profile,
-            total_amount=total_amount
-        )
-        if not is_valid:
-            await query.edit_message_text(error_msg, parse_mode='Markdown')
-            return ConversationHandler.END
-        
-        # Create order
-        order = await sync_to_async(OrderService.create_order)(
+        # Execute instant order (atomic operation)
+        order = await sync_to_async(OrderService.execute_instant_order)(
             profile=profile,
             product=product,
             order_type=Order.OrderType.BUY,
-            quantity_grams=quantity_grams,
-            price_per_gram=price_per_gram,
-            total_amount=total_amount
-        )
-        
-        # Complete order immediately (execute balance changes)
-        order = await sync_to_async(OrderService.complete_order)(
-            order=order,
-            execute_immediately=True
+            amount=amount,
+            calculation_method=calculation_method
         )
         
         # Get updated balances for confirmation message
@@ -92,13 +81,14 @@ async def buy_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             f"✅ *خرید شما با موفقیت انجام شد!*\n\n"
             f"🧾 *شماره سفارش:* #{order.id}\n"  # type: ignore[attr-defined]
             f"📦 *محصول:* {product.name}\n"
-            f"⚖️ *مقدار:* {quantity_grams} {product_unit}\n"
-            f"💵 *مبلغ پرداختی:* {total_amount:,} ریال\n\n"
+            f"⚖️ *مقدار:* {order.quantity_grams} {product_unit}\n"
+            f"💵 *مبلغ پرداختی:* {order.total_amount:,} ریال\n\n"
             f"{'═' * 25}\n"
             f"💼 *موجودی‌های جدید:*\n"
             f"💰 ریال: {updated_profile.rial_balance:,} ریال\n"
             f"📦 {product.name}: {product_balance} {product_unit}\n"
             f"{'═' * 25}\n\n"
+            f"✨ معامله به صورت آنی اجرا شد\n"
             f"از خرید شما متشکریم! 🙏"
         )
         
@@ -146,38 +136,26 @@ async def sell_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             await query.edit_message_text(ERROR_GENERAL, parse_mode='Markdown')
             return ConversationHandler.END
         
-        quantity_grams = ctx.quantity_grams
-        price_per_gram = ctx.price_per_gram
-        total_amount = ctx.total_amount
+        # Get context values
+        calculation_method = ctx.calculation_method or 'grams'
         
-        if not quantity_grams or not price_per_gram or not total_amount:
+        # Use the calculation method to determine what was entered
+        if calculation_method == 'rial':
+            amount = ctx.total_amount
+        else:  # grams or count
+            amount = ctx.quantity_grams
+        
+        if not amount:
             await query.edit_message_text(ERROR_GENERAL, parse_mode='Markdown')
             return ConversationHandler.END
         
-        # Re-validate balance before execution (safety check)
-        is_valid, error_msg = await sync_to_async(OrderService.validate_sell_balance)(
-            profile=profile,
-            product=product,
-            quantity_grams=quantity_grams
-        )
-        if not is_valid:
-            await query.edit_message_text(error_msg, parse_mode='Markdown')
-            return ConversationHandler.END
-        
-        # Create order
-        order = await sync_to_async(OrderService.create_order)(
+        # Execute instant order (atomic operation)
+        order = await sync_to_async(OrderService.execute_instant_order)(
             profile=profile,
             product=product,
             order_type=Order.OrderType.SELL,
-            quantity_grams=quantity_grams,
-            price_per_gram=price_per_gram,
-            total_amount=total_amount
-        )
-        
-        # Complete order immediately (execute balance changes)
-        order = await sync_to_async(OrderService.complete_order)(
-            order=order,
-            execute_immediately=True
+            amount=amount,
+            calculation_method=calculation_method
         )
         
         # Get updated balances for confirmation message
@@ -192,13 +170,14 @@ async def sell_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             f"✅ *فروش شما با موفقیت انجام شد!*\n\n"
             f"🧾 *شماره سفارش:* #{order.id}\n"  # type: ignore[attr-defined]
             f"📦 *محصول:* {product.name}\n"
-            f"⚖️ *مقدار:* {quantity_grams} {product_unit}\n"
-            f"💰 *مبلغ دریافتی:* {total_amount:,} ریال\n\n"
+            f"⚖️ *مقدار:* {order.quantity_grams} {product_unit}\n"
+            f"💰 *مبلغ دریافتی:* {order.total_amount:,} ریال\n\n"
             f"{'═' * 25}\n"
             f"💼 *موجودی‌های جدید:*\n"
             f"💵 ریال: {updated_profile.rial_balance:,} ریال\n"
             f"📦 {product.name}: {product_balance} {product_unit}\n"
             f"{'═' * 25}\n\n"
+            f"✨ معامله به صورت آنی اجرا شد\n"
             f"از همراهی شما متشکریم! 🙏"
         )
         
