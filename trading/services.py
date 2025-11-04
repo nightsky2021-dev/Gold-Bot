@@ -176,6 +176,161 @@ class OrderService:
     """Service class for Order-related operations."""
     
     @staticmethod
+    @transaction.atomic
+    def execute_instant_order(
+        profile: Profile,
+        product: Product,
+        order_type: str,
+        amount: Decimal,
+        calculation_method: str = 'grams'
+    ) -> Order:
+        """
+        Execute an order instantly with atomic transaction.
+        
+        This is the new primary function for all trades. It combines validation,
+        order creation, and balance updates into a single atomic operation.
+        
+        Args:
+            profile: User profile placing the order.
+            product: Product being traded.
+            order_type: 'BUY' or 'SELL'
+            amount: Amount in grams or rial (based on calculation_method)
+            calculation_method: 'grams' or 'rial'
+            
+        Returns:
+            Created and completed Order instance.
+            
+        Raises:
+            ValidationError: If user cannot trade, insufficient balance, or inputs are invalid.
+        """
+        # 1. Validate user can trade
+        if not profile.can_trade():
+            raise ValidationError(
+                "حساب شما هنوز تأیید نشده است. "
+                "لطفاً منتظر تأیید مدیر باشید."
+            )
+        
+        # 2. Validate product is active
+        if not product.is_active:
+            raise ValidationError("این محصول در حال حاضر غیرفعال است.")
+        
+        # 3. Fetch latest real-time price and calculate order details
+        quantity_grams, price_per_gram, total_amount = OrderService.calculate_order_details(
+            product=product,
+            order_type=order_type,
+            amount=amount,
+            calculation_method=calculation_method
+        )
+        
+        # 4. Validate balances
+        if order_type == Order.OrderType.BUY:
+            is_valid, error_msg = OrderService.validate_buy_balance(
+                profile=profile,
+                total_amount=total_amount
+            )
+            if not is_valid:
+                # Create REJECTED order for audit trail
+                order = Order.objects.create(
+                    profile=profile,
+                    product=product,
+                    order_type=order_type,
+                    quantity_grams=quantity_grams,
+                    price_per_gram=price_per_gram,
+                    total_amount=total_amount,
+                    status=Order.OrderStatus.REJECTED,
+                    notes=f"Rejected: {error_msg}"
+                )
+                raise ValidationError(error_msg)
+        
+        elif order_type == Order.OrderType.SELL:
+            is_valid, error_msg = OrderService.validate_sell_balance(
+                profile=profile,
+                product=product,
+                quantity_grams=quantity_grams
+            )
+            if not is_valid:
+                # Create REJECTED order for audit trail
+                order = Order.objects.create(
+                    profile=profile,
+                    product=product,
+                    order_type=order_type,
+                    quantity_grams=quantity_grams,
+                    price_per_gram=price_per_gram,
+                    total_amount=total_amount,
+                    status=Order.OrderStatus.REJECTED,
+                    notes=f"Rejected: {error_msg}"
+                )
+                raise ValidationError(error_msg)
+        
+        # 5. Execute balance updates
+        if order_type == Order.OrderType.BUY:
+            # Buy: Deduct Rial, Add Product
+            profile.rial_balance -= total_amount
+            
+            # Add Product based on currency type
+            currency_type = OrderService.get_product_currency_type(product)
+            if currency_type == 'GOLD':
+                profile.gold_balance_grams += quantity_grams
+            elif currency_type == 'COIN':
+                profile.coin_balance += quantity_grams
+            elif currency_type == 'DOLLAR':
+                profile.dollar_balance += quantity_grams
+        
+        elif order_type == Order.OrderType.SELL:
+            # Sell: Deduct Product, Add Rial
+            currency_type = OrderService.get_product_currency_type(product)
+            if currency_type == 'GOLD':
+                profile.gold_balance_grams -= quantity_grams
+            elif currency_type == 'COIN':
+                profile.coin_balance -= quantity_grams
+            elif currency_type == 'DOLLAR':
+                profile.dollar_balance -= quantity_grams
+            
+            # Add Rial
+            profile.rial_balance += total_amount
+        
+        # 6. Save updated profile
+        profile.save()
+        
+        # 7. Create order with COMPLETED status
+        order = Order.objects.create(
+            profile=profile,
+            product=product,
+            order_type=order_type,
+            quantity_grams=quantity_grams,
+            price_per_gram=price_per_gram,
+            total_amount=total_amount,
+            status=Order.OrderStatus.COMPLETED,
+            completed_at=timezone.now()
+        )
+        
+        # 8. Create corresponding Transaction record for audit trail
+        from trading.models import Transaction
+        
+        # Determine currency for transaction
+        currency_type = OrderService.get_product_currency_type(product)
+        transaction_type = Transaction.TransactionType.BUY if order_type == Order.OrderType.BUY else Transaction.TransactionType.SELL
+        
+        Transaction.objects.create(
+            profile=profile,
+            transaction_type=transaction_type,
+            currency=currency_type,
+            amount=quantity_grams,
+            status=Transaction.TransactionStatus.COMPLETED,
+            related_order=order,
+            description=f"{'خرید' if order_type == Order.OrderType.BUY else 'فروش'} {quantity_grams} {OrderService.get_product_unit(product)} {product.name}",
+            completed_at=timezone.now()
+        )
+        
+        logger.info(
+            f"Instant order {order.id} executed: {order_type} "
+            f"{quantity_grams}g of {product.name} "
+            f"by user {profile.get_display_name()}"
+        )
+        
+        return order
+    
+    @staticmethod
     def calculate_order_details(
         product: Product,
         order_type: str,
@@ -235,7 +390,10 @@ class OrderService:
         total_amount: Decimal
     ) -> Order:
         """
+        DEPRECATED: Use execute_instant_order() instead.
+        
         Create a new order (in PENDING status).
+        This function is deprecated in favor of instant execution.
         
         Args:
             profile: User profile placing the order.
@@ -273,7 +431,7 @@ class OrderService:
         # For SELL orders, check if user has sufficient gold balance
         # Again, not enforced at creation time
         
-        # Create the order
+        # Create the order with COMPLETED status (instant execution model)
         order = Order.objects.create(
             profile=profile,
             product=product,
@@ -281,7 +439,8 @@ class OrderService:
             quantity_grams=quantity_grams,
             price_per_gram=price_per_gram,
             total_amount=total_amount,
-            status=Order.OrderStatus.PENDING
+            status=Order.OrderStatus.COMPLETED,
+            completed_at=timezone.now()
         )
         
         logger.info(
@@ -299,7 +458,10 @@ class OrderService:
         execute_immediately: bool = True
     ) -> Order:
         """
+        DEPRECATED: Use execute_instant_order() instead.
+        
         Complete an order and update balances.
+        This function is deprecated in favor of instant execution.
         
         Args:
             order: Order instance to complete.

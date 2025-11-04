@@ -150,8 +150,8 @@ class Order(models.Model):
     """
     Represents a buy or sell order for gold products.
     
-    Orders are created in PENDING status and processed by admin.
-    Upon completion, user balances are updated atomically.
+    Orders are executed instantly with atomic balance updates.
+    All orders are created directly in COMPLETED or REJECTED status.
     """
     
     # Type annotations for auto-generated Django fields
@@ -162,9 +162,9 @@ class Order(models.Model):
         SELL = 'SELL', 'فروش به ما'
 
     class OrderStatus(models.TextChoices):
-        PENDING = 'PENDING', 'در انتظار بررسی'
         COMPLETED = 'COMPLETED', 'تکمیل شده'
         CANCELLED = 'CANCELLED', 'لغو شده'
+        REJECTED = 'REJECTED', 'رد شده'
 
     profile = models.ForeignKey(
         Profile,
@@ -214,7 +214,6 @@ class Order(models.Model):
     status = models.CharField(
         max_length=10,
         choices=OrderStatus.choices,
-        default=OrderStatus.PENDING,
         db_index=True,
         verbose_name="وضعیت",
         help_text="وضعیت فعلی سفارش"
@@ -262,9 +261,9 @@ class Order(models.Model):
         """Calculate total amount based on quantity and price per gram."""
         return self.quantity_grams * self.price_per_gram
     
-    def is_pending(self) -> bool:
-        """Check if order is in pending status."""
-        return self.status == self.OrderStatus.PENDING
+    def is_rejected(self) -> bool:
+        """Check if order is rejected."""
+        return self.status == self.OrderStatus.REJECTED
     
     def is_completed(self) -> bool:
         """Check if order is completed."""
@@ -275,8 +274,8 @@ class Order(models.Model):
         return self.status == self.OrderStatus.CANCELLED
     
     def can_be_cancelled(self) -> bool:
-        """Check if order can be cancelled (only pending orders)."""
-        return self.is_pending()
+        """Check if order can be cancelled (instant orders cannot be cancelled)."""
+        return False  # Orders are instant and cannot be cancelled after execution
     
     def get_order_type_display(self) -> str:
         """Get display value for order_type field (Django auto-generated method stub for type checking)."""
