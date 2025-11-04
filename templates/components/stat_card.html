@@ -1,0 +1,48 @@
+{% comment %}
+Statistics Card Component
+
+Usage:
+{% include 'components/stat_card.html' with 
+    icon="👥"
+    title="User Statistics"
+    stats=user_stats
+%}
+
+Where stats is a list of dictionaries with 'label' and 'value' keys
+{% endcomment %}
+
+<div class="stat-card fade-in" 
+     {% if id %}id="{{ id }}"{% endif %}
+     role="region"
+     aria-label="{{ title }}">
+    
+    <div class="stat-card-header">
+        {% if icon %}
+        <div class="stat-card-icon" aria-hidden="true">{{ icon }}</div>
+        {% endif %}
+        <h3 class="stat-card-title">{{ title }}</h3>
+    </div>
+    
+    <div class="stat-card-body">
+        {% if stats %}
+            {% for stat in stats %}
+            <div class="stat-item">
+                <span class="stat-label">{{ stat.label }}</span>
+                <span class="stat-value">{{ stat.value }}</span>
+            </div>
+            {% endfor %}
+        {% else %}
+            {% block stat_items %}
+            <div class="empty-state">
+                <p>اطلاعاتی برای نمایش وجود ندارد</p>
+            </div>
+            {% endblock %}
+        {% endif %}
+    </div>
+    
+    {% if footer %}
+    <div class="stat-card-footer">
+        {{ footer|safe }}
+    </div>
+    {% endif %}
+</div>

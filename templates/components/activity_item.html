@@ -1,0 +1,48 @@
+{% comment %}
+Activity Item Component
+
+Usage:
+{% include 'components/activity_item.html' with 
+    icon="👤"
+    icon_bg="success"
+    title="New User Registered"
+    description="John Doe joined the platform"
+    time="2 hours ago"
+    badges=badges_list
+%}
+{% endcomment %}
+
+<div class="activity-item" {% if id %}id="{{ id }}"{% endif %}>
+    {% if icon %}
+    <div class="activity-icon bg-{{ icon_bg|default:'primary' }}" aria-hidden="true">
+        {{ icon }}
+    </div>
+    {% endif %}
+    
+    <div class="activity-content">
+        <div class="activity-title">
+            {{ title }}
+            {% if badges %}
+                {% for badge in badges %}
+                <span class="badge badge-{{ badge.type|default:'info' }}">{{ badge.text }}</span>
+                {% endfor %}
+            {% endif %}
+        </div>
+        
+        {% if description %}
+        <div class="activity-description">{{ description }}</div>
+        {% endif %}
+    </div>
+    
+    {% if time %}
+    <div class="activity-time" aria-label="زمان: {{ time }}">
+        {{ time }}
+    </div>
+    {% endif %}
+    
+    {% if extra_content %}
+    <div class="activity-extra">
+        {{ extra_content|safe }}
+    </div>
+    {% endif %}
+</div>

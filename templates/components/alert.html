@@ -1,0 +1,58 @@
+{% comment %}
+Alert Component
+
+Usage:
+{% include 'components/alert.html' with 
+    type="success"
+    icon="✓"
+    title="Success"
+    message="Operation completed successfully"
+    dismissible=True
+%}
+
+Types: success, warning, danger, info
+{% endcomment %}
+
+<div class="alert {{ type|default:'info' }} {% if dismissible %}alert-dismissible{% endif %}" 
+     role="alert" 
+     aria-live="polite"
+     {% if id %}id="{{ id }}"{% endif %}>
+    
+    {% if icon %}
+    <span class="alert-icon" aria-hidden="true">{{ icon }}</span>
+    {% endif %}
+    
+    <div class="alert-content">
+        {% if title %}
+        <div class="alert-title">{{ title }}</div>
+        {% endif %}
+        
+        {% if message %}
+        <div class="alert-message">{{ message }}</div>
+        {% else %}
+        {% block alert_content %}{% endblock %}
+        {% endif %}
+    </div>
+    
+    {% if actions or url %}
+    <div class="alert-actions">
+        {% if url %}
+        <a href="{{ url }}" class="btn btn-sm alert-link">
+            {{ link_text|default:"مشاهده" }}
+        </a>
+        {% endif %}
+        {% if actions %}
+        {{ actions|safe }}
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    {% if dismissible %}
+    <button type="button" class="alert-close" aria-label="بستن" onclick="this.parentElement.remove()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+    </button>
+    {% endif %}
+</div>

@@ -1,0 +1,57 @@
+{% comment %}
+KPI Card Component
+
+Usage:
+{% include 'components/kpi_card.html' with 
+    icon="📊"
+    title="Total Users"
+    value=1234
+    subtitle="10 new this week"
+    variant="primary"
+    trend="up"
+    trend_value="+12%"
+%}
+
+Variants: primary, success, warning, info, gold, purple
+{% endcomment %}
+
+<div class="kpi-card {{ variant|default:'primary' }} fade-in" 
+     {% if id %}id="{{ id }}"{% endif %}
+     role="article"
+     aria-label="{{ title }}">
+    
+    {% if icon %}
+    <div class="kpi-icon" aria-hidden="true">{{ icon }}</div>
+    {% endif %}
+    
+    <div class="kpi-title">{{ title }}</div>
+    
+    <div class="kpi-value" aria-live="polite">
+        {% if value %}
+            {{ value }}
+        {% else %}
+            {{ value_html|safe }}
+        {% endif %}
+    </div>
+    
+    {% if subtitle %}
+    <div class="kpi-subtitle">{{ subtitle }}</div>
+    {% endif %}
+    
+    {% if trend and trend_value %}
+    <div class="kpi-trend {{ trend }}" aria-label="روند: {{ trend_value }}">
+        {% if trend == 'up' %}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+                <polyline points="17 6 23 6 23 12"></polyline>
+            </svg>
+        {% else %}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline>
+                <polyline points="17 18 23 18 23 12"></polyline>
+            </svg>
+        {% endif %}
+        <span>{{ trend_value }}</span>
+    </div>
+    {% endif %}
+</div>
