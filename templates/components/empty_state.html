@@ -1,0 +1,34 @@
+{% comment %}
+Empty State Component
+
+Usage:
+{% include 'components/empty_state.html' with 
+    icon="📭"
+    title="No Data Available"
+    description="There are no items to display at this time"
+    action_text="Create New"
+    action_url="/create/"
+%}
+{% endcomment %}
+
+<div class="empty-state" {% if id %}id="{{ id }}"{% endif %} role="status" aria-live="polite">
+    {% if icon %}
+    <div class="empty-state-icon" aria-hidden="true">{{ icon }}</div>
+    {% endif %}
+    
+    {% if title %}
+    <h3 class="empty-state-title">{{ title|default:"اطلاعاتی موجود نیست" }}</h3>
+    {% endif %}
+    
+    {% if description %}
+    <p class="empty-state-description">{{ description }}</p>
+    {% endif %}
+    
+    {% if action_text and action_url %}
+    <a href="{{ action_url }}" class="btn btn-primary mt-2">
+        {{ action_text }}
+    </a>
+    {% endif %}
+    
+    {% block empty_actions %}{% endblock %}
+</div>
