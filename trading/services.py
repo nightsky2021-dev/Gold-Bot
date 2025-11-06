@@ -32,72 +32,138 @@ class TradingService:
         Each product calculates its own buy/sell prices based on its
         configured margins, weights, and the API base price.
         
+        This method now supports both Navasan and Anigold APIs and can
+        handle any number of products dynamically.
+        
         Returns:
             bool: True if prices were updated successfully, False otherwise.
         """
-        from .price_providers import get_active_provider
+        from .price_providers import get_active_provider, AnigoldPriceProvider
         from decimal import Decimal
         
         try:
             # Get price provider
             provider = get_active_provider()
-            logger.info("Fetching prices from API...")
-            
-            # Fetch API prices
-            api_prices = provider.get_all_prices()
-            api_gold_price = api_prices.get('gold')
-            api_dollar_buy = api_prices.get('dollar_buy')
-            api_dollar_sell = api_prices.get('dollar_sell')
-            
-            # Validate that we got all prices
-            if not all([api_gold_price, api_dollar_buy, api_dollar_sell]):
-                logger.error("Failed to fetch all required prices from API")
-                return False
-            
-            # Type narrowing: ensure values are not None
-            assert api_gold_price is not None
-            assert api_dollar_buy is not None
-            assert api_dollar_sell is not None
-            
-            # Calculate average dollar price for dollar products
-            api_dollar_avg = (api_dollar_buy + api_dollar_sell) / 2
+            logger.info(f"Fetching prices from API using {provider.__class__.__name__}...")
             
             updated_count = 0
+            failed_count = 0
             
-            # Map product codes to their API base prices
-            price_map = {
-                Product.PRODUCT_CODE_GOLD: api_gold_price,
-                Product.PRODUCT_CODE_COIN: api_gold_price,  # سکه بر اساس قیمت طلا محاسبه می‌شود
-                Product.PRODUCT_CODE_DOLLAR: api_dollar_avg,
-            }
-            
-            # Update all products dynamically based on their configuration
-            for product in Product.objects.all():
-                try:
-                    base_price = price_map.get(product.product_code)
-                    
-                    if base_price is None:
-                        logger.warning(f"No API price available for product: {product.name}")
+            # Handle Anigold provider (supports all products)
+            if isinstance(provider, AnigoldPriceProvider):
+                # Fetch all prices at once
+                all_prices = provider._fetch_all_prices()
+                
+                if not all_prices:
+                    logger.error("Failed to fetch prices from Anigold API")
+                    return False
+                
+                logger.info(f"Fetched {len(all_prices)} prices from Anigold API")
+                
+                # Update all products
+                for product in Product.objects.filter(is_active=True):
+                    try:
+                        # Get base price for this product from API
+                        base_price = provider.get_price(product.product_code)
+                        
+                        if base_price is None:
+                            logger.warning(f"No API price available for product: {product.name} ({product.product_code})")
+                            failed_count += 1
+                            continue
+                        
+                        # For currencies, dynamically calculate 1% margin if margin is 0
+                        if product.product_code in [
+                            Product.PRODUCT_CODE_DOLLAR_USA,
+                            Product.PRODUCT_CODE_EURO,
+                            Product.PRODUCT_CODE_LIRA_TURKEY,
+                            Product.PRODUCT_CODE_YUAN_CHINA,
+                            Product.PRODUCT_CODE_POUND_UK,
+                            Product.PRODUCT_CODE_DIRHAM_UAE,
+                        ]:
+                            # Calculate 1% of base price as margin
+                            calculated_margin = (base_price * Decimal('0.01')).quantize(Decimal('1'))
+                            
+                            # Update margins if they're currently 0
+                            if product.buy_margin == Decimal('0') or product.sell_margin == Decimal('0'):
+                                product.buy_margin = calculated_margin
+                                product.sell_margin = calculated_margin
+                                logger.info(f"Auto-calculated 1% margin for {product.name}: {calculated_margin:,} Rials")
+                        
+                        # Use the product's own update_prices_from_api method
+                        product.update_prices_from_api(base_price)
+                        product.save()
+                        
+                        logger.info(
+                            f"✅ Updated {product.name}: "
+                            f"Base={base_price:,.0f}, "
+                            f"Weight={product.weight_grams}g, "
+                            f"Margins=({product.buy_margin:,.0f}, {product.sell_margin:,.0f}), "
+                            f"Buy={product.buy_price:,.0f}, Sell={product.sell_price:,.0f}"
+                        )
+                        updated_count += 1
+                        
+                    except Exception as e:
+                        logger.error(f"❌ Error updating product {product.name}: {e}", exc_info=True)
+                        failed_count += 1
                         continue
-                    
-                    # Use the product's own update_prices_from_api method
-                    product.update_prices_from_api(base_price)
-                    product.save()
-                    
-                    logger.info(
-                        f"Updated {product.name}: "
-                        f"Base={base_price:,.0f}, "
-                        f"Weight={product.weight_grams}g, "
-                        f"Margins=({product.buy_margin:,.0f}, {product.sell_margin:,.0f}), "
-                        f"Final Buy={product.buy_price:,.0f}, Sell={product.sell_price:,.0f}"
-                    )
-                    updated_count += 1
-                    
-                except Exception as e:
-                    logger.error(f"Error updating product {product.name}: {e}", exc_info=True)
-                    continue
             
-            logger.info(f"Successfully updated {updated_count} products")
+            else:
+                # Legacy support for Navasan or other providers
+                # Fetch API prices using old method
+                api_prices = provider.get_all_prices()
+                api_gold_price = api_prices.get('gold')
+                api_dollar_buy = api_prices.get('dollar_buy')
+                api_dollar_sell = api_prices.get('dollar_sell')
+                
+                # Validate that we got all prices
+                if not all([api_gold_price, api_dollar_buy, api_dollar_sell]):
+                    logger.error("Failed to fetch all required prices from API")
+                    return False
+                
+                # Type narrowing: ensure values are not None
+                assert api_gold_price is not None
+                assert api_dollar_buy is not None
+                assert api_dollar_sell is not None
+                
+                # Calculate average dollar price for dollar products
+                api_dollar_avg = (api_dollar_buy + api_dollar_sell) / 2
+                
+                # Map product codes to their API base prices (legacy)
+                price_map = {
+                    'gold_abshodeh': api_gold_price,
+                    'coin_full': api_gold_price,  # سکه بر اساس قیمت طلا محاسبه می‌شود
+                    'dollar_usa': api_dollar_avg,
+                }
+                
+                # Update all products dynamically based on their configuration
+                for product in Product.objects.filter(is_active=True):
+                    try:
+                        base_price = price_map.get(product.product_code)
+                        
+                        if base_price is None:
+                            logger.warning(f"No API price available for product: {product.name}")
+                            failed_count += 1
+                            continue
+                        
+                        # Use the product's own update_prices_from_api method
+                        product.update_prices_from_api(base_price)
+                        product.save()
+                        
+                        logger.info(
+                            f"✅ Updated {product.name}: "
+                            f"Base={base_price:,.0f}, "
+                            f"Weight={product.weight_grams}g, "
+                            f"Margins=({product.buy_margin:,.0f}, {product.sell_margin:,.0f}), "
+                            f"Final Buy={product.buy_price:,.0f}, Sell={product.sell_price:,.0f}"
+                        )
+                        updated_count += 1
+                        
+                    except Exception as e:
+                        logger.error(f"❌ Error updating product {product.name}: {e}", exc_info=True)
+                        failed_count += 1
+                        continue
+            
+            logger.info(f"Price update complete: {updated_count} updated, {failed_count} failed")
             return updated_count > 0
             
         except Exception as e:

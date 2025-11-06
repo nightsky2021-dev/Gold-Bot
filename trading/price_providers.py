@@ -4,7 +4,7 @@
 """
 from abc import ABC, abstractmethod
 from typing import Dict, Optional
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import requests  # pyright: ignore[reportMissingModuleSource]
 import logging
 
@@ -140,15 +140,145 @@ class NavasanPriceProvider(PriceProvider):
         return None
 
 
+class AnigoldPriceProvider(PriceProvider):
+    """ارائه‌دهنده قیمت از API Anigold"""
+    
+    BASE_URL = "http://api.anigoldbot.ir/store/prices/"
+    
+    # Mapping of product codes to API field names
+    PRODUCT_MAPPING = {
+        'dollar_usa': 'price_usd',
+        'euro': 'price_eur',
+        'lira_turkey': 'price_try',
+        'yuan_china': 'price_cny',
+        'pound_uk': 'price_gbp',
+        'dirham_uae': 'price_aed',
+        'coin_full': 'price_sekeb',
+        'coin_half': 'price_nim',
+        'coin_quarter': 'price_rob',
+        'gold_abshodeh': 'price_geram18',
+    }
+    
+    def __init__(self, api_key: str, timeout: int = 5, max_retries: int = 3):
+        """
+        Args:
+            api_key: کلید API سرویس Anigold
+            timeout: زمان انتظار برای پاسخ (ثانیه)
+            max_retries: تعداد تلاش‌های مجدد
+        """
+        self.api_key = api_key
+        self.timeout = timeout
+        self.max_retries = max_retries
+    
+    def _fetch_all_prices(self) -> Optional[Dict[str, Decimal]]:
+        """
+        دریافت تمام قیمت‌ها از API با قابلیت تلاش مجدد
+        
+        Returns:
+            دیکشنری قیمت‌ها یا None در صورت خطا
+        """
+        for attempt in range(self.max_retries):
+            try:
+                headers = {
+                    'Authorization': self.api_key
+                }
+                
+                response = requests.post(
+                    self.BASE_URL,
+                    headers=headers,
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
+                
+                data = response.json()
+                
+                # Parse prices from response
+                prices = {}
+                for item in data:
+                    en_slug = item.get('en_slug')
+                    price = item.get('price')
+                    
+                    if en_slug and price:
+                        try:
+                            # Convert price to Decimal (price is in Tomans)
+                            price_tomans = Decimal(str(price).replace(',', ''))
+                            # Convert Tomans to Rials
+                            prices[en_slug] = price_tomans * Decimal('10')
+                        except (ValueError, InvalidOperation):
+                            logger.warning(f"خطا در تبدیل قیمت برای {en_slug}: {price}")
+                            continue
+                
+                logger.info(f"دریافت {len(prices)} قیمت از API Anigold")
+                return prices
+                
+            except requests.exceptions.RequestException as e:
+                if attempt < self.max_retries - 1:
+                    logger.warning(f"تلاش {attempt + 1} برای دریافت قیمت‌ها ناموفق بود. تلاش مجدد...")
+                    continue
+                else:
+                    logger.error(f"خطا در دریافت قیمت‌ها از API پس از {self.max_retries} تلاش: {e}")
+                    return None
+            except (ValueError, KeyError, Exception) as e:
+                logger.error(f"خطا در پردازش پاسخ API: {e}")
+                return None
+        
+        return None
+    
+    def get_price(self, product_code: str) -> Optional[Decimal]:
+        """
+        دریافت قیمت یک محصول خاص
+        
+        Args:
+            product_code: کد محصول (مثل 'dollar_usa', 'euro', 'gold_abshodeh')
+            
+        Returns:
+            قیمت به صورت Decimal یا None در صورت خطا
+        """
+        prices = self._fetch_all_prices()
+        if not prices:
+            return None
+        
+        # Get API field name from product code
+        api_field = self.PRODUCT_MAPPING.get(product_code)
+        if not api_field:
+            logger.warning(f"کد محصول نامعتبر: {product_code}")
+            return None
+        
+        return prices.get(api_field)
+    
+    def get_gold_price(self) -> Optional[Decimal]:
+        """دریافت قیمت طلای آبشده (هر گرم - ریال)"""
+        return self.get_price('gold_abshodeh')
+    
+    def get_dollar_buy_price(self) -> Optional[Decimal]:
+        """دریافت قیمت خرید دلار (برای سازگاری با interface قدیمی)"""
+        return self.get_price('dollar_usa')
+    
+    def get_dollar_sell_price(self) -> Optional[Decimal]:
+        """دریافت قیمت فروش دلار (برای سازگاری با interface قدیمی)"""
+        return self.get_price('dollar_usa')
+
+
 # تابع کمکی برای دریافت provider فعال
 def get_active_provider() -> PriceProvider:
     """
     دریافت ارائه‌دهنده قیمت فعال
     
     این تابع را می‌توانید سفارشی‌سازی کنید تا provider مورد نظر را برگرداند
+    از متغیر PRICE_PROVIDER_TYPE در settings برای انتخاب provider استفاده می‌شود.
     """
     from django.conf import settings
     
-    api_key = getattr(settings, 'NAVASAN_API_KEY', 'freeTET7c1g57cU7kPnjQa4KAMP7BWaS')
-    return NavasanPriceProvider(api_key)
+    provider_type = getattr(settings, 'PRICE_PROVIDER_TYPE', 'anigold')
+    
+    if provider_type == 'anigold':
+        api_key = getattr(settings, 'ANIGOLD_API_KEY', '1a233fab-04d1-47b2-b732-813d93795c43')
+        return AnigoldPriceProvider(api_key)
+    elif provider_type == 'navasan':
+        api_key = getattr(settings, 'NAVASAN_API_KEY', 'freeTET7c1g57cU7kPnjQa4KAMP7BWaS')
+        return NavasanPriceProvider(api_key)
+    else:
+        # Default to Anigold
+        api_key = getattr(settings, 'ANIGOLD_API_KEY', '1a233fab-04d1-47b2-b732-813d93795c43')
+        return AnigoldPriceProvider(api_key)
 

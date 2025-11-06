@@ -14,15 +14,9 @@ from bot.constants import (
     ERROR_NOT_APPROVED,
     ERROR_NO_PRODUCTS,
     ERROR_GENERAL,
-    CALLBACK_PRICE_GOLD,
-    CALLBACK_PRICE_COIN,
-    CALLBACK_PRICE_DOLLAR,
     CALLBACK_PRICE_ALL,
     CALLBACK_PRICE_REFRESH,
     CALLBACK_BACK_TO_PRICES_MENU,
-    PRODUCT_GOLD,
-    PRODUCT_COIN,
-    PRODUCT_DOLLAR,
 )
 from bot.keyboards import get_prices_menu_keyboard, get_product_detail_keyboard
 from .base import get_or_create_profile
@@ -48,8 +42,8 @@ async def show_prices(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text(ERROR_NO_PRODUCTS, parse_mode='Markdown')
         return
     
-    # Create inline keyboard with product buttons
-    keyboard = get_prices_menu_keyboard()
+    # Create inline keyboard with all active products
+    keyboard = get_prices_menu_keyboard(products)
     
     message = (
         "📈 *قیمت‌ها و معامله*\n\n"
@@ -78,17 +72,12 @@ async def handle_product_price_view(update: Update, context: ContextTypes.DEFAUL
         await query.edit_message_text(ERROR_NOT_APPROVED, parse_mode='Markdown')
         return
     
-    # Map callback data to product code
-    product_code_map = {
-        CALLBACK_PRICE_GOLD: PRODUCT_GOLD,
-        CALLBACK_PRICE_COIN: PRODUCT_COIN,
-        CALLBACK_PRICE_DOLLAR: PRODUCT_DOLLAR,
-    }
-    
-    product_code = product_code_map.get(query.data)
-    if not product_code:
+    # Extract product code from callback data (format: "price_product_code")
+    if not query.data.startswith('price_'):
         await query.edit_message_text(ERROR_GENERAL, parse_mode='Markdown')
         return
+    
+    product_code = query.data.replace('price_', '')
     
     # Get product by code
     product = await sync_to_async(
@@ -245,7 +234,8 @@ async def handle_back_to_prices_menu(update: Update, context: ContextTypes.DEFAU
         await query.edit_message_text(ERROR_NO_PRODUCTS, parse_mode='Markdown')
         return
     
-    keyboard = get_prices_menu_keyboard()
+    # Pass products list to keyboard function
+    keyboard = get_prices_menu_keyboard(products)
     
     message = (
         "📈 *قیمت‌ها و معامله*\n\n"

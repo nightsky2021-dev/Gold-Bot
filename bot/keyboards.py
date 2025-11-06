@@ -2,14 +2,19 @@
 کیبوردهای مورد استفاده در ربات تلگرام
 """
 from telegram import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton, KeyboardButton
+from typing import List, TYPE_CHECKING
 from .constants import (
     MENU_PRICES, MENU_PORTFOLIO, MENU_HISTORY, MENU_CANCEL, MENU_WALLET, MENU_ACCOUNT,
-    CALLBACK_PRICE_GOLD, CALLBACK_PRICE_COIN, CALLBACK_PRICE_DOLLAR, CALLBACK_PRICE_ALL,
+    CALLBACK_PRICE_ALL,
     CALLBACK_PRICE_REFRESH, CALLBACK_BACK_TO_PRICES_MENU,
     CALLBACK_TRADE_PRODUCT_PREFIX, CALLBACK_ACTION_BUY, CALLBACK_ACTION_SELL,
     CALLBACK_METHOD_GRAM, CALLBACK_METHOD_RIAL, CALLBACK_CONFIRM_YES, CALLBACK_CONFIRM_NO,
-    CALLBACK_BACK_TO_MAIN, PRODUCT_GOLD, PRODUCT_COIN, PRODUCT_DOLLAR
+    CALLBACK_BACK_TO_MAIN, PRODUCT_GOLD, PRODUCT_COIN, PRODUCT_DOLLAR,
+    CURRENCY_PRODUCTS, COIN_PRODUCTS, GOLD_PRODUCTS
 )
+
+if TYPE_CHECKING:
+    from trading.models import Product
 
 
 def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
@@ -30,16 +35,58 @@ def get_contact_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
 
-def get_prices_menu_keyboard() -> InlineKeyboardMarkup:
-    """کیبورد منوی قیمت‌ها با دکمه‌های اینلاین بهینه شده"""
-    keyboard = [
-        [
-            InlineKeyboardButton("🪙 طلای آبشده", callback_data=CALLBACK_PRICE_GOLD),
-            InlineKeyboardButton("🥇 سکه تمام", callback_data=CALLBACK_PRICE_COIN),
-        ],
-        [InlineKeyboardButton("💵 دلار", callback_data=CALLBACK_PRICE_DOLLAR)],
-        [InlineKeyboardButton("📊 مشاهده همه قیمت‌ها", callback_data=CALLBACK_PRICE_ALL)],
-    ]
+def get_prices_menu_keyboard(products: List['Product'] | None = None) -> InlineKeyboardMarkup:
+    """
+    کیبورد منوی قیمت‌ها با دکمه‌های اینلاین - پشتیبانی از تمام محصولات
+    
+    Args:
+        products: لیست محصولات فعال (اگر None باشد، کیبورد ساده برگردانده می‌شود)
+    """
+    keyboard = []
+    
+    if products:
+        # Group products by category for better layout
+        # Add emoji based on product type
+        product_emojis = {
+            # Currencies
+            'dollar_usa': '💵',
+            'euro': '💶',
+            'lira_turkey': '🇹🇷',
+            'yuan_china': '💴',
+            'pound_uk': '💷',
+            'dirham_uae': '🇦🇪',
+            
+            # Coins
+            'coin_full': '🥇',
+            'coin_half': '🥈',
+            'coin_quarter': '🥉',
+            
+            # Gold
+            'gold_abshodeh': '🪙',
+        }
+        
+        # Create buttons in rows of 2
+        row = []
+        for product in products:
+            emoji = product_emojis.get(product.product_code, '💰')
+            button = InlineKeyboardButton(
+                f"{emoji} {product.name}",
+                callback_data=f"price_{product.product_code}"
+            )
+            row.append(button)
+            
+            # Add row when we have 2 buttons
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        
+        # Add remaining button if any
+        if row:
+            keyboard.append(row)
+    
+    # Add "View All Prices" button
+    keyboard.append([InlineKeyboardButton("📊 مشاهده همه قیمت‌ها", callback_data=CALLBACK_PRICE_ALL)])
+    
     return InlineKeyboardMarkup(keyboard)
 
 
