@@ -14,15 +14,9 @@ from bot.constants import (
     ERROR_NOT_APPROVED,
     ERROR_NO_PRODUCTS,
     ERROR_GENERAL,
-    CALLBACK_PRICE_GOLD,
-    CALLBACK_PRICE_COIN,
-    CALLBACK_PRICE_DOLLAR,
     CALLBACK_PRICE_ALL,
     CALLBACK_PRICE_REFRESH,
     CALLBACK_BACK_TO_PRICES_MENU,
-    PRODUCT_GOLD,
-    PRODUCT_COIN,
-    PRODUCT_DOLLAR,
 )
 from bot.keyboards import get_prices_menu_keyboard, get_product_detail_keyboard
 from .base import get_or_create_profile

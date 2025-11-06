@@ -59,9 +59,6 @@ from bot.constants import (
     MENU_SETTINGS,
     MENU_CANCEL,
     CALLBACK_TRADE_PRODUCT_PREFIX,
-    CALLBACK_PRICE_GOLD,
-    CALLBACK_PRICE_COIN,
-    CALLBACK_PRICE_DOLLAR,
     CALLBACK_PRICE_ALL,
     CALLBACK_PRICE_REFRESH,
     CALLBACK_BACK_TO_PRICES_MENU,
@@ -286,11 +283,10 @@ class TelegramBotCommand(BaseCommand):
         application.add_handler(MessageHandler(filters.Regex(f"^{MENU_SETTINGS}$"), show_settings))
     
     def _register_callback_handlers(self, application):
-        """Register callback query handlers."""
-        # Price menu callbacks
-        application.add_handler(CallbackQueryHandler(handle_product_price_view, pattern=f"^{CALLBACK_PRICE_GOLD}$"))
-        application.add_handler(CallbackQueryHandler(handle_product_price_view, pattern=f"^{CALLBACK_PRICE_COIN}$"))
-        application.add_handler(CallbackQueryHandler(handle_product_price_view, pattern=f"^{CALLBACK_PRICE_DOLLAR}$"))
+        """Register callback query handlers - supports all products dynamically."""
+        # Price menu callbacks - Dynamic support for ALL products
+        # Pattern "price_<product_code>" handles all products (dollar_usa, euro, etc.)
+        application.add_handler(CallbackQueryHandler(handle_product_price_view, pattern="^price_"))
         application.add_handler(CallbackQueryHandler(handle_product_price_all, pattern=f"^{CALLBACK_PRICE_ALL}$"))
         application.add_handler(CallbackQueryHandler(handle_price_refresh, pattern=f"^{CALLBACK_PRICE_REFRESH}"))
         application.add_handler(CallbackQueryHandler(handle_back_to_prices_menu, pattern=f"^{CALLBACK_BACK_TO_PRICES_MENU}$"))
