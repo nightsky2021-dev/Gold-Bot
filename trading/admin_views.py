@@ -8,7 +8,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import render
 from django.db.models import Count, Sum, Avg, Q
 from django.utils import timezone
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from trading.models import Product, Order, Transaction, WithdrawRequest
@@ -33,23 +33,23 @@ def admin_dashboard(request):
     approved_users = Profile.objects.filter(is_approved=True).count()
     pending_users = Profile.objects.filter(is_approved=False).count()
     new_users_this_week = Profile.objects.filter(
-        created_at__gte=timezone.make_aware(timezone.datetime.combine(week_ago, timezone.datetime.min.time()))
+        created_at__gte=timezone.make_aware(datetime.combine(week_ago, datetime.min.time()))
     ).count()
     new_users_this_month = Profile.objects.filter(
-        created_at__gte=timezone.make_aware(timezone.datetime.combine(month_ago, timezone.datetime.min.time()))
+        created_at__gte=timezone.make_aware(datetime.combine(month_ago, datetime.min.time()))
     ).count()
     
     # ===== ORDER STATISTICS =====
     total_orders = Order.objects.count()
-    pending_orders = Order.objects.filter(status=Order.OrderStatus.PENDING).count()
+    pending_orders = 0  # No pending orders with instant execution
     completed_orders = Order.objects.filter(status=Order.OrderStatus.COMPLETED).count()
     cancelled_orders = Order.objects.filter(status=Order.OrderStatus.CANCELLED).count()
     
     orders_this_week = Order.objects.filter(
-        created_at__gte=timezone.make_aware(timezone.datetime.combine(week_ago, timezone.datetime.min.time()))
+        created_at__gte=timezone.make_aware(datetime.combine(week_ago, datetime.min.time()))
     ).count()
     orders_this_month = Order.objects.filter(
-        created_at__gte=timezone.make_aware(timezone.datetime.combine(month_ago, timezone.datetime.min.time()))
+        created_at__gte=timezone.make_aware(datetime.combine(month_ago, datetime.min.time()))
     ).count()
     
     # Order type breakdown

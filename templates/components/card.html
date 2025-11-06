@@ -1,0 +1,46 @@
+{% comment %}
+Reusable Card Component
+
+Usage:
+{% include 'components/card.html' with 
+    title="Card Title"
+    subtitle="Optional subtitle"
+    content="Card content"
+    footer="Optional footer"
+    hover=True
+    class="additional-classes"
+%}
+{% endcomment %}
+
+<div class="card {% if hover %}card-hover{% endif %} {{ class|default:'' }}" {% if id %}id="{{ id }}"{% endif %}>
+    {% if title or icon %}
+    <div class="card-header">
+        {% if icon %}<span class="card-icon">{{ icon }}</span>{% endif %}
+        {% if title %}<h3 class="card-title">{{ title }}</h3>{% endif %}
+        {% if subtitle %}<p class="card-subtitle">{{ subtitle }}</p>{% endif %}
+    </div>
+    {% endif %}
+    
+    {% if content or block.super %}
+    <div class="card-body">
+        {% if content %}
+            {{ content|safe }}
+        {% else %}
+            {% block card_content %}{% endblock %}
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    {% if footer or actions %}
+    <div class="card-footer">
+        {% if footer %}
+            {{ footer|safe }}
+        {% endif %}
+        {% if actions %}
+            <div class="card-actions">
+                {{ actions|safe }}
+            </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>

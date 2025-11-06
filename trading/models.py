@@ -68,12 +68,41 @@ class Product(models.Model):
         help_text="به صورت خودکار از روی نام ساخته می‌شود"
     )
     
+    # Pricing calculation parameters (what admins configure)
+    buy_margin = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        default=Decimal('0'),
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="مارجین خرید (ریال)",
+        help_text="مارجین خرید از مشتری - این مقدار از قیمت بازار کم می‌شود تا قیمت خرید محاسبه شود"
+    )
+    
+    sell_margin = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        default=Decimal('0'),
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="مارجین فروش (ریال)",
+        help_text="مارجین فروش به مشتری - این مقدار به قیمت بازار اضافه می‌شود تا قیمت فروش محاسبه شود"
+    )
+    
+    weight_grams = models.DecimalField(
+        max_digits=8,
+        decimal_places=4,
+        default=Decimal('1'),
+        validators=[MinValueValidator(Decimal('0.0001'))],
+        verbose_name="وزن واحد (گرم)",
+        help_text="وزن یک واحد محصول به گرم - برای طلا و دلار = 1، برای سکه = 8.133 یا به تناسب نوع سکه"
+    )
+    
+    # Calculated prices (auto-updated from API + margins)
     buy_price = models.DecimalField(
         max_digits=12,
         decimal_places=0,
         validators=[MinValueValidator(Decimal('0'))],
         verbose_name="قیمت خرید ما از مشتری",
-        help_text="قیمت خرید هر گرم از مشتری (ریال)"
+        help_text="قیمت محاسبه شده - به صورت خودکار از API + مارجین‌ها محاسبه می‌شود"
     )
     
     sell_price = models.DecimalField(
@@ -81,7 +110,16 @@ class Product(models.Model):
         decimal_places=0,
         validators=[MinValueValidator(Decimal('0'))],
         verbose_name="قیمت فروش ما به مشتری",
-        help_text="قیمت فروش هر گرم به مشتری (ریال)"
+        help_text="قیمت محاسبه شده - به صورت خودکار از API + مارجین‌ها محاسبه می‌شود"
+    )
+    
+    base_price_api = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        null=True,
+        blank=True,
+        verbose_name="قیمت پایه از API",
+        help_text="آخرین قیمت دریافتی از API (قبل از اعمال مارجین)"
     )
     
     is_active = models.BooleanField(
@@ -119,15 +157,55 @@ class Product(models.Model):
         """Return string representation of the product."""
         return self.name
     
+    def calculate_prices_from_base(self, base_price: Decimal) -> tuple[Decimal, Decimal]:
+        """
+        Calculate buy and sell prices from a base market price.
+        
+        Args:
+            base_price: The base price from API (per gram or unit)
+            
+        Returns:
+            Tuple of (buy_price, sell_price) calculated with margins
+        """
+        # For products with weight > 1 gram (like coins), multiply base by weight
+        adjusted_base = base_price * self.weight_grams
+        
+        buy_price = (adjusted_base - self.buy_margin).quantize(Decimal('1'))
+        sell_price = (adjusted_base + self.sell_margin).quantize(Decimal('1'))
+        
+        return buy_price, sell_price
+    
+    def update_prices_from_api(self, api_base_price: Decimal) -> None:
+        """
+        Update prices based on API base price and configured margins.
+        
+        Args:
+            api_base_price: Base price from API (per gram)
+        """
+        self.base_price_api = api_base_price
+        self.buy_price, self.sell_price = self.calculate_prices_from_base(api_base_price)
+    
     def get_price_spread(self) -> Decimal:
         """Calculate the price spread (difference between sell and buy)."""
         return self.sell_price - self.buy_price
+    
+    def get_total_margin(self) -> Decimal:
+        """Get total margin (buy + sell)."""
+        return self.buy_margin + self.sell_margin
     
     def get_price_spread_percentage(self) -> Decimal:
         """Calculate the price spread as a percentage of buy price."""
         if self.buy_price > 0:
             return (self.get_price_spread() / self.buy_price) * 100
         return Decimal('0')
+    
+    def get_margin_info_display(self) -> str:
+        """Get formatted string showing margin configuration."""
+        return (
+            f"مارجین خرید: {self.buy_margin:,} ریال | "
+            f"مارجین فروش: {self.sell_margin:,} ریال | "
+            f"مجموع: {self.get_total_margin():,} ریال"
+        )
     
     @classmethod
     def get_by_code(cls, product_code: str) -> 'Product':
@@ -150,8 +228,8 @@ class Order(models.Model):
     """
     Represents a buy or sell order for gold products.
     
-    Orders are created in PENDING status and processed by admin.
-    Upon completion, user balances are updated atomically.
+    Orders are executed instantly with atomic balance updates.
+    All orders are created directly in COMPLETED or REJECTED status.
     """
     
     # Type annotations for auto-generated Django fields
@@ -162,9 +240,9 @@ class Order(models.Model):
         SELL = 'SELL', 'فروش به ما'
 
     class OrderStatus(models.TextChoices):
-        PENDING = 'PENDING', 'در انتظار بررسی'
         COMPLETED = 'COMPLETED', 'تکمیل شده'
         CANCELLED = 'CANCELLED', 'لغو شده'
+        REJECTED = 'REJECTED', 'رد شده'
 
     profile = models.ForeignKey(
         Profile,
@@ -214,7 +292,6 @@ class Order(models.Model):
     status = models.CharField(
         max_length=10,
         choices=OrderStatus.choices,
-        default=OrderStatus.PENDING,
         db_index=True,
         verbose_name="وضعیت",
         help_text="وضعیت فعلی سفارش"
@@ -262,9 +339,9 @@ class Order(models.Model):
         """Calculate total amount based on quantity and price per gram."""
         return self.quantity_grams * self.price_per_gram
     
-    def is_pending(self) -> bool:
-        """Check if order is in pending status."""
-        return self.status == self.OrderStatus.PENDING
+    def is_rejected(self) -> bool:
+        """Check if order is rejected."""
+        return self.status == self.OrderStatus.REJECTED
     
     def is_completed(self) -> bool:
         """Check if order is completed."""
@@ -275,8 +352,8 @@ class Order(models.Model):
         return self.status == self.OrderStatus.CANCELLED
     
     def can_be_cancelled(self) -> bool:
-        """Check if order can be cancelled (only pending orders)."""
-        return self.is_pending()
+        """Check if order can be cancelled (instant orders cannot be cancelled)."""
+        return False  # Orders are instant and cannot be cancelled after execution
     
     def get_order_type_display(self) -> str:
         """Get display value for order_type field (Django auto-generated method stub for type checking)."""

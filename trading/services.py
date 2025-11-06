@@ -28,13 +28,15 @@ class TradingService:
         Update all product prices from the API.
         
         Fetches current prices from the configured price provider,
-        calculates final prices with margins, and updates all products.
+        and updates each product using its own margin configuration.
+        Each product calculates its own buy/sell prices based on its
+        configured margins, weights, and the API base price.
         
         Returns:
             bool: True if prices were updated successfully, False otherwise.
         """
         from .price_providers import get_active_provider
-        from .price_calculator import PriceCalculator
+        from decimal import Decimal
         
         try:
             # Get price provider
@@ -52,52 +54,48 @@ class TradingService:
                 logger.error("Failed to fetch all required prices from API")
                 return False
             
-            # Calculate final prices with margins
-            all_prices = PriceCalculator.calculate_all_prices(
-                api_gold_price,
-                api_dollar_buy,
-                api_dollar_sell
-            )
+            # Type narrowing: ensure values are not None
+            assert api_gold_price is not None
+            assert api_dollar_buy is not None
+            assert api_dollar_sell is not None
             
-            if not all_prices:
-                logger.error("Failed to calculate prices")
-                return False
+            # Calculate average dollar price for dollar products
+            api_dollar_avg = (api_dollar_buy + api_dollar_sell) / 2
             
-            # Update products
             updated_count = 0
             
-            # Update gold product
-            try:
-                gold = Product.objects.get(product_code=Product.PRODUCT_CODE_GOLD)
-                gold.buy_price = all_prices.gold_abshodeh.buy_price
-                gold.sell_price = all_prices.gold_abshodeh.sell_price
-                gold.save()
-                logger.info(f"Updated gold prices: Buy={gold.buy_price}, Sell={gold.sell_price}")
-                updated_count += 1
-            except Product.DoesNotExist:
-                logger.warning("Gold product not found in database")
+            # Map product codes to their API base prices
+            price_map = {
+                Product.PRODUCT_CODE_GOLD: api_gold_price,
+                Product.PRODUCT_CODE_COIN: api_gold_price,  # سکه بر اساس قیمت طلا محاسبه می‌شود
+                Product.PRODUCT_CODE_DOLLAR: api_dollar_avg,
+            }
             
-            # Update coin product
-            try:
-                coin = Product.objects.get(product_code=Product.PRODUCT_CODE_COIN)
-                coin.buy_price = all_prices.coin_full.buy_price
-                coin.sell_price = all_prices.coin_full.sell_price
-                coin.save()
-                logger.info(f"Updated coin prices: Buy={coin.buy_price}, Sell={coin.sell_price}")
-                updated_count += 1
-            except Product.DoesNotExist:
-                logger.warning("Coin product not found in database")
-            
-            # Update dollar product
-            try:
-                dollar = Product.objects.get(product_code=Product.PRODUCT_CODE_DOLLAR)
-                dollar.buy_price = all_prices.dollar.buy_price
-                dollar.sell_price = all_prices.dollar.sell_price
-                dollar.save()
-                logger.info(f"Updated dollar prices: Buy={dollar.buy_price}, Sell={dollar.sell_price}")
-                updated_count += 1
-            except Product.DoesNotExist:
-                logger.warning("Dollar product not found in database")
+            # Update all products dynamically based on their configuration
+            for product in Product.objects.all():
+                try:
+                    base_price = price_map.get(product.product_code)
+                    
+                    if base_price is None:
+                        logger.warning(f"No API price available for product: {product.name}")
+                        continue
+                    
+                    # Use the product's own update_prices_from_api method
+                    product.update_prices_from_api(base_price)
+                    product.save()
+                    
+                    logger.info(
+                        f"Updated {product.name}: "
+                        f"Base={base_price:,.0f}, "
+                        f"Weight={product.weight_grams}g, "
+                        f"Margins=({product.buy_margin:,.0f}, {product.sell_margin:,.0f}), "
+                        f"Final Buy={product.buy_price:,.0f}, Sell={product.sell_price:,.0f}"
+                    )
+                    updated_count += 1
+                    
+                except Exception as e:
+                    logger.error(f"Error updating product {product.name}: {e}", exc_info=True)
+                    continue
             
             logger.info(f"Successfully updated {updated_count} products")
             return updated_count > 0
@@ -176,6 +174,161 @@ class OrderService:
     """Service class for Order-related operations."""
     
     @staticmethod
+    @transaction.atomic
+    def execute_instant_order(
+        profile: Profile,
+        product: Product,
+        order_type: str,
+        amount: Decimal,
+        calculation_method: str = 'grams'
+    ) -> Order:
+        """
+        Execute an order instantly with atomic transaction.
+        
+        This is the new primary function for all trades. It combines validation,
+        order creation, and balance updates into a single atomic operation.
+        
+        Args:
+            profile: User profile placing the order.
+            product: Product being traded.
+            order_type: 'BUY' or 'SELL'
+            amount: Amount in grams or rial (based on calculation_method)
+            calculation_method: 'grams' or 'rial'
+            
+        Returns:
+            Created and completed Order instance.
+            
+        Raises:
+            ValidationError: If user cannot trade, insufficient balance, or inputs are invalid.
+        """
+        # 1. Validate user can trade
+        if not profile.can_trade():
+            raise ValidationError(
+                "حساب شما هنوز تأیید نشده است. "
+                "لطفاً منتظر تأیید مدیر باشید."
+            )
+        
+        # 2. Validate product is active
+        if not product.is_active:
+            raise ValidationError("این محصول در حال حاضر غیرفعال است.")
+        
+        # 3. Fetch latest real-time price and calculate order details
+        quantity_grams, price_per_gram, total_amount = OrderService.calculate_order_details(
+            product=product,
+            order_type=order_type,
+            amount=amount,
+            calculation_method=calculation_method
+        )
+        
+        # 4. Validate balances
+        if order_type == Order.OrderType.BUY:
+            is_valid, error_msg = OrderService.validate_buy_balance(
+                profile=profile,
+                total_amount=total_amount
+            )
+            if not is_valid:
+                # Create REJECTED order for audit trail
+                order = Order.objects.create(
+                    profile=profile,
+                    product=product,
+                    order_type=order_type,
+                    quantity_grams=quantity_grams,
+                    price_per_gram=price_per_gram,
+                    total_amount=total_amount,
+                    status=Order.OrderStatus.REJECTED,
+                    notes=f"Rejected: {error_msg}"
+                )
+                raise ValidationError(error_msg)
+        
+        elif order_type == Order.OrderType.SELL:
+            is_valid, error_msg = OrderService.validate_sell_balance(
+                profile=profile,
+                product=product,
+                quantity_grams=quantity_grams
+            )
+            if not is_valid:
+                # Create REJECTED order for audit trail
+                order = Order.objects.create(
+                    profile=profile,
+                    product=product,
+                    order_type=order_type,
+                    quantity_grams=quantity_grams,
+                    price_per_gram=price_per_gram,
+                    total_amount=total_amount,
+                    status=Order.OrderStatus.REJECTED,
+                    notes=f"Rejected: {error_msg}"
+                )
+                raise ValidationError(error_msg)
+        
+        # 5. Execute balance updates
+        if order_type == Order.OrderType.BUY:
+            # Buy: Deduct Rial, Add Product
+            profile.rial_balance -= total_amount
+            
+            # Add Product based on currency type
+            currency_type = OrderService.get_product_currency_type(product)
+            if currency_type == 'GOLD':
+                profile.gold_balance_grams += quantity_grams
+            elif currency_type == 'COIN':
+                profile.coin_balance += quantity_grams
+            elif currency_type == 'DOLLAR':
+                profile.dollar_balance += quantity_grams
+        
+        elif order_type == Order.OrderType.SELL:
+            # Sell: Deduct Product, Add Rial
+            currency_type = OrderService.get_product_currency_type(product)
+            if currency_type == 'GOLD':
+                profile.gold_balance_grams -= quantity_grams
+            elif currency_type == 'COIN':
+                profile.coin_balance -= quantity_grams
+            elif currency_type == 'DOLLAR':
+                profile.dollar_balance -= quantity_grams
+            
+            # Add Rial
+            profile.rial_balance += total_amount
+        
+        # 6. Save updated profile
+        profile.save()
+        
+        # 7. Create order with COMPLETED status
+        order = Order.objects.create(
+            profile=profile,
+            product=product,
+            order_type=order_type,
+            quantity_grams=quantity_grams,
+            price_per_gram=price_per_gram,
+            total_amount=total_amount,
+            status=Order.OrderStatus.COMPLETED,
+            completed_at=timezone.now()
+        )
+        
+        # 8. Create corresponding Transaction record for audit trail
+        from trading.models import Transaction
+        
+        # Determine currency for transaction
+        currency_type = OrderService.get_product_currency_type(product)
+        transaction_type = Transaction.TransactionType.BUY if order_type == Order.OrderType.BUY else Transaction.TransactionType.SELL
+        
+        Transaction.objects.create(
+            profile=profile,
+            transaction_type=transaction_type,
+            currency=currency_type,
+            amount=quantity_grams,
+            status=Transaction.TransactionStatus.COMPLETED,
+            related_order=order,
+            description=f"{'خرید' if order_type == Order.OrderType.BUY else 'فروش'} {quantity_grams} {OrderService.get_product_unit(product)} {product.name}",
+            completed_at=timezone.now()
+        )
+        
+        logger.info(
+            f"Instant order {order.id} executed: {order_type} "
+            f"{quantity_grams}g of {product.name} "
+            f"by user {profile.get_display_name()}"
+        )
+        
+        return order
+    
+    @staticmethod
     def calculate_order_details(
         product: Product,
         order_type: str,
@@ -235,7 +388,10 @@ class OrderService:
         total_amount: Decimal
     ) -> Order:
         """
+        DEPRECATED: Use execute_instant_order() instead.
+        
         Create a new order (in PENDING status).
+        This function is deprecated in favor of instant execution.
         
         Args:
             profile: User profile placing the order.
@@ -273,7 +429,7 @@ class OrderService:
         # For SELL orders, check if user has sufficient gold balance
         # Again, not enforced at creation time
         
-        # Create the order
+        # Create the order with COMPLETED status (instant execution model)
         order = Order.objects.create(
             profile=profile,
             product=product,
@@ -281,7 +437,8 @@ class OrderService:
             quantity_grams=quantity_grams,
             price_per_gram=price_per_gram,
             total_amount=total_amount,
-            status=Order.OrderStatus.PENDING
+            status=Order.OrderStatus.COMPLETED,
+            completed_at=timezone.now()
         )
         
         logger.info(
@@ -299,7 +456,10 @@ class OrderService:
         execute_immediately: bool = True
     ) -> Order:
         """
+        DEPRECATED: Use execute_instant_order() instead.
+        
         Complete an order and update balances.
+        This function is deprecated in favor of instant execution.
         
         Args:
             order: Order instance to complete.
@@ -431,9 +591,9 @@ class OrderService:
         
         if include_status:
             status_emoji = {
-                Order.OrderStatus.PENDING: "🕐",
                 Order.OrderStatus.COMPLETED: "✅",
                 Order.OrderStatus.CANCELLED: "❌",
+                Order.OrderStatus.REJECTED: "🚫",
             }
             emoji = status_emoji.get(order.status, "")
             text += f"{emoji} وضعیت: {order.get_status_display()}\n"  # type: ignore[attr-defined]

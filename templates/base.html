@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="description" content="{% block meta_description %}سامانه معاملات طلای آنلاین - سیستم مدیریت و معاملات طلا{% endblock %}">
+    <meta name="keywords" content="{% block meta_keywords %}طلا, معاملات, فروش طلا, خرید طلا{% endblock %}">
+    <meta name="author" content="Gold Trading Platform">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="{% block og_title %}سامانه معاملات طلای آنلاین{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}سیستم مدیریت و معاملات طلا{% endblock %}">
+    
+    <title>{% block title %}سامانه معاملات طلای آنلاین{% endblock %}</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E🏆%3C/text%3E%3C/svg%3E">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Stylesheets -->
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'css/components.css' %}">
+    {% block extra_css %}{% endblock %}
+    
+    <!-- Inline Styles -->
+    {% block inline_styles %}
+    <style>
+    </style>
+    {% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+    <!-- Skip to main content for accessibility -->
+    <a href="#main-content" class="sr-only">پرش به محتوای اصلی</a>
+    
+    <!-- Header -->
+    {% block header %}
+    <header class="main-header" role="banner">
+        {% block header_content %}
+        <div class="container">
+            <div class="header-wrapper d-flex justify-content-between align-items-center">
+                <div class="logo">
+                    <a href="/" aria-label="صفحه اصلی">
+                        <h1 class="logo-text">🏆 سامانه معاملات طلا</h1>
+                    </a>
+                </div>
+                <nav class="main-nav" role="navigation" aria-label="ناوبری اصلی">
+                    {% block navigation %}
+                    <ul class="nav-list">
+                        <li><a href="/" class="nav-link">خانه</a></li>
+                        <li><a href="/admin/" class="nav-link">پنل مدیریت</a></li>
+                        <li><a href="/api/status/" class="nav-link">وضعیت API</a></li>
+                    </ul>
+                    {% endblock %}
+                </nav>
+            </div>
+        </div>
+        {% endblock %}
+    </header>
+    {% endblock %}
+    
+    <!-- Main Content -->
+    <main id="main-content" role="main">
+        <!-- Messages/Alerts -->
+        {% block messages %}
+        {% if messages %}
+        <div class="messages-container container mt-2">
+            {% for message in messages %}
+            <div class="alert {{ message.tags }}" role="alert" aria-live="polite">
+                <span class="alert-icon">
+                    {% if message.tags == 'success' %}✓{% elif message.tags == 'error' %}✗{% elif message.tags == 'warning' %}⚠{% else %}ℹ{% endif %}
+                </span>
+                <span class="alert-content">{{ message }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endblock %}
+        
+        <!-- Page Content -->
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Footer -->
+    {% block footer %}
+    <footer class="main-footer" role="contentinfo">
+        {% block footer_content %}
+        <div class="container">
+            <div class="footer-wrapper">
+                <div class="footer-section">
+                    <h3>درباره ما</h3>
+                    <p>سامانه معاملات طلای آنلاین - سیستم پیشرفته مدیریت و معاملات طلا</p>
+                </div>
+                <div class="footer-section">
+                    <h3>لینک‌های مفید</h3>
+                    <ul>
+                        <li><a href="/admin/">پنل مدیریت</a></li>
+                        <li><a href="/api/status/">وضعیت سیستم</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h3>تماس با ما</h3>
+                    <p>برای اطلاعات بیشتر با ما تماس بگیرید</p>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; {% now "Y" %} سامانه معاملات طلا. تمامی حقوق محفوظ است.</p>
+            </div>
+        </div>
+        {% endblock %}
+    </footer>
+    {% endblock %}
+    
+    <!-- Scripts -->
+    {% block scripts %}
+    {% endblock %}
+    
+    <!-- Extra Scripts -->
+    {% block extra_scripts %}{% endblock %}
+    
+    <!-- Inline Scripts -->
+    {% block inline_scripts %}
+    <script>
+        // Add any inline JavaScript here
+    </script>
+    {% endblock %}
+</body>
+</html>

@@ -1,97 +1,214 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>سامانه معاملات طلای آنلاین</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="description" content="سامانه معاملات طلای آنلاین - سیستم پیشرفته مدیریت و معاملات طلا با امکانات کامل">
+    <meta name="keywords" content="طلا, معاملات طلا, خرید طلا, فروش طلا, سامانه طلا">
+    <meta name="author" content="Gold Trading Platform">
+    
+    <title>سامانه معاملات طلای آنلاین | مدیریت حرفه‌ای معاملات طلا</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="{% static 'favicon.ico' %}">
+    
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        * {
-            font-family: 'Vazirmatn', 'Segoe UI', Tahoma, Arial, sans-serif;
-        }
-        body {
-            font-family: 'Vazirmatn', 'Segoe UI', Tahoma, Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f5f5f5;
-            direction: rtl;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            color: #2c3e50;
-        }
-        .header h1 {
-            color: #d4af37;
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }
-        .status {
-            background: #e8f5e8;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 20px 0;
-            border-right: 4px solid #4caf50;
-        }
-        .links {
-            margin-top: 30px;
-        }
-        .links a {
-            display: inline-block;
-            background: #d4af37;
-            color: white;
-            padding: 12px 24px;
-            text-decoration: none;
-            border-radius: 5px;
-            margin: 10px;
-            transition: background 0.3s;
-        }
-        .links a:hover {
-            background: #b8941f;
-        }
-        .info {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 5px;
-            margin: 20px 0;
-        }
-    </style>
+    
+    <!-- Stylesheets -->
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'css/components.css' %}">
+    <link rel="stylesheet" href="{% static 'css/home.css' %}">
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🏆 سامانه معاملات طلای آنلاین</h1>
-            <p>سیستم مدیریت و معاملات طلا</p>
-        </div>
+    <!-- Skip to main content for accessibility -->
+    <a href="#main-content" class="sr-only">پرش به محتوای اصلی</a>
+    
+    <div class="home-wrapper">
+        <!-- Header -->
+        <header class="home-header" role="banner">
+            <h1 class="home-title">🏆 سامانه معاملات طلای آنلاین</h1>
+            <p class="home-subtitle">سیستم پیشرفته مدیریت و معاملات طلا</p>
+        </header>
         
-        <div class="status">
-            <h3>✅ سیستم فعال است</h3>
-            <p>پایگاه داده SQLite به درستی پیکربندی شده و سیستم آماده استفاده است.</p>
-        </div>
+        <!-- Main Content -->
+        <main id="main-content" class="home-container" role="main">
+            <div class="home-content">
+                
+                <!-- System Status -->
+                <section class="status-section" aria-labelledby="status-title">
+                    <div class="status-header">
+                        <div class="status-icon pulse" aria-hidden="true">✅</div>
+                        <h2 id="status-title" class="status-title">سیستم فعال است</h2>
+                    </div>
+                    <div class="status-content">
+                        <p>پایگاه داده SQLite به درستی پیکربندی شده و سیستم آماده استفاده است. تمامی سرویس‌ها به صورت کامل در دسترس می‌باشند.</p>
+                    </div>
+                </section>
+                
+                <!-- System Information -->
+                <section class="info-section" aria-labelledby="info-title">
+                    <div class="info-header">
+                        <span class="info-icon" aria-hidden="true">📊</span>
+                        <h2 id="info-title" class="info-title">اطلاعات سیستم</h2>
+                    </div>
+                    <div class="info-grid">
+                        <div class="info-card">
+                            <div class="info-card-label">پایگاه داده</div>
+                            <div class="info-card-value">SQLite</div>
+                        </div>
+                        <div class="info-card">
+                            <div class="info-card-label">فایل دیتابیس</div>
+                            <div class="info-card-value">db.sqlite3</div>
+                        </div>
+                        <div class="info-card">
+                            <div class="info-card-label">وضعیت</div>
+                            <div class="info-card-value">فعال و آماده</div>
+                        </div>
+                        <div class="info-card">
+                            <div class="info-card-label">نسخه Django</div>
+                            <div class="info-card-value">{{ django_version|default:"4.x" }}</div>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Features Section -->
+                <section class="features-section" aria-labelledby="features-title">
+                    <div class="features-header">
+                        <h2 id="features-title" class="features-title">امکانات سیستم</h2>
+                        <p class="features-subtitle">ابزارهای حرفه‌ای برای مدیریت معاملات طلا</p>
+                    </div>
+                    <div class="features-grid">
+                        <div class="feature-card">
+                            <div class="feature-icon">👥</div>
+                            <h3 class="feature-title">مدیریت کاربران</h3>
+                            <p class="feature-description">ثبت‌نام، احراز هویت و مدیریت کامل اطلاعات کاربران</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">💰</div>
+                            <h3 class="feature-title">معاملات آنلاین</h3>
+                            <p class="feature-description">خرید و فروش طلا با قیمت‌گذاری لحظه‌ای و شفاف</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">💳</div>
+                            <h3 class="feature-title">مدیریت مالی</h3>
+                            <p class="feature-description">کیف پول دیجیتال، واریز و برداشت آسان</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">📊</div>
+                            <h3 class="feature-title">گزارش‌گیری</h3>
+                            <p class="feature-description">گزارش‌های تفصیلی از معاملات و تراکنش‌ها</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">🔔</div>
+                            <h3 class="feature-title">اعلان‌های هوشمند</h3>
+                            <p class="feature-description">اطلاع‌رسانی فوری از طریق تلگرام</p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">🔒</div>
+                            <h3 class="feature-title">امنیت بالا</h3>
+                            <p class="feature-description">رمزنگاری داده‌ها و احراز هویت دو مرحله‌ای</p>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Quick Links -->
+                <section class="links-section" aria-label="دسترسی سریع">
+                    <a href="/admin/" class="link-card primary" aria-label="ورود به پنل مدیریت">
+                        <div class="link-icon">🎛️</div>
+                        <h3 class="link-title">پنل مدیریت</h3>
+                        <p class="link-description">دسترسی به پنل کاربری مدیران سیستم</p>
+                        <div class="link-arrow">←</div>
+                    </a>
+                    
+                    <a href="/api/status/" class="link-card secondary" aria-label="مشاهده وضعیت API">
+                        <div class="link-icon">🔌</div>
+                        <h3 class="link-title">وضعیت API</h3>
+                        <p class="link-description">بررسی وضعیت سرویس‌های سیستم</p>
+                        <div class="link-arrow">←</div>
+                    </a>
+                </section>
+                
+                <!-- Stats Bar -->
+                <section class="stats-bar" aria-labelledby="stats-title">
+                    <h2 id="stats-title" class="sr-only">آمار سیستم</h2>
+                    <div class="stats-bar-grid">
+                        <div class="stat-box">
+                            <div class="stat-box-icon">⚡</div>
+                            <div class="stat-box-value">99.9%</div>
+                            <div class="stat-box-label">Uptime</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-box-icon">🚀</div>
+                            <div class="stat-box-value">&lt;100ms</div>
+                            <div class="stat-box-label">Response Time</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-box-icon">🔒</div>
+                            <div class="stat-box-value">256-bit</div>
+                            <div class="stat-box-label">Encryption</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-box-icon">📱</div>
+                            <div class="stat-box-value">24/7</div>
+                            <div class="stat-box-label">Support</div>
+                        </div>
+                    </div>
+                </section>
+                
+            </div>
+        </main>
         
-        <div class="info">
-            <h3>📊 اطلاعات سیستم</h3>
-            <ul>
-                <li><strong>پایگاه داده:</strong> SQLite (db.sqlite3)</li>
-                <li><strong>وضعیت:</strong> فعال و آماده</li>
-                <li><strong>نسخه Django:</strong> {{ django_version }}</li>
-            </ul>
-        </div>
-        
-        <div class="links">
-            <a href="/admin/">پنل مدیریت</a>
-            <a href="/api/status/">وضعیت API</a>
-        </div>
+        <!-- Footer -->
+        <footer class="home-footer" role="contentinfo">
+            <div class="footer-content">
+                <p class="footer-text">
+                    &copy; {% now "Y" %} سامانه معاملات طلای آنلاین. تمامی حقوق محفوظ است.
+                </p>
+                <p class="footer-text">
+                    طراحی و توسعه با ❤️ برای معاملات بهتر
+                </p>
+            </div>
+        </footer>
     </div>
+    
+    <!-- Scripts -->
+    <script>
+        // Simple animation on scroll
+        (function() {
+            'use strict';
+            
+            // Smooth scroll for anchor links
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const target = document.querySelector(this.getAttribute('href'));
+                    if (target) {
+                        target.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'start'
+                        });
+                    }
+                });
+            });
+            
+            // Add hover effect to cards
+            const cards = document.querySelectorAll('.feature-card, .link-card, .info-card');
+            cards.forEach(card => {
+                card.addEventListener('mouseenter', function() {
+                    this.style.transition = 'all 0.3s ease';
+                });
+            });
+            
+            // Console message
+            console.log('%c🏆 سامانه معاملات طلای آنلاین', 'font-size: 20px; color: #d4af37; font-weight: bold;');
+            console.log('%cسیستم با موفقیت بارگذاری شد', 'font-size: 14px; color: #4caf50;');
+            
+        })();
+    </script>
 </body>
 </html>

@@ -6,18 +6,24 @@ Enhanced with import/export, advanced filters, and analytics.
 """
 
 from django.contrib import admin
+from django.contrib.auth.models import User
 from django.utils.html import format_html
 from django.db import transaction as db_transaction
 from django.utils import timezone
 from django.urls import reverse
 from django.db.models import Count, Sum, Avg, Q
-from typing import Optional
+from django.http import HttpRequest
+from django.template.response import TemplateResponse
+from typing import Optional, Any
+from datetime import datetime, timedelta
 from decimal import Decimal
 from rangefilter.filters import DateRangeFilter, NumericRangeFilter  # type: ignore[import-untyped]
 from import_export import resources, fields  # type: ignore[import-untyped]
 from import_export.admin import ImportExportModelAdmin, ExportActionMixin  # type: ignore[import-untyped]
 
 from .models import Product, Order, Transaction, WithdrawRequest
+from users.models import Profile
+from .reporting import BusinessReportService
 
 
 # ============================================
@@ -120,15 +126,16 @@ class ProductAdmin(ImportExportModelAdmin):
     list_display = (
         'name',
         'product_code',
-        'buy_price',
-        'sell_price',
-        'price_spread_display',
+        'margin_display',
+        'calculated_buy_price',
+        'calculated_sell_price',
+        'base_api_price_display',
         'is_active',
         'order_count',
         'updated_at'
     )
     
-    list_editable = ('buy_price', 'sell_price', 'is_active')
+    list_editable = ('is_active',)
     
     list_filter = (
         'is_active', 
@@ -138,19 +145,38 @@ class ProductAdmin(ImportExportModelAdmin):
         ('sell_price', NumericRangeFilter),
     )
     
-    search_fields = ('name', 'slug')
+    search_fields = ('name', 'slug', 'product_code')
     
-    readonly_fields = ('slug', 'updated_at', 'created_at')
-    
-    prepopulated_fields = {'slug': ('name',)}
+    readonly_fields = (
+        'slug', 
+        'buy_price', 
+        'sell_price', 
+        'base_price_api',
+        'calculated_price_preview',
+        'updated_at', 
+        'created_at'
+    )
     
     fieldsets = (
         ('اطلاعات محصول', {
-            'fields': ('name', 'slug')
+            'fields': ('product_code', 'name', 'slug')
         }),
-        ('قیمت‌گذاری', {
-            'fields': ('buy_price', 'sell_price'),
-            'description': 'قیمت‌ها به ریال برای هر گرم است.'
+        ('⚙️ تنظیمات محاسبه قیمت (این قسمت را تنظیم کنید)', {
+            'fields': ('buy_margin', 'sell_margin', 'weight_grams'),
+            'description': (
+                '<div style="background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 10px 0;">'
+                '<h3 style="margin-top:0; color: #1976d2;">📖 راهنمای محاسبه قیمت:</h3>'
+                '<p><strong>مارجین خرید:</strong> این مقدار از قیمت بازار <strong>کم</strong> می‌شود تا قیمت خرید از مشتری محاسبه شود.</p>'
+                '<p><strong>مارجین فروش:</strong> این مقدار به قیمت بازار <strong>اضافه</strong> می‌شود تا قیمت فروش به مشتری محاسبه شود.</p>'
+                '<p><strong>وزن واحد:</strong> برای طلا و دلار = 1 گرم، برای سکه = وزن واقعی سکه (مثلاً 8.133 گرم)</p>'
+                '<hr style="margin: 15px 0;">'
+                '<p style="color: #ff6f00;"><strong>⚡ توجه:</strong> با تغییر این مقادیر، قیمت‌ها به صورت خودکار در هنگام اجرای دستور <code>update_prices</code> محاسبه می‌شوند.</p>'
+                '</div>'
+            )
+        }),
+        ('📊 قیمت‌های محاسبه شده (فقط‌خواندنی)', {
+            'fields': ('calculated_price_preview', 'base_price_api', 'buy_price', 'sell_price'),
+            'description': 'این قیمت‌ها به صورت خودکار از API و مارجین‌های بالا محاسبه می‌شوند.'
         }),
         ('وضعیت', {
             'fields': ('is_active',)
@@ -200,6 +226,96 @@ class ProductAdmin(ImportExportModelAdmin):
         percentage = obj.get_price_spread_percentage()
         return f"{spread:,.0f} ریال ({percentage:.2f}%)"
     price_spread_display.short_description = 'اختلاف قیمت'
+    
+    def margin_display(self, obj: Product) -> str:
+        """Display margin configuration."""
+        # Format numbers as strings first to avoid format_html SafeString issues
+        buy_margin_formatted = f"{float(obj.buy_margin):,.0f}"
+        sell_margin_formatted = f"{float(obj.sell_margin):,.0f}"
+        total_margin_formatted = f"{float(obj.get_total_margin()):,.0f}"
+        
+        return format_html(
+            '<div style="line-height: 1.8;">'
+            '🟢 خرید: <strong>{}</strong><br>'
+            '🔴 فروش: <strong>{}</strong><br>'
+            '💰 مجموع: <strong>{}</strong>'
+            '</div>',
+            buy_margin_formatted,
+            sell_margin_formatted,
+            total_margin_formatted
+        )
+    margin_display.short_description = 'مارجین‌ها (ریال)'
+    
+    def calculated_buy_price(self, obj: Product) -> str:
+        """Display calculated buy price."""
+        buy_price_formatted = f"{float(obj.buy_price):,.0f}"
+        return format_html(
+            '<span style="color: #2e7d32; font-weight: bold;">{} ریال</span>',
+            buy_price_formatted
+        )
+    calculated_buy_price.short_description = '💰 قیمت خرید'
+    calculated_buy_price.admin_order_field = 'buy_price'
+    
+    def calculated_sell_price(self, obj: Product) -> str:
+        """Display calculated sell price."""
+        sell_price_formatted = f"{float(obj.sell_price):,.0f}"
+        return format_html(
+            '<span style="color: #c62828; font-weight: bold;">{} ریال</span>',
+            sell_price_formatted
+        )
+    calculated_sell_price.short_description = '💵 قیمت فروش'
+    calculated_sell_price.admin_order_field = 'sell_price'
+    
+    def base_api_price_display(self, obj: Product) -> str:
+        """Display base price from API."""
+        if obj.base_price_api:
+            base_price_formatted = f"{float(obj.base_price_api):,.0f}"
+            return format_html(
+                '<span style="color: #1976d2;">{} ریال</span>',
+                base_price_formatted
+            )
+        return format_html('<span style="color: #999;">—</span>')
+    base_api_price_display.short_description = '📡 قیمت API'
+    
+    def calculated_price_preview(self, obj: Product) -> str:
+        """Show a preview of how prices are calculated."""
+        if obj.base_price_api:
+            adjusted_base = obj.base_price_api * obj.weight_grams
+            # Format all numbers as strings first to avoid format_html SafeString issues
+            base_price_formatted = f"{float(obj.base_price_api):,.0f}"
+            adjusted_base_formatted = f"{float(adjusted_base):,.0f}"
+            buy_margin_formatted = f"{float(obj.buy_margin):,.0f}"
+            buy_price_formatted = f"{float(obj.buy_price):,.0f}"
+            sell_margin_formatted = f"{float(obj.sell_margin):,.0f}"
+            sell_price_formatted = f"{float(obj.sell_price):,.0f}"
+            
+            return format_html(
+                '<div style="background: #f5f5f5; padding: 10px; border-radius: 5px; font-family: monospace;">'
+                '<strong>فرمول محاسبه:</strong><br><br>'
+                '🔹 قیمت پایه API: <strong>{}</strong> ریال<br>'
+                '🔹 وزن واحد: <strong>{}</strong> گرم<br>'
+                '🔹 قیمت تعدیل شده: <strong>{}</strong> ریال<br>'
+                '<hr style="margin: 10px 0;">'
+                '✅ قیمت خرید = {} - {} = <strong style="color: #2e7d32;">{}</strong> ریال<br>'
+                '✅ قیمت فروش = {} + {} = <strong style="color: #c62828;">{}</strong> ریال'
+                '</div>',
+                base_price_formatted,
+                obj.weight_grams,
+                adjusted_base_formatted,
+                adjusted_base_formatted,
+                buy_margin_formatted,
+                buy_price_formatted,
+                adjusted_base_formatted,
+                sell_margin_formatted,
+                sell_price_formatted
+            )
+        return format_html(
+            '<div style="background: #fff3cd; padding: 10px; border-radius: 5px;">'
+            '⚠️ هنوز قیمت از API دریافت نشده است.<br>'
+            'لطفاً دستور <code>python manage.py update_prices</code> را اجرا کنید.'
+            '</div>'
+        )
+    calculated_price_preview.short_description = '📊 پیش‌نمای محاسبه'
     
 
 
@@ -273,7 +389,7 @@ class OrderAdmin(ImportExportModelAdmin):
         }),
     )
     
-    actions = ['complete_orders', 'cancel_orders']
+    actions = []  # Remove bulk actions for instant execution model
     
     date_hierarchy = 'created_at'
     
@@ -298,9 +414,9 @@ class OrderAdmin(ImportExportModelAdmin):
     def status_badge(self, obj: Order) -> str:
         """Display status with badge."""
         badges = {
-            Order.OrderStatus.PENDING: '<span class="badge badge-warning" style="background-color: #ffc107; color: black; padding: 5px 10px; border-radius: 12px;">⏳ در انتظار</span>',
             Order.OrderStatus.COMPLETED: '<span class="badge badge-success" style="background-color: #28a745; color: white; padding: 5px 10px; border-radius: 12px;">✓ تکمیل</span>',
             Order.OrderStatus.CANCELLED: '<span class="badge badge-danger" style="background-color: #dc3545; color: white; padding: 5px 10px; border-radius: 12px;">✗ لغو</span>',
+            Order.OrderStatus.REJECTED: '<span class="badge badge-warning" style="background-color: #ffc107; color: black; padding: 5px 10px; border-radius: 12px;">✗ رد</span>',
         }
         return format_html(badges.get(obj.status, ''))
     status_badge.short_description = 'وضعیت'
@@ -333,72 +449,74 @@ class OrderAdmin(ImportExportModelAdmin):
     formatted_total.short_description = 'مبلغ کل'
     formatted_total.admin_order_field = 'total_amount'
     
-    @db_transaction.atomic
-    def complete_orders(self, request, queryset):
-        """
-        Bulk action to complete selected pending orders.
-        
-        Updates user balances atomically.
-        """
-        pending_orders = queryset.filter(status=Order.OrderStatus.PENDING)
-        completed_count = 0
-        
-        for order in pending_orders:
-            try:
-                profile = order.profile
-                
-                if order.order_type == Order.OrderType.BUY:
-                    # User buys gold from us
-                    # Deduct Rial, add Gold
-                    if profile.has_sufficient_rial_balance(order.total_amount):
-                        profile.rial_balance -= order.total_amount
-                        profile.gold_balance_grams += order.quantity_grams
-                        profile.save()
-                        
-                        order.status = Order.OrderStatus.COMPLETED
-                        order.completed_at = timezone.now()
-                        order.save()
-                        completed_count += 1
-                    else:
-                        order.notes += f"\n[{timezone.now()}] موجودی ریالی ناکافی."
-                        order.save()
-                        
-                elif order.order_type == Order.OrderType.SELL:
-                    # User sells gold to us
-                    # Deduct Gold, add Rial
-                    if profile.has_sufficient_gold_balance(order.quantity_grams):
-                        profile.gold_balance_grams -= order.quantity_grams
-                        profile.rial_balance += order.total_amount
-                        profile.save()
-                        
-                        order.status = Order.OrderStatus.COMPLETED
-                        order.completed_at = timezone.now()
-                        order.save()
-                        completed_count += 1
-                    else:
-                        order.notes += f"\n[{timezone.now()}] موجودی طلا ناکافی."
-                        order.save()
-                        
-            except Exception as e:
-                order.notes += f"\n[{timezone.now()}] خطا: {str(e)}"
-                order.save()
-        
-        self.message_user(
-            request,
-            f'{completed_count} سفارش با موفقیت تکمیل شد.'
-        )
-    complete_orders.short_description = 'تکمیل سفارشات انتخاب شده'
+    def get_readonly_fields(self, request, obj=None):
+        """Make all fields readonly since orders are executed instantly."""
+        if obj:  # Editing existing order
+            return [f.name for f in self.model._meta.fields]
+        return self.readonly_fields
     
-    def cancel_orders(self, request, queryset):
-        """Bulk action to cancel selected pending orders."""
-        pending_orders = queryset.filter(status=Order.OrderStatus.PENDING)
-        updated = pending_orders.update(status=Order.OrderStatus.CANCELLED)
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """Allow adding transactions for manual adjustments by superusers."""
+        return bool(request.user and getattr(request.user, 'is_superuser', False))
+    
+    def has_delete_permission(self, request, obj=None):
+        """Disable deleting completed orders for audit trail."""
+        return False
+    
+    def changelist_view(self, request, extra_context=None):
+        """Add live trade feed statistics to the changelist view."""
+        extra_context = extra_context or {}
         
-        self.message_user(
-            request,
-            f'{updated} سفارش لغو شد.'
+        # Get statistics for the dashboard
+        from django.db.models import Count, Sum
+        from datetime import timedelta
+        
+        now = timezone.now()
+        last_24h = now - timedelta(hours=24)
+        last_7d = now - timedelta(days=7)
+        last_30d = now - timedelta(days=30)
+        
+        # Trade volume statistics
+        stats_24h = Order.objects.filter(
+            created_at__gte=last_24h,
+            status=Order.OrderStatus.COMPLETED
+        ).aggregate(
+            count=Count('id'),
+            volume=Sum('total_amount')
         )
-    cancel_orders.short_description = 'لغو سفارشات انتخاب شده'
+        
+        stats_7d = Order.objects.filter(
+            created_at__gte=last_7d,
+            status=Order.OrderStatus.COMPLETED
+        ).aggregate(
+            count=Count('id'),
+            volume=Sum('total_amount')
+        )
+        
+        stats_30d = Order.objects.filter(
+            created_at__gte=last_30d,
+            status=Order.OrderStatus.COMPLETED
+        ).aggregate(
+            count=Count('id'),
+            volume=Sum('total_amount')
+        )
+        
+        # Buy vs Sell statistics
+        buy_sell_stats = Order.objects.filter(
+            status=Order.OrderStatus.COMPLETED
+        ).values('order_type').annotate(
+            count=Count('id'),
+            volume=Sum('total_amount')
+        )
+        
+        extra_context['trade_stats'] = {
+            '24h': stats_24h,
+            '7d': stats_7d,
+            '30d': stats_30d,
+            'buy_sell': list(buy_sell_stats)
+        }
+        
+        return super().changelist_view(request, extra_context=extra_context)
 
 
 @admin.register(Transaction)
@@ -452,13 +570,15 @@ class TransactionAdmin(ImportExportModelAdmin):
     
     fieldsets = (
         ('اطلاعات تراکنش', {
-            'fields': ('profile', 'transaction_type', 'currency', 'amount')
+            'fields': ('profile', 'transaction_type', 'currency', 'amount'),
+            'description': '⚠️ برای تعدیل دستی موجودی، نوع تراکنش را "تعدیل" انتخاب کنید و دلیل را در توضیحات بنویسید.'
         }),
         ('جزئیات', {
             'fields': ('bank_account', 'related_order', 'receipt_image', 'description')
         }),
         ('وضعیت', {
-            'fields': ('status', 'admin_notes')
+            'fields': ('status', 'admin_notes'),
+            'description': 'برای تعدیل دستی، وضعیت باید "تکمیل شده" باشد.'
         }),
         ('تاریخچه', {
             'fields': ('created_at', 'updated_at', 'completed_at'),
@@ -466,7 +586,7 @@ class TransactionAdmin(ImportExportModelAdmin):
         }),
     )
     
-    actions = ['approve_transactions', 'reject_transactions']
+    actions = ['approve_transactions', 'reject_transactions', 'create_manual_adjustment']
     
     date_hierarchy = 'created_at'
     
@@ -536,6 +656,50 @@ class TransactionAdmin(ImportExportModelAdmin):
         return '-'
     bank_account_display.short_description = 'حساب بانکی'
     
+    def save_model(self, request, obj, form, change):
+        """
+        Override save to handle manual adjustments.
+        For ADJUSTMENT type transactions, automatically update user balance.
+        """
+        is_new = obj.pk is None
+        
+        # Save the transaction first
+        super().save_model(request, obj, form, change)
+        
+        # If it's a new ADJUSTMENT transaction with COMPLETED status, update balance
+        if is_new and obj.transaction_type == Transaction.TransactionType.ADJUSTMENT and obj.status == Transaction.TransactionStatus.COMPLETED:
+            from users.services import WalletService
+            
+            # Log the admin who made the adjustment
+            username = getattr(request.user, 'username', 'unknown')
+            obj.admin_notes = f"Manual adjustment by {username} at {timezone.now()}\n{obj.admin_notes}"
+            
+            # Update user balance
+            try:
+                WalletService.add_balance(
+                    obj.profile,
+                    obj.currency,
+                    obj.amount
+                )
+                obj.completed_at = timezone.now()
+                obj.save()
+                
+                self.message_user(
+                    request,
+                    f'تعدیل دستی با موفقیت اعمال شد. موجودی {obj.profile.get_display_name()} به‌روزرسانی گردید.',
+                    level='success'
+                )
+            except Exception as e:
+                obj.status = Transaction.TransactionStatus.REJECTED
+                obj.admin_notes += f"\nError: {str(e)}"
+                obj.save()
+                
+                self.message_user(
+                    request,
+                    f'خطا در اعمال تعدیل: {str(e)}',
+                    level='error'
+                )
+    
     @db_transaction.atomic
     def approve_transactions(self, request, queryset):
         """Approve pending deposit transactions and credit user balances."""
@@ -582,6 +746,28 @@ class TransactionAdmin(ImportExportModelAdmin):
             f'{updated} تراکنش رد شد.'
         )
     reject_transactions.short_description = 'رد تراکنش‌های انتخاب شده'
+    
+    def create_manual_adjustment(self, request: HttpRequest, queryset: Any) -> None:
+        """
+        Create manual balance adjustments with mandatory reason.
+        This is for exceptional circumstances only and requires superuser permission.
+        """
+        if not getattr(request.user, 'is_superuser', False):
+            self.message_user(
+                request,
+                'فقط مدیران کل می‌توانند تعدیل دستی ایجاد کنند.',
+                level='error'
+            )
+            return
+        
+        # Redirect to a custom form for manual adjustment
+        # For now, display a message that this requires custom implementation
+        self.message_user(
+            request,
+            'برای ایجاد تعدیل دستی، از بخش "افزودن تراکنش" استفاده کنید و نوع را "تعدیل" انتخاب کنید.',
+            level='info'
+        )
+    create_manual_adjustment.short_description = '⚙️ ایجاد تعدیل دستی موجودی'
 
 
 @admin.register(WithdrawRequest)
@@ -793,3 +979,249 @@ class WithdrawRequestAdmin(ImportExportModelAdmin):
             f'{updated} درخواست برداشت لغو شد.'
         )
     cancel_withdrawals.short_description = 'لغو برداشت‌های انتخاب شده'
+
+
+# ============================================
+# ADMIN REPORTING DASHBOARD
+# ============================================
+
+class ReportingDashboard(admin.ModelAdmin):
+    """
+    Custom admin view for Business Intelligence and Reporting.
+    
+    Provides comprehensive reporting tools for administrators including:
+    - Profit & Loss statements
+    - User activity reports
+    - Balance sheet aggregates
+    - Export capabilities
+    """
+    
+    def changelist_view(self, request, extra_context=None):
+        """
+        Custom changelist view that displays reporting dashboard.
+        """
+        from datetime import timedelta
+        
+        extra_context = extra_context or {}
+        
+        # Get date ranges
+        now = timezone.now()
+        last_7d = now - timedelta(days=7)
+        last_30d = now - timedelta(days=30)
+        this_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        
+        # Profit & Loss Reports
+        pl_7d = BusinessReportService.get_profit_loss_report(start_date=last_7d)
+        pl_30d = BusinessReportService.get_profit_loss_report(start_date=last_30d)
+        pl_this_month = BusinessReportService.get_profit_loss_report(start_date=this_month_start)
+        
+        # Balance Sheet
+        balance_sheet = BusinessReportService.get_balance_sheet()
+        
+        # User Activity
+        user_activity_30d = BusinessReportService.get_user_activity_report(days=30)
+        
+        # Recent high-value transactions
+        high_value_orders = Order.objects.filter(
+            status=Order.OrderStatus.COMPLETED,
+            total_amount__gte=10000000  # 10 million Rial
+        ).order_by('-created_at')[:10]
+        
+        # Pending approvals count
+        pending_deposits = Transaction.objects.filter(
+            status=Transaction.TransactionStatus.PENDING,
+            transaction_type=Transaction.TransactionType.DEPOSIT
+        ).count()
+        
+        pending_withdrawals = WithdrawRequest.objects.filter(
+            status='PENDING'
+        ).count()
+        
+        extra_context.update({
+            # Profit & Loss
+            'pl_7d': pl_7d,
+            'pl_30d': pl_30d,
+            'pl_this_month': pl_this_month,
+            
+            # Balance Sheet
+            'balance_sheet': balance_sheet,
+            
+            # User Activity
+            'user_activity': user_activity_30d,
+            
+            # Recent Activity
+            'high_value_orders': high_value_orders,
+            
+            # Pending Items
+            'pending_deposits': pending_deposits,
+            'pending_withdrawals': pending_withdrawals,
+            
+            # Page title
+            'title': 'Business Intelligence Dashboard',
+            'subtitle': 'Comprehensive reports and analytics for trading operations'
+        })
+        
+        return super().changelist_view(request, extra_context=extra_context)
+    
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """No add permission for reporting dashboard."""
+        return False
+    
+    def has_change_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        """View-only dashboard."""
+        return True
+    
+    def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        """No delete permission for reporting dashboard."""
+        return False
+
+
+# Note: Transaction is already registered above with @admin.register(Transaction)
+
+
+# Create a custom admin site section for reporting
+class BusinessReportingAdmin(admin.ModelAdmin):
+    """
+    Proxy admin for business reporting dashboard.
+    This provides a dedicated section in admin for viewing reports.
+    """
+    
+    change_list_template = 'admin/trading/reporting_dashboard.html'
+    
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+    
+    def has_change_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        return bool(request.user and getattr(request.user, 'is_staff', False))
+    
+    def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        return False
+    
+    def has_module_permission(self, request: HttpRequest) -> bool:
+        return bool(request.user and getattr(request.user, 'is_staff', False))
+    
+    def changelist_view(self, request, extra_context=None):
+        """Display reporting dashboard."""
+        extra_context = extra_context or {}
+        
+        # Get date ranges
+        now = timezone.now()
+        last_7d = now - timedelta(days=7)
+        last_30d = now - timedelta(days=30)
+        this_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        
+        # Get date range from request if provided
+        custom_start_str = request.GET.get('start_date')
+        custom_end_str = request.GET.get('end_date')
+        
+        custom_start: Optional[datetime] = None
+        custom_end: Optional[datetime] = None
+        
+        if custom_start_str:
+            try:
+                custom_start = datetime.strptime(custom_start_str, '%Y-%m-%d')
+            except ValueError:
+                pass
+        
+        if custom_end_str:
+            try:
+                custom_end = datetime.strptime(custom_end_str, '%Y-%m-%d')
+            except ValueError:
+                pass
+        
+        # Profit & Loss Reports
+        pl_7d = BusinessReportService.get_profit_loss_report(start_date=last_7d)
+        pl_30d = BusinessReportService.get_profit_loss_report(start_date=last_30d)
+        pl_this_month = BusinessReportService.get_profit_loss_report(start_date=this_month_start)
+        
+        pl_custom = None
+        if custom_start or custom_end:
+            pl_custom = BusinessReportService.get_profit_loss_report(
+                start_date=custom_start,
+                end_date=custom_end
+            )
+        
+        # Balance Sheet
+        balance_sheet = BusinessReportService.get_balance_sheet()
+        
+        # User Activity
+        user_activity_7d = BusinessReportService.get_user_activity_report(days=7)
+        user_activity_30d = BusinessReportService.get_user_activity_report(days=30)
+        
+        # Recent high-value orders
+        high_value_orders = Order.objects.filter(
+            status=Order.OrderStatus.COMPLETED,
+            total_amount__gte=10000000  # 10 million Rial
+        ).select_related('profile', 'product').order_by('-created_at')[:20]
+        
+        # Pending approvals
+        pending_deposits = Transaction.objects.filter(
+            status=Transaction.TransactionStatus.PENDING,
+            transaction_type=Transaction.TransactionType.DEPOSIT
+        ).select_related('profile').order_by('-created_at')[:10]
+        
+        pending_withdrawals = WithdrawRequest.objects.filter(
+            status='PENDING'
+        ).select_related('profile', 'bank_account').order_by('-created_at')[:10]
+        
+        # Daily statistics for the last 30 days
+        daily_stats = []
+        for i in range(30):
+            day = now - timedelta(days=i)
+            day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+            day_end = day_start + timedelta(days=1)
+            
+            day_orders = Order.objects.filter(
+                created_at__gte=day_start,
+                created_at__lt=day_end,
+                status=Order.OrderStatus.COMPLETED
+            )
+            
+            day_revenue = Decimal('0')
+            for order in day_orders:
+                spread = order.product.get_price_spread()
+                day_revenue += (order.quantity_grams * spread)
+            
+            daily_stats.append({
+                'date': day_start.strftime('%Y-%m-%d'),
+                'orders': day_orders.count(),
+                'volume': float(day_orders.aggregate(Sum('total_amount'))['total_amount__sum'] or 0),
+                'revenue': float(day_revenue)
+            })
+        
+        daily_stats.reverse()
+        
+        context = {
+            # Reports
+            'pl_7d': pl_7d,
+            'pl_30d': pl_30d,
+            'pl_this_month': pl_this_month,
+            'pl_custom': pl_custom,
+            'balance_sheet': balance_sheet,
+            'user_activity_7d': user_activity_7d,
+            'user_activity_30d': user_activity_30d,
+            'daily_stats': daily_stats,
+            
+            # Recent Activity
+            'high_value_orders': high_value_orders,
+            'pending_deposits': pending_deposits,
+            'pending_withdrawals': pending_withdrawals,
+            
+            # Filter params
+            'custom_start': custom_start.strftime('%Y-%m-%d') if isinstance(custom_start, datetime) else '',
+            'custom_end': custom_end.strftime('%Y-%m-%d') if isinstance(custom_end, datetime) else '',
+            
+            # Admin context
+            'title': '📊 Business Intelligence Dashboard',
+            'site_title': 'Gold Trading Admin',
+            'site_header': 'Gold Trading Administration',
+            'has_permission': True,
+        }
+        
+        context.update(extra_context or {})
+        
+        return TemplateResponse(
+            request,
+            'admin/trading/reporting_dashboard.html',
+            context
+        )

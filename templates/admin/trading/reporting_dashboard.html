@@ -1,0 +1,474 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}Business Intelligence Dashboard{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .dashboard-container {
+        padding: 20px;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    
+    .dashboard-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 10px;
+        margin-bottom: 30px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    .dashboard-header h1 {
+        margin: 0 0 10px 0;
+        font-size: 32px;
+    }
+    
+    .dashboard-header p {
+        margin: 0;
+        opacity: 0.9;
+    }
+    
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+    
+    .stat-card {
+        background: white;
+        border-radius: 10px;
+        padding: 25px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+    
+    .stat-card h3 {
+        margin: 0 0 15px 0;
+        font-size: 14px;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    .stat-value {
+        font-size: 28px;
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 5px;
+    }
+    
+    .stat-label {
+        font-size: 12px;
+        color: #999;
+    }
+    
+    .stat-positive {
+        color: #28a745;
+    }
+    
+    .stat-negative {
+        color: #dc3545;
+    }
+    
+    .section {
+        background: white;
+        border-radius: 10px;
+        padding: 25px;
+        margin-bottom: 30px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .section h2 {
+        margin: 0 0 20px 0;
+        font-size: 22px;
+        color: #333;
+        border-bottom: 2px solid #667eea;
+        padding-bottom: 10px;
+    }
+    
+    .report-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+    }
+    
+    .report-item {
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border-left: 4px solid #667eea;
+    }
+    
+    .report-item h4 {
+        margin: 0 0 10px 0;
+        font-size: 16px;
+        color: #333;
+    }
+    
+    .report-value {
+        font-size: 20px;
+        font-weight: bold;
+        color: #667eea;
+    }
+    
+    table.report-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+    }
+    
+    table.report-table th {
+        background: #f8f9fa;
+        padding: 12px;
+        text-align: left;
+        font-weight: 600;
+        border-bottom: 2px solid #dee2e6;
+    }
+    
+    table.report-table td {
+        padding: 10px 12px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    table.report-table tr:hover {
+        background: #f8f9fa;
+    }
+    
+    .badge {
+        display: inline-block;
+        padding: 5px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    
+    .badge-success {
+        background: #28a745;
+        color: white;
+    }
+    
+    .badge-warning {
+        background: #ffc107;
+        color: black;
+    }
+    
+    .badge-danger {
+        background: #dc3545;
+        color: white;
+    }
+    
+    .date-filter {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }
+    
+    .date-filter form {
+        display: flex;
+        gap: 15px;
+        align-items: flex-end;
+    }
+    
+    .date-filter input[type="date"] {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+    
+    .date-filter button {
+        padding: 8px 20px;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+    }
+    
+    .date-filter button:hover {
+        background: #5568d3;
+    }
+    
+    .alert-box {
+        padding: 15px 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .alert-warning {
+        background: #fff3cd;
+        border-left: 4px solid #ffc107;
+        color: #856404;
+    }
+    
+    .alert-info {
+        background: #d1ecf1;
+        border-left: 4px solid #17a2b8;
+        color: #0c5460;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <h1>📊 Business Intelligence Dashboard</h1>
+        <p>Comprehensive analytics and reporting for gold trading operations</p>
+    </div>
+    
+    <!-- Pending Actions Alert -->
+    {% if pending_deposits or pending_withdrawals %}
+    <div class="alert-box alert-warning">
+        <span style="font-size: 24px;">⚠️</span>
+        <div>
+            <strong>Pending Actions Required</strong><br>
+            {% if pending_deposits %}{{ pending_deposits|length }} deposit{{ pending_deposits|length|pluralize }} awaiting approval{% endif %}
+            {% if pending_deposits and pending_withdrawals %} | {% endif %}
+            {% if pending_withdrawals %}{{ pending_withdrawals|length }} withdrawal request{{ pending_withdrawals|length|pluralize }} pending{% endif %}
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Date Filter -->
+    <div class="date-filter">
+        <form method="get">
+            <div>
+                <label for="start_date">Start Date:</label>
+                <input type="date" id="start_date" name="start_date" value="{{ custom_start }}">
+            </div>
+            <div>
+                <label for="end_date">End Date:</label>
+                <input type="date" id="end_date" name="end_date" value="{{ custom_end }}">
+            </div>
+            <button type="submit">Apply Filter</button>
+        </form>
+    </div>
+    
+    <!-- Key Metrics -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <h3>📈 7-Day Revenue</h3>
+            <div class="stat-value stat-positive">{{ pl_7d.revenue.total|floatformat:0 }} ریال</div>
+            <div class="stat-label">{{ pl_7d.orders.total_count }} orders processed</div>
+        </div>
+        
+        <div class="stat-card">
+            <h3>📊 30-Day Revenue</h3>
+            <div class="stat-value stat-positive">{{ pl_30d.revenue.total|floatformat:0 }} ریال</div>
+            <div class="stat-label">{{ pl_30d.orders.total_count }} orders processed</div>
+        </div>
+        
+        <div class="stat-card">
+            <h3>💰 Total User Balances</h3>
+            <div class="stat-value">{{ balance_sheet.balances.rial.total|floatformat:0 }} ریال</div>
+            <div class="stat-label">{{ balance_sheet.balances.gold.total|floatformat:2 }}g gold</div>
+        </div>
+        
+        <div class="stat-card">
+            <h3>👥 Active Users</h3>
+            <div class="stat-value">{{ balance_sheet.users.active }}</div>
+            <div class="stat-label">of {{ balance_sheet.users.total }} total users</div>
+        </div>
+    </div>
+    
+    <!-- Profit & Loss Reports -->
+    <div class="section">
+        <h2>💰 Profit & Loss Analysis</h2>
+        <div class="report-grid">
+            <div class="report-item">
+                <h4>Last 7 Days</h4>
+                <div class="report-value">{{ pl_7d.revenue.total|floatformat:0 }} ریال</div>
+                <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">
+                    Volume: {{ pl_7d.volume.total|floatformat:0 }} ریال<br>
+                    Orders: {{ pl_7d.orders.total_count }}
+                </p>
+            </div>
+            
+            <div class="report-item">
+                <h4>Last 30 Days</h4>
+                <div class="report-value">{{ pl_30d.revenue.total|floatformat:0 }} ریال</div>
+                <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">
+                    Volume: {{ pl_30d.volume.total|floatformat:0 }} ریال<br>
+                    Orders: {{ pl_30d.orders.total_count }}
+                </p>
+            </div>
+            
+            <div class="report-item">
+                <h4>This Month</h4>
+                <div class="report-value">{{ pl_this_month.revenue.total|floatformat:0 }} ریال</div>
+                <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">
+                    Volume: {{ pl_this_month.volume.total|floatformat:0 }} ریال<br>
+                    Orders: {{ pl_this_month.orders.total_count }}
+                </p>
+            </div>
+            
+            {% if pl_custom %}
+            <div class="report-item" style="border-left-color: #28a745;">
+                <h4>Custom Period</h4>
+                <div class="report-value">{{ pl_custom.revenue.total|floatformat:0 }} ریال</div>
+                <p style="margin: 5px 0 0 0; font-size: 14px; color: #666;">
+                    Volume: {{ pl_custom.volume.total|floatformat:0 }} ریال<br>
+                    Orders: {{ pl_custom.orders.total_count }}
+                </p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Balance Sheet -->
+    <div class="section">
+        <h2>💼 System Balance Sheet</h2>
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Currency</th>
+                    <th>Total Balance</th>
+                    <th>Frozen Balance</th>
+                    <th>Available Balance</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><span class="badge" style="background: #6f42c1; color: white;">ریال</span></td>
+                    <td>{{ balance_sheet.balances.rial.total|floatformat:0 }}</td>
+                    <td>{{ balance_sheet.balances.rial.frozen|floatformat:0 }}</td>
+                    <td>{{ balance_sheet.balances.rial.available|floatformat:0 }}</td>
+                </tr>
+                <tr>
+                    <td><span class="badge" style="background: #ffd700; color: black;">طلا</span></td>
+                    <td>{{ balance_sheet.balances.gold.total|floatformat:2 }}g</td>
+                    <td>{{ balance_sheet.balances.gold.frozen|floatformat:2 }}g</td>
+                    <td>{{ balance_sheet.balances.gold.available|floatformat:2 }}g</td>
+                </tr>
+                <tr>
+                    <td><span class="badge" style="background: #ff8c00; color: white;">سکه</span></td>
+                    <td>{{ balance_sheet.balances.coin.total|floatformat:2 }}</td>
+                    <td>{{ balance_sheet.balances.coin.frozen|floatformat:2 }}</td>
+                    <td>{{ balance_sheet.balances.coin.available|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td><span class="badge" style="background: #20c997; color: white;">دلار</span></td>
+                    <td>{{ balance_sheet.balances.dollar.total|floatformat:2 }}</td>
+                    <td>{{ balance_sheet.balances.dollar.frozen|floatformat:2 }}</td>
+                    <td>{{ balance_sheet.balances.dollar.available|floatformat:2 }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- User Activity -->
+    <div class="section">
+        <h2>👥 Top Traders (30 Days)</h2>
+        {% if user_activity_30d.top_traders %}
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Telegram ID</th>
+                    <th>Total Volume</th>
+                    <th>Orders</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for trader in user_activity_30d.top_traders %}
+                <tr>
+                    <td>{{ trader.user }}</td>
+                    <td><code>{{ trader.telegram_id }}</code></td>
+                    <td>{{ trader.total_volume|floatformat:0 }} ریال</td>
+                    <td><span class="badge badge-success">{{ trader.order_count }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p style="color: #999;">No trading activity in the last 30 days.</p>
+        {% endif %}
+    </div>
+    
+    <!-- High Value Orders -->
+    <div class="section">
+        <h2>💎 Recent High-Value Orders</h2>
+        {% if high_value_orders %}
+        <table class="report-table">
+            <thead>
+                <tr>
+                    <th>Order #</th>
+                    <th>User</th>
+                    <th>Product</th>
+                    <th>Type</th>
+                    <th>Amount</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in high_value_orders %}
+                <tr>
+                    <td><a href="{% url 'admin:trading_order_change' order.id %}">#{{ order.id }}</a></td>
+                    <td>{{ order.profile.get_display_name }}</td>
+                    <td>{{ order.product.name }}</td>
+                    <td>
+                        {% if order.order_type == 'BUY' %}
+                            <span class="badge badge-success">خرید</span>
+                        {% else %}
+                            <span class="badge badge-warning">فروش</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ order.total_amount|floatformat:0 }} ریال</td>
+                    <td>{{ order.created_at|date:"Y-m-d H:i" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p style="color: #999;">No recent high-value orders.</p>
+        {% endif %}
+    </div>
+    
+    <!-- Dormant Users -->
+    {% if user_activity_30d.dormant_users.count > 0 %}
+    <div class="section">
+        <h2>😴 Dormant Users (30 Days)</h2>
+        <p style="color: #666; margin-bottom: 15px;">{{ user_activity_30d.dormant_users.count }} active users with no recent activity</p>
+    </div>
+    {% endif %}
+    
+    <!-- Quick Links -->
+    <div class="section">
+        <h2>🔗 Quick Actions</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <a href="{% url 'admin:trading_transaction_changelist' %}?status__exact=PENDING" 
+               class="button" style="text-align: center; padding: 15px; background: #ffc107; color: black; text-decoration: none; border-radius: 8px; font-weight: 600;">
+                ⏳ Pending Deposits ({{ pending_deposits|length }})
+            </a>
+            <a href="{% url 'admin:trading_withdrawrequest_changelist' %}?status__exact=PENDING" 
+               class="button" style="text-align: center; padding: 15px; background: #17a2b8; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">
+                📤 Pending Withdrawals ({{ pending_withdrawals|length }})
+            </a>
+            <a href="{% url 'admin:trading_order_changelist' %}" 
+               class="button" style="text-align: center; padding: 15px; background: #28a745; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">
+                📊 All Orders
+            </a>
+            <a href="{% url 'admin:users_profile_changelist' %}" 
+               class="button" style="text-align: center; padding: 15px; background: #667eea; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">
+                👥 User Management
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

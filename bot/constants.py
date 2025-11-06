@@ -87,7 +87,7 @@ METHOD_COUNT: Final[str] = "count"  # For coin and dollar
 MENU_PRICE: Final[str] = "📈 قیمت‌ها و معامله"
 MENU_PRICES: Final[str] = "📈 قیمت‌ها و معامله"  # Alias for MENU_PRICE
 MENU_WALLET: Final[str] = "💼 کیف پول"
-MENU_HISTORY: Final[str] = "📋 تاریخچه"
+MENU_HISTORY: Final[str] = "📋 تاریخچه معاملات"
 MENU_SETTINGS: Final[str] = "⚙️ تنظیمات"
 MENU_CANCEL: Final[str] = "❌ لغو"
 MENU_ACCOUNT: Final[str] = "👤 حساب من"
@@ -117,7 +117,7 @@ WELCOME_NEW_USER: Final[str] = (
 WELCOME_PENDING_USER: Final[str] = (
     "⏳ *حساب شما در انتظار تأیید است.*\n\n"
     "کارشناسان ما در حال بررسی اطلاعات شما هستند.\n"
-    "لطفاً صبور باشید. به محض تأیید، شما را مطلع خواهیم کرد.\n\n"
+    "پس از تأیید حساب، می‌توانید به صورت آنی معامله انجام دهید.\n\n"
     "برای اطلاعات بیشتر با پشتیبانی تماس بگیرید."
 )
 
@@ -133,7 +133,7 @@ REGISTRATION_SUCCESS: Final[str] = (
     "📱 شماره تماس: {phone}\n\n"
     "⏳ لطفاً منتظر تایید مدیر باشید.\n"
     "کارشناسان ما در اسرع وقت حساب شما را بررسی خواهند کرد.\n\n"
-    "پس از تایید، می‌توانید شروع به معامله کنید."
+    "پس از تایید، می‌توانید به صورت آنی معامله انجام دهید."
 )
 
 # ==================== Error Messages ====================
@@ -186,11 +186,11 @@ ERROR_AMOUNT_TOO_LARGE: Final[str] = (
 
 # ==================== Order Messages ====================
 ORDER_SUCCESS: Final[str] = (
-    "✅ *سفارش شما با موفقیت ثبت شد!*\n\n"
+    "✅ *معامله شما با موفقیت انجام شد!*\n\n"
     "شماره سفارش: #{order_id}\n\n"
-    "سفارش شما در صف بررسی قرار گرفت.\n"
-    "پس از تأیید مدیر، به شما اطلاع داده خواهد شد.\n\n"
-    "می‌توانید وضعیت سفارش را از منوی \"تاریخچه سفارشات\" مشاهده کنید."
+    "✨ معامله به صورت آنی اجرا شد\n"
+    "موجودی شما به‌روزرسانی گردید.\n\n"
+    "می‌توانید تاریخچه معاملات خود را مشاهده کنید."
 )
 
 ORDER_CANCELLED: Final[str] = (
@@ -288,12 +288,12 @@ PROMPT_ENTER_AMOUNT_SELL_COUNT: Final[str] = (
 
 # ==================== History Messages ====================
 NO_ORDERS: Final[str] = (
-    "📜 شما هنوز سفارشی ثبت نکرده‌اید.\n\n"
-    "از منوی اصلی می‌توانید سفارش جدید ثبت کنید."
+    "📜 شما هنوز معامله‌ای ندارید.\n\n"
+    "از منوی اصلی می‌توانید معامله جدید انجام دهید."
 )
 
 ORDERS_HISTORY_HEADER: Final[str] = (
-    "📜 *آخرین سفارشات شما:*\n\n"
+    "📜 *تاریخچه معاملات شما:*\n\n"
 )
 
 # ==================== Wallet Messages ====================
@@ -537,3 +537,143 @@ STATUS_PENDING: Final[str] = "pending"
 STATUS_COMPLETED: Final[str] = "completed"
 STATUS_CANCELLED: Final[str] = "cancelled"
 STATUS_REJECTED: Final[str] = "rejected"
+
+# ==================== Reporting & Export ====================
+# Date range presets for filtering
+REPORT_LAST_7_DAYS: Final[str] = "last_7_days"
+REPORT_LAST_30_DAYS: Final[str] = "last_30_days"
+REPORT_THIS_MONTH: Final[str] = "this_month"
+REPORT_LAST_MONTH: Final[str] = "last_month"
+REPORT_CUSTOM: Final[str] = "custom"
+
+# Report types
+REPORT_TYPE_TRANSACTIONS: Final[str] = "transactions"
+REPORT_TYPE_ORDERS: Final[str] = "orders"
+REPORT_TYPE_SUMMARY: Final[str] = "summary"
+
+# Export formats
+EXPORT_FORMAT_CSV: Final[str] = "csv"
+EXPORT_FORMAT_PDF: Final[str] = "pdf"
+
+# Report menu buttons
+BTN_VIEW_HISTORY: Final[str] = "📊 مشاهده تاریخچه"
+BTN_FILTER_HISTORY: Final[str] = "🔍 فیلتر تاریخچه"
+BTN_EXPORT_HISTORY: Final[str] = "📥 دریافت گزارش"
+BTN_SUMMARY: Final[str] = "📈 خلاصه آمار"
+
+# Date range buttons
+BTN_LAST_7_DAYS: Final[str] = "📅 7 روز گذشته"
+BTN_LAST_30_DAYS: Final[str] = "📅 30 روز گذشته"
+BTN_THIS_MONTH: Final[str] = "📅 این ماه"
+BTN_LAST_MONTH: Final[str] = "📅 ماه گذشته"
+BTN_CUSTOM_RANGE: Final[str] = "📅 بازه دلخواه"
+BTN_ALL_TIME: Final[str] = "📅 کل"
+
+# Transaction type filters
+BTN_FILTER_BUY: Final[str] = "خرید"
+BTN_FILTER_SELL: Final[str] = "فروش"
+BTN_FILTER_DEPOSIT: Final[str] = "واریز"
+BTN_FILTER_WITHDRAW: Final[str] = "برداشت"
+
+# Export format buttons
+BTN_EXPORT_CSV: Final[str] = "📊 Excel/CSV"
+BTN_EXPORT_PDF: Final[str] = "📄 PDF"
+
+# Report messages
+MSG_REPORT_GENERATING: Final[str] = (
+    "⏳ *در حال تهیه گزارش...*\n\n"
+    "لطفاً چند لحظه صبر کنید..."
+)
+
+MSG_REPORT_READY: Final[str] = (
+    "✅ *گزارش شما آماده است!*\n\n"
+    "📊 تعداد رکورد: {count}\n"
+    "📅 بازه زمانی: {period}\n\n"
+    "فایل در پیام بعدی ارسال می‌شود..."
+)
+
+MSG_REPORT_EMPTY: Final[str] = (
+    "ℹ️ *هیچ رکوردی یافت نشد*\n\n"
+    "در بازه زمانی انتخابی، هیچ تراکنشی ثبت نشده است.\n"
+    "لطفاً بازه زمانی دیگری را انتخاب کنید."
+)
+
+MSG_REPORT_ERROR: Final[str] = (
+    "❌ *خطا در تهیه گزارش*\n\n"
+    "متأسفانه در تهیه گزارش مشکلی پیش آمد.\n"
+    "لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید."
+)
+
+MSG_SUMMARY_REPORT: Final[str] = (
+    "📊 *خلاصه آمار معاملات شما*\n\n"
+    "📅 *بازه زمانی:* {period}\n\n"
+    "💰 *خرید:*\n"
+    "   • تعداد: {buy_count} معامله\n"
+    "   • مقدار کل: {buy_quantity} گرم\n"
+    "   • مبلغ کل: {buy_amount:,} ریال\n"
+    "   • میانگین قیمت: {buy_avg_price:,} ریال/گرم\n\n"
+    "📈 *فروش:*\n"
+    "   • تعداد: {sell_count} معامله\n"
+    "   • مقدار کل: {sell_quantity} گرم\n"
+    "   • مبلغ کل: {sell_amount:,} ریال\n"
+    "   • میانگین قیمت: {sell_avg_price:,} ریال/گرم\n\n"
+    "📊 *خالص:*\n"
+    "   • مقدار: {net_quantity} گرم\n"
+    "   • مبلغ: {net_amount:,} ریال\n\n"
+    "💼 *موجودی فعلی:*\n"
+    "   • ریال: {current_rial:,} ریال\n"
+    "   • طلا: {current_gold} گرم\n"
+    "   • سکه: {current_coin} عدد\n"
+    "   • دلار: {current_dollar} دلار"
+)
+
+MSG_FILTER_PROMPT: Final[str] = (
+    "🔍 *فیلتر تاریخچه معاملات*\n\n"
+    "لطفاً بازه زمانی مورد نظر را انتخاب کنید:\n\n"
+    "📅 می‌توانید از پیش‌فرض‌های آماده استفاده کنید\n"
+    "یا بازه دلخواه خود را تعیین نمایید."
+)
+
+MSG_SELECT_EXPORT_FORMAT: Final[str] = (
+    "📥 *انتخاب فرمت گزارش*\n\n"
+    "لطفاً فرمت مورد نظر برای دریافت گزارش را انتخاب کنید:\n\n"
+    "📊 *Excel/CSV:* مناسب برای ویرایش و تحلیل\n"
+    "📄 *PDF:* مناسب برای چاپ و آرشیو\n\n"
+    "💡 توجه: گزارش شامل {count} رکورد خواهد بود."
+)
+
+MSG_SELECT_REPORT_TYPE: Final[str] = (
+    "📊 *انتخاب نوع گزارش*\n\n"
+    "لطفاً نوع گزارش مورد نظر را انتخاب کنید:\n\n"
+    "🔹 *تراکنش‌ها:* تمام واریز و برداشت‌ها\n"
+    "🔹 *سفارشات:* تمام معاملات خرید و فروش\n"
+    "🔹 *خلاصه آمار:* آمار کلی بدون جزئیات"
+)
+
+MSG_EXPORT_LIMITS: Final[str] = (
+    "ℹ️ *محدودیت‌های گزارش:*\n\n"
+    "• حداکثر {max_records} رکورد در هر گزارش\n"
+    "• حداکثر بازه زمانی: {max_days} روز\n"
+    "• فرمت CSV: تا 10,000 رکورد\n"
+    "• فرمت PDF: تا 1,000 رکورد\n\n"
+    "برای گزارش‌های بزرگتر، لطفاً با پشتیبانی تماس بگیرید."
+)
+
+# Callback prefixes for reports
+CALLBACK_REPORT_PREFIX: Final[str] = "report_"
+CALLBACK_FILTER_PREFIX: Final[str] = "filter_"
+CALLBACK_EXPORT_PREFIX: Final[str] = "export_"
+CALLBACK_DATE_PREFIX: Final[str] = "date_"
+
+# Specific report callbacks
+CALLBACK_REPORT_TRANSACTIONS: Final[str] = "report_transactions"
+CALLBACK_REPORT_ORDERS: Final[str] = "report_orders"
+CALLBACK_REPORT_SUMMARY: Final[str] = "report_summary"
+CALLBACK_EXPORT_CSV: Final[str] = "export_csv"
+CALLBACK_EXPORT_PDF: Final[str] = "export_pdf"
+CALLBACK_DATE_7D: Final[str] = "date_7d"
+CALLBACK_DATE_30D: Final[str] = "date_30d"
+CALLBACK_DATE_THIS_MONTH: Final[str] = "date_this_month"
+CALLBACK_DATE_LAST_MONTH: Final[str] = "date_last_month"
+CALLBACK_DATE_CUSTOM: Final[str] = "date_custom"
+CALLBACK_DATE_ALL: Final[str] = "date_all"

@@ -37,6 +37,11 @@ django-auditlog>=2.3.0
 django-filter>=23.5
 
 # ============================================
+# Reporting & Export
+# ============================================
+reportlab>=4.0.0  # PDF generation for transaction reports
+
+# ============================================
 # Development & Testing (optional)
 # ============================================
 # pytest>=8.0.0
