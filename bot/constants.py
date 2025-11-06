@@ -74,9 +74,32 @@ CALLBACK_CONFIRM_YES: Final[str] = "confirm_yes"
 CALLBACK_CONFIRM_NO: Final[str] = "confirm_no"
 
 # ==================== Product Codes ====================
-PRODUCT_GOLD: Final[str] = "gold"
-PRODUCT_COIN: Final[str] = "coin"
-PRODUCT_DOLLAR: Final[str] = "dollar"
+# Legacy constants for backward compatibility
+PRODUCT_GOLD: Final[str] = "gold_abshodeh"
+PRODUCT_COIN: Final[str] = "coin_full"
+PRODUCT_DOLLAR: Final[str] = "dollar_usa"
+
+# All currency product codes (use count-based calculation)
+CURRENCY_PRODUCTS: Final[list] = [
+    'dollar_usa',
+    'euro',
+    'lira_turkey',
+    'yuan_china',
+    'pound_uk',
+    'dirham_uae',
+]
+
+# All coin product codes (use count-based calculation)
+COIN_PRODUCTS: Final[list] = [
+    'coin_full',
+    'coin_half',
+    'coin_quarter',
+]
+
+# Gold products (use weight-based calculation)
+GOLD_PRODUCTS: Final[list] = [
+    'gold_abshodeh',
+]
 
 # ==================== Calculation Methods ====================
 METHOD_GRAMS: Final[str] = "grams"

@@ -135,7 +135,14 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Telegram Bot Configuration
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 
-# Navasan API Configuration
+# Price Provider Configuration
+# Options: 'anigold' or 'navasan'
+PRICE_PROVIDER_TYPE = os.getenv('PRICE_PROVIDER_TYPE', 'anigold')
+
+# Anigold API Configuration (Default)
+ANIGOLD_API_KEY = os.getenv('ANIGOLD_API_KEY', '1a233fab-04d1-47b2-b732-813d93795c43')
+
+# Navasan API Configuration (Legacy)
 NAVASAN_API_KEY = os.getenv('NAVASAN_API_KEY', 'freeTET7c1g57cU7kPnjQa4KAMP7BWaS')
 
 # ============================================

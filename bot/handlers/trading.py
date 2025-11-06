@@ -43,6 +43,9 @@ from bot.constants import (
     PRODUCT_GOLD,
     PRODUCT_COIN,
     PRODUCT_DOLLAR,
+    CURRENCY_PRODUCTS,
+    COIN_PRODUCTS,
+    GOLD_PRODUCTS,
     CALLBACK_TRADE_PRODUCT_PREFIX,
     CALLBACK_ACTION_BUY,
     CALLBACK_METHOD_GRAM,
@@ -130,8 +133,8 @@ async def buy_product_selected(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data['order_type'] = Order.OrderType.BUY
     
     # Ask for calculation method based on product type
-    # Coin and Dollar use count-based calculation, Gold uses weight-based
-    if product.product_code in [PRODUCT_COIN, PRODUCT_DOLLAR]:
+    # Currencies and Coins use count-based calculation, Gold uses weight-based
+    if product.product_code in CURRENCY_PRODUCTS or product.product_code in COIN_PRODUCTS:
         keyboard = [
             [InlineKeyboardButton(BTN_METHOD_COUNT, callback_data=f"{METHOD_PREFIX}{METHOD_COUNT}")],
             [InlineKeyboardButton(BTN_METHOD_RIAL, callback_data=f"{METHOD_PREFIX}{METHOD_RIAL}")],
@@ -686,8 +689,8 @@ async def handle_trade_action(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data['order_type'] = Order.OrderType.BUY if action == CALLBACK_ACTION_BUY else Order.OrderType.SELL
     
     # Ask for calculation method based on product type
-    # Coin and Dollar use count-based calculation, Gold uses weight-based
-    if product.product_code in [PRODUCT_COIN, PRODUCT_DOLLAR]:
+    # Currencies and Coins use count-based calculation, Gold uses weight-based
+    if product.product_code in CURRENCY_PRODUCTS or product.product_code in COIN_PRODUCTS:
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(BTN_METHOD_COUNT, callback_data=CALLBACK_METHOD_COUNT)],
             [InlineKeyboardButton(BTN_METHOD_RIAL, callback_data=CALLBACK_METHOD_RIAL)],
