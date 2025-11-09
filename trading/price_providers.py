@@ -146,9 +146,18 @@ def get_active_provider() -> PriceProvider:
     دریافت ارائه‌دهنده قیمت فعال
     
     این تابع را می‌توانید سفارشی‌سازی کنید تا provider مورد نظر را برگرداند
+    
+    Raises:
+        ImproperlyConfigured: If NAVASAN_API_KEY is not set in settings
     """
     from django.conf import settings
+    from django.core.exceptions import ImproperlyConfigured
     
-    api_key = getattr(settings, 'NAVASAN_API_KEY', 'freeTET7c1g57cU7kPnjQa4KAMP7BWaS')
+    api_key = getattr(settings, 'NAVASAN_API_KEY', None)
+    if not api_key:
+        raise ImproperlyConfigured(
+            'NAVASAN_API_KEY is not set in Django settings. '
+            'Please set it in your settings.py or environment variables.'
+        )
     return NavasanPriceProvider(api_key)
 

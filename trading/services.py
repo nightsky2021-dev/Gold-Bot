@@ -23,6 +23,36 @@ class TradingService:
     """Service class for trading-related operations like price updates."""
     
     @staticmethod
+    def validate_price_change(
+        old_price: Decimal,
+        new_price: Decimal,
+        threshold: float = 0.20
+    ) -> Tuple[bool, str]:
+        """
+        Validate if a price change is within acceptable limits.
+        
+        Args:
+            old_price: The previous price
+            new_price: The new price to validate
+            threshold: Maximum allowed change percentage (default 20%)
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if old_price == 0 or new_price == 0:
+            return True, ""
+        
+        change_pct = abs((new_price - old_price) / old_price)
+        
+        if change_pct > Decimal(str(threshold)):
+            return False, (
+                f"قیمت جدید {float(change_pct * 100):.1f}% تغییر کرده است که از حد مجاز "
+                f"{threshold * 100}% بیشتر است. قیمت قبلی: {old_price:,}, قیمت جدید: {new_price:,}"
+            )
+        
+        return True, ""
+    
+    @staticmethod
     def update_all_prices() -> bool:
         """
         Update all product prices from the API.
@@ -80,9 +110,51 @@ class TradingService:
                         logger.warning(f"No API price available for product: {product.name}")
                         continue
                     
-                    # Use the product's own update_prices_from_api method
+                    # Store old prices for validation
+                    old_buy_price = product.buy_price
+                    old_sell_price = product.sell_price
+                    
+                    # Calculate new prices temporarily (don't save yet)
+                    adjusted_base = base_price * product.weight_grams
+                    new_buy_price = (adjusted_base - product.buy_margin).quantize(Decimal('1'))
+                    new_sell_price = (adjusted_base + product.sell_margin).quantize(Decimal('1'))
+                    
+                    # Validate price changes if old prices exist
+                    if old_buy_price and old_sell_price:
+                        # Validate buy price change
+                        is_valid, error_msg = TradingService.validate_price_change(
+                            old_buy_price, new_buy_price
+                        )
+                        if not is_valid:
+                            logger.warning(
+                                f"قیمت خرید {product.name} رد شد - {error_msg}"
+                            )
+                            continue
+                        
+                        # Validate sell price change
+                        is_valid, error_msg = TradingService.validate_price_change(
+                            old_sell_price, new_sell_price
+                        )
+                        if not is_valid:
+                            logger.warning(
+                                f"قیمت فروش {product.name} رد شد - {error_msg}"
+                            )
+                            continue
+                    
+                    # If validation passed, update the product
                     product.update_prices_from_api(base_price)
                     product.save()
+                    
+                    # Create price history record
+                    from .models import PriceHistory
+                    PriceHistory.objects.create(
+                        product=product,
+                        base_price_api=product.base_price_api,
+                        buy_price=product.buy_price,
+                        sell_price=product.sell_price,
+                        buy_margin=product.buy_margin,
+                        sell_margin=product.sell_margin
+                    )
                     
                     logger.info(
                         f"Updated {product.name}: "
@@ -201,6 +273,18 @@ class OrderService:
         Raises:
             ValidationError: If user cannot trade, insufficient balance, or inputs are invalid.
         """
+        # 0. Check for duplicate orders (prevent double-submission)
+        from django.core.cache import cache
+        
+        cache_key = f"order_{profile.id}_{product.id}_{order_type}_{amount}_{calculation_method}"
+        if cache.get(cache_key):
+            raise ValidationError(
+                "⚠️ معامله تکراری! لطفاً 10 ثانیه صبر کنید و دوباره تلاش کنید."
+            )
+        
+        # Set cache for 10 seconds to prevent duplicate orders
+        cache.set(cache_key, True, 10)
+        
         # 1. Validate user can trade
         if not profile.can_trade():
             raise ValidationError(

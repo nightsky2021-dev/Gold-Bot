@@ -147,10 +147,49 @@ class Product(models.Model):
             models.Index(fields=['is_active', 'name']),
         ]
 
+    def clean(self) -> None:
+        """
+        Validate product configuration.
+        
+        Raises:
+            ValidationError: If configuration is invalid
+        """
+        from django.core.exceptions import ValidationError
+        
+        errors = {}
+        
+        # Validate margins are non-negative
+        if self.buy_margin < 0:
+            errors['buy_margin'] = 'مارجین خرید نمی‌تواند منفی باشد.'
+        
+        if self.sell_margin < 0:
+            errors['sell_margin'] = 'مارجین فروش نمی‌تواند منفی باشد.'
+        
+        # Validate weight is positive
+        if self.weight_grams <= 0:
+            errors['weight_grams'] = 'وزن باید بزرگتر از صفر باشد.'
+        
+        # Validate price consistency if prices are set
+        if self.buy_price and self.sell_price:
+            if self.buy_price >= self.sell_price:
+                errors['__all__'] = 'قیمت خرید باید کمتر از قیمت فروش باشد.'
+        
+        # Validate margins make sense (total margin should not be too small)
+        if self.buy_margin + self.sell_margin < Decimal('1000'):
+            errors['__all__'] = (
+                'مجموع مارجین‌ها (خرید + فروش) باید حداقل 1,000 ریال باشد. '
+                f'مجموع فعلی: {self.buy_margin + self.sell_margin:,} ریال'
+            )
+        
+        if errors:
+            raise ValidationError(errors)
+    
     def save(self, *args, **kwargs):
         """Override save to auto-generate slug from name."""
         if not self.slug:
             self.slug = slugify(self.name, allow_unicode=True)
+        # Call clean() before saving
+        self.full_clean()
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:
@@ -668,3 +707,99 @@ class WithdrawRequest(models.Model):
     def get_status_display(self) -> str:
         """Get display value for status field (Django auto-generated method stub for type checking)."""
         return cast(str, dict(self.WithdrawStatus.choices).get(self.status, self.status))
+
+
+class PriceHistory(models.Model):
+    """
+    Track historical price changes for products.
+    
+    This model stores snapshots of product prices each time they are updated,
+    allowing for historical analysis and price trend visualization.
+    """
+    
+    # Type annotations for auto-generated Django fields
+    id: int
+    
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='price_history',
+        verbose_name="محصول",
+        help_text="محصولی که قیمتش ثبت شده است"
+    )
+    
+    base_price_api = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="قیمت پایه API",
+        help_text="قیمت دریافتی از API (ریال به ازای هر گرم)"
+    )
+    
+    buy_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="قیمت خرید",
+        help_text="قیمت خرید از مشتری (ریال)"
+    )
+    
+    sell_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="قیمت فروش",
+        help_text="قیمت فروش به مشتری (ریال)"
+    )
+    
+    buy_margin = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="مارجین خرید",
+        help_text="مارجین خرید در زمان ثبت قیمت"
+    )
+    
+    sell_margin = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="مارجین فروش",
+        help_text="مارجین فروش در زمان ثبت قیمت"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="تاریخ ثبت",
+        help_text="زمان ثبت این قیمت"
+    )
+    
+    class Meta:
+        verbose_name = "تاریخچه قیمت"
+        verbose_name_plural = "تاریخچه قیمت‌ها"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['product', '-created_at']),
+            models.Index(fields=['-created_at']),
+        ]
+    
+    def __str__(self) -> str:
+        """Return string representation of the price history entry."""
+        return f"{self.product.name} - {self.created_at.strftime('%Y-%m-%d %H:%M')}"
+    
+    def get_price_change_percentage(self) -> Optional[Decimal]:
+        """
+        Calculate percentage change from previous price.
+        
+        Returns:
+            Decimal with percentage change, or None if no previous price
+        """
+        try:
+            previous = PriceHistory.objects.filter(
+                product=self.product,
+                created_at__lt=self.created_at
+            ).order_by('-created_at').first()
+            
+            if not previous or previous.sell_price == 0:
+                return None
+            
+            change = ((self.sell_price - previous.sell_price) / previous.sell_price) * 100
+            return change.quantize(Decimal('0.01'))
+        except Exception:
+            return None

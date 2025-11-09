@@ -21,7 +21,7 @@ from rangefilter.filters import DateRangeFilter, NumericRangeFilter  # type: ign
 from import_export import resources, fields  # type: ignore[import-untyped]
 from import_export.admin import ImportExportModelAdmin, ExportActionMixin  # type: ignore[import-untyped]
 
-from .models import Product, Order, Transaction, WithdrawRequest
+from .models import Product, Order, Transaction, WithdrawRequest, PriceHistory
 from users.models import Profile
 from .reporting import BusinessReportService
 
@@ -317,6 +317,105 @@ class ProductAdmin(ImportExportModelAdmin):
         )
     calculated_price_preview.short_description = '📊 پیش‌نمای محاسبه'
     
+
+
+@admin.register(PriceHistory)
+class PriceHistoryAdmin(admin.ModelAdmin):
+    """
+    Admin interface for PriceHistory model.
+    
+    Provides read-only view of historical price changes for analysis.
+    """
+    
+    list_display = (
+        'product',
+        'formatted_buy_price',
+        'formatted_sell_price',
+        'formatted_base_price',
+        'price_change_indicator',
+        'created_at'
+    )
+    
+    list_filter = (
+        'product',
+        ('created_at', DateRangeFilter),
+    )
+    
+    search_fields = ('product__name',)
+    
+    readonly_fields = (
+        'product',
+        'base_price_api',
+        'buy_price',
+        'sell_price',
+        'buy_margin',
+        'sell_margin',
+        'created_at'
+    )
+    
+    fieldsets = (
+        ('محصول', {
+            'fields': ('product',)
+        }),
+        ('قیمت‌ها', {
+            'fields': ('base_price_api', 'buy_price', 'sell_price')
+        }),
+        ('مارجین‌ها', {
+            'fields': ('buy_margin', 'sell_margin')
+        }),
+        ('زمان', {
+            'fields': ('created_at',)
+        }),
+    )
+    
+    date_hierarchy = 'created_at'
+    
+    def formatted_buy_price(self, obj: PriceHistory) -> str:
+        """Format buy price."""
+        return f"{obj.buy_price:,.0f} ریال"
+    formatted_buy_price.short_description = 'قیمت خرید'
+    
+    def formatted_sell_price(self, obj: PriceHistory) -> str:
+        """Format sell price."""
+        return f"{obj.sell_price:,.0f} ریال"
+    formatted_sell_price.short_description = 'قیمت فروش'
+    
+    def formatted_base_price(self, obj: PriceHistory) -> str:
+        """Format base price."""
+        return f"{obj.base_price_api:,.0f} ریال"
+    formatted_base_price.short_description = 'قیمت پایه API'
+    
+    def price_change_indicator(self, obj: PriceHistory) -> str:
+        """Show price change from previous entry."""
+        change_pct = obj.get_price_change_percentage()
+        if change_pct is None:
+            return format_html('<span style="color: gray;">—</span>')
+        
+        if change_pct > 0:
+            return format_html(
+                '<span style="color: green;">↑ {:.2f}%</span>',
+                change_pct
+            )
+        elif change_pct < 0:
+            return format_html(
+                '<span style="color: red;">↓ {:.2f}%</span>',
+                abs(change_pct)
+            )
+        else:
+            return format_html('<span style="color: gray;">—</span>')
+    price_change_indicator.short_description = 'تغییر قیمت'
+    
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """Disable adding price history manually."""
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        """Disable deleting price history for audit trail."""
+        return False
+    
+    def has_change_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        """View-only access."""
+        return bool(request.user and getattr(request.user, 'is_staff', False))
 
 
 @admin.register(Order)

@@ -2,6 +2,31 @@
 
 یک سیستم پیشرفته و کامل برای معاملات طلا در ایران با ربات تلگرام، ساخته شده با Django و Python Telegram Bot.
 
+---
+
+## ⚠️ IMPORTANT: Recent Updates (v2.0.0 - 2025-11-09)
+
+### Critical Changes - Action Required!
+
+**🔴 API Key Configuration Required**
+- API keys are no longer hardcoded
+- You **MUST** set `NAVASAN_API_KEY` environment variable
+- See [CONFIGURATION_GUIDE.md](CONFIGURATION_GUIDE.md) for setup instructions
+
+**✅ Major Improvements**
+- Fixed duplicate admin registration bug
+- Added price change validation (prevents bad data)
+- Added price history tracking
+- Added order deduplication protection
+- Removed deprecated code
+- Enhanced security
+
+**📚 New Documentation**
+- [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) - Complete list of changes
+- [CONFIGURATION_GUIDE.md](CONFIGURATION_GUIDE.md) - Setup and configuration help
+
+---
+
 ## 📋 فهرست مطالب
 
 - [ویژگی‌های کلیدی](#ویژگی‌های-کلیدی)
