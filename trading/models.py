@@ -35,14 +35,43 @@ class Product(models.Model):
         orders: 'Manager["Order"]'
     
     # Product code constants for standardized product identification
-    PRODUCT_CODE_GOLD = 'gold'  # طلای آبشده
-    PRODUCT_CODE_COIN = 'coin'  # سکه تمام
-    PRODUCT_CODE_DOLLAR = 'dollar'  # دلار آمریکا
+    # Currencies
+    PRODUCT_CODE_DOLLAR_USA = 'dollar_usa'  # دلار آمریکا
+    PRODUCT_CODE_EURO = 'euro'  # یورو
+    PRODUCT_CODE_LIRA_TURKEY = 'lira_turkey'  # لیر ترکیه
+    PRODUCT_CODE_YUAN_CHINA = 'yuan_china'  # یوان چین
+    PRODUCT_CODE_POUND_UK = 'pound_uk'  # پوند انگلیس
+    PRODUCT_CODE_DIRHAM_UAE = 'dirham_uae'  # درهم امارات
+    
+    # Coins
+    PRODUCT_CODE_COIN_FULL = 'coin_full'  # سکه غیربانکی
+    PRODUCT_CODE_COIN_HALF = 'coin_half'  # نیم سکه غیربانکی
+    PRODUCT_CODE_COIN_QUARTER = 'coin_quarter'  # ربع سکه غیربانکی
+    
+    # Gold
+    PRODUCT_CODE_GOLD_ABSHODEH = 'gold_abshodeh'  # طلای آبشده
+    
+    # Legacy codes for backward compatibility
+    PRODUCT_CODE_GOLD = 'gold_abshodeh'  # Alias
+    PRODUCT_CODE_COIN = 'coin_full'  # Alias
+    PRODUCT_CODE_DOLLAR = 'dollar_usa'  # Alias
     
     PRODUCT_CODE_CHOICES = [
-        (PRODUCT_CODE_GOLD, 'طلای آبشده'),
-        (PRODUCT_CODE_COIN, 'سکه تمام'),
-        (PRODUCT_CODE_DOLLAR, 'دلار آمریکا'),
+        # Currencies
+        (PRODUCT_CODE_DOLLAR_USA, 'دلار آمریکا'),
+        (PRODUCT_CODE_EURO, 'یورو'),
+        (PRODUCT_CODE_LIRA_TURKEY, 'لیر ترکیه'),
+        (PRODUCT_CODE_YUAN_CHINA, 'یوان چین'),
+        (PRODUCT_CODE_POUND_UK, 'پوند انگلیس'),
+        (PRODUCT_CODE_DIRHAM_UAE, 'درهم امارات'),
+        
+        # Coins
+        (PRODUCT_CODE_COIN_FULL, 'سکه غیربانکی'),
+        (PRODUCT_CODE_COIN_HALF, 'نیم سکه غیربانکی'),
+        (PRODUCT_CODE_COIN_QUARTER, 'ربع سکه غیربانکی'),
+        
+        # Gold
+        (PRODUCT_CODE_GOLD_ABSHODEH, 'طلای آبشده'),
     ]
     
     product_code = models.CharField(

@@ -44,12 +44,17 @@ async def show_prices(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     
     products = await sync_to_async(ProductService.get_active_products)()
     
+    # Debug logging
+    logger.info(f"show_prices: Retrieved {len(products) if products else 0} products")
+    if not products:
+        logger.warning("show_prices: No products found! Showing error message.")
+    
     if not products:
         await update.message.reply_text(ERROR_NO_PRODUCTS, parse_mode='Markdown')
         return
     
-    # Create inline keyboard with product buttons
-    keyboard = get_prices_menu_keyboard()
+    # Create inline keyboard with product buttons dynamically
+    keyboard = get_prices_menu_keyboard(products)
     
     message = (
         "📈 *قیمت‌ها و معامله*\n\n"
@@ -64,7 +69,7 @@ async def show_prices(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def handle_product_price_view(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle product price view from inline buttons."""
+    """Handle product price view from inline buttons (works with any product code)."""
     query = update.callback_query
     if not query or not query.data or not update.effective_user:
         return
@@ -78,14 +83,21 @@ async def handle_product_price_view(update: Update, context: ContextTypes.DEFAUL
         await query.edit_message_text(ERROR_NOT_APPROVED, parse_mode='Markdown')
         return
     
-    # Map callback data to product code
+    # Extract product code from callback data (format: "price_PRODUCT_CODE")
+    # Support both old format (callback constants) and new format (price_PRODUCT_CODE)
     product_code_map = {
         CALLBACK_PRICE_GOLD: PRODUCT_GOLD,
         CALLBACK_PRICE_COIN: PRODUCT_COIN,
         CALLBACK_PRICE_DOLLAR: PRODUCT_DOLLAR,
     }
     
+    # Try old format first (for backward compatibility)
     product_code = product_code_map.get(query.data)
+    
+    # If not found, try new dynamic format
+    if not product_code and query.data.startswith("price_"):
+        product_code = query.data.replace("price_", "")
+    
     if not product_code:
         await query.edit_message_text(ERROR_GENERAL, parse_mode='Markdown')
         return
@@ -145,6 +157,11 @@ async def handle_product_price_all(update: Update, context: ContextTypes.DEFAULT
     
     products = await sync_to_async(ProductService.get_active_products)()
     
+    # Debug logging
+    logger.info(f"handle_product_price_all: Retrieved {len(products) if products else 0} products")
+    if not products:
+        logger.warning("handle_product_price_all: No products found! Showing error message.")
+    
     if not products:
         await query.edit_message_text(ERROR_NO_PRODUCTS, parse_mode='Markdown')
         return
@@ -161,8 +178,8 @@ async def handle_product_price_all(update: Update, context: ContextTypes.DEFAULT
     message += f"⏱ آخرین بروزرسانی: {products[0].updated_at.strftime('%Y/%m/%d %H:%M:%S')}\n"
     message += "⚠️ قیمت‌ها تا 1 دقیقه معتبر هستند."
     
-    # Add back button
-    keyboard = get_prices_menu_keyboard()
+    # Add back button with products list for proper keyboard generation
+    keyboard = get_prices_menu_keyboard(products)
     
     await query.edit_message_text(
         message,
@@ -241,11 +258,17 @@ async def handle_back_to_prices_menu(update: Update, context: ContextTypes.DEFAU
     
     products = await sync_to_async(ProductService.get_active_products)()
     
+    # Debug logging
+    logger.info(f"handle_back_to_prices_menu: Retrieved {len(products) if products else 0} products")
+    if not products:
+        logger.warning("handle_back_to_prices_menu: No products found! Showing error message.")
+    
     if not products:
         await query.edit_message_text(ERROR_NO_PRODUCTS, parse_mode='Markdown')
         return
     
-    keyboard = get_prices_menu_keyboard()
+    # Pass products to keyboard for dynamic generation
+    keyboard = get_prices_menu_keyboard(products)
     
     message = (
         "📈 *قیمت‌ها و معامله*\n\n"

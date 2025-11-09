@@ -28,8 +28,9 @@ from bot.constants import (
     BTN_CANCEL,
     PROMPT_SELECT_METHOD,
     PROMPT_SELECT_METHOD_COUNT,
-    PRODUCT_COIN,
-    PRODUCT_DOLLAR,
+    CURRENCY_PRODUCTS,
+    COIN_PRODUCTS,
+    GOLD_PRODUCTS,
     SELECTING_METHOD,
 )
 from .context_manager import TradingContext
@@ -113,6 +114,7 @@ async def handle_trade_action(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Handle buy/sell action from product detail view."""
     query = update.callback_query
     if not query or not query.data or context.user_data is None or not update.effective_user:
+        logger.error("Missing required data in handle_trade_action")
         return ConversationHandler.END
     
     await query.answer()
@@ -121,16 +123,24 @@ async def handle_trade_action(update: Update, context: ContextTypes.DEFAULT_TYPE
     profile = await BaseTradeHandler.get_profile(update)
     
     if not await BaseTradeHandler.validate_user_approved(update, profile):
+        logger.warning(f"User not approved: {telegram_user.id}")
         return ConversationHandler.END
     
-    # Parse callback data: "trade_gold_buy" or "trade_coin_sell"
+    # Parse callback data: "trade_gold_abshodeh_buy" or "trade_dollar_usa_sell"
+    logger.info(f"Received callback data: {query.data}")
     parts = query.data.replace(CALLBACK_TRADE_PRODUCT_PREFIX, "").split("_")
-    if len(parts) != 2:
+    logger.info(f"Parsed parts: {parts}")
+    
+    if len(parts) < 2:
+        logger.error(f"Invalid callback data format: {query.data}, parts: {parts}")
         await query.edit_message_text(ERROR_GENERAL, parse_mode='Markdown')
         return ConversationHandler.END
     
-    product_code = parts[0]
-    action = parts[1]  # 'buy' or 'sell'
+    # Handle multi-part product codes (e.g., "dollar_usa", "gold_abshodeh")
+    action = parts[-1]  # Last part is always the action ('buy' or 'sell')
+    product_code = "_".join(parts[:-1])  # Everything before action is product code
+    
+    logger.info(f"Product code: {product_code}, Action: {action}")
     
     # Check if price has expired (more than 60 seconds)
     ctx = BaseTradeHandler.get_context(context)
@@ -169,8 +179,8 @@ async def handle_trade_action(update: Update, context: ContextTypes.DEFAULT_TYPE
     ctx.order_type = Order.OrderType.BUY if action == CALLBACK_ACTION_BUY else Order.OrderType.SELL
     
     # Ask for calculation method based on product type
-    # Coin and Dollar use count-based calculation, Gold uses weight-based
-    if product.product_code in [PRODUCT_COIN, PRODUCT_DOLLAR]:
+    # Currencies and Coins use count-based calculation, Gold uses weight-based
+    if product.product_code in CURRENCY_PRODUCTS or product.product_code in COIN_PRODUCTS:
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(BTN_METHOD_COUNT, callback_data=CALLBACK_METHOD_COUNT)],
             [InlineKeyboardButton(BTN_METHOD_RIAL, callback_data=CALLBACK_METHOD_RIAL)],
@@ -178,6 +188,7 @@ async def handle_trade_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         ])
         prompt_text = PROMPT_SELECT_METHOD_COUNT
     else:
+        # Gold products use weight-based (grams)
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(BTN_METHOD_GRAMS, callback_data=CALLBACK_METHOD_GRAM)],
             [InlineKeyboardButton(BTN_METHOD_RIAL, callback_data=CALLBACK_METHOD_RIAL)],
@@ -190,5 +201,9 @@ async def handle_trade_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup=keyboard,
         parse_mode='Markdown'
     )
+    
+    # Store message ID for future editing
+    if query.message:
+        ctx.last_message_id = query.message.message_id
     
     return SELECTING_METHOD

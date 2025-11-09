@@ -197,7 +197,7 @@ class ProfileAdmin(ImportExportModelAdmin):
     def total_orders_count(self, obj: Profile) -> str:
         """Display total orders with link."""
         count = obj.orders.count()
-        url = reverse('admin:trading_order_changelist') + f'?profile__id__exact={obj.id}'
+        url = reverse('admin:trading_order_changelist') + f'?profile__id__exact={obj.pk}'
         return format_html(
             '<a href="{}" style="color: #007bff; font-weight: bold;">{} سفارش</a>',
             url, count
@@ -206,7 +206,7 @@ class ProfileAdmin(ImportExportModelAdmin):
     
     def view_user_details(self, obj: Profile) -> str:
         """Quick view link."""
-        url = reverse('admin:users_profile_change', args=[obj.id])
+        url = reverse('admin:users_profile_change', args=[obj.pk])
         return format_html(
             '<a class="button" href="{}" style="background-color: #17a2b8; color: white; padding: 3px 8px; border-radius: 4px; text-decoration: none;">مشاهده</a>',
             url

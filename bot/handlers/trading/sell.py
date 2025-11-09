@@ -16,8 +16,9 @@ from bot.constants import (
     PRODUCT_PREFIX,
     CANCEL_PREFIX,
     METHOD_PREFIX,
-    PRODUCT_COIN,
-    PRODUCT_DOLLAR,
+    CURRENCY_PRODUCTS,
+    COIN_PRODUCTS,
+    GOLD_PRODUCTS,
     SELECTING_PRODUCT,
     SELECTING_METHOD,
 )
@@ -84,7 +85,8 @@ async def sell_product_selected(update: Update, context: ContextTypes.DEFAULT_TY
     # Show method selection based on product type
     from bot.constants import METHOD_GRAMS, METHOD_RIAL, METHOD_COUNT
     
-    if product.product_code in [PRODUCT_COIN, PRODUCT_DOLLAR]:
+    # Currencies and Coins use count-based, Gold uses weight-based
+    if product.product_code in CURRENCY_PRODUCTS or product.product_code in COIN_PRODUCTS:
         keyboard = [
             [InlineKeyboardButton(BTN_METHOD_COUNT, callback_data=f"{METHOD_PREFIX}{METHOD_COUNT}")],
             [InlineKeyboardButton(BTN_METHOD_RIAL, callback_data=f"{METHOD_PREFIX}{METHOD_RIAL}")],
@@ -92,6 +94,7 @@ async def sell_product_selected(update: Update, context: ContextTypes.DEFAULT_TY
         ]
         prompt = PROMPT_SELECT_METHOD_COUNT
     else:
+        # Gold products
         keyboard = [
             [InlineKeyboardButton(BTN_METHOD_GRAMS, callback_data=f"{METHOD_PREFIX}{METHOD_GRAMS}")],
             [InlineKeyboardButton(BTN_METHOD_RIAL, callback_data=f"{METHOD_PREFIX}{METHOD_RIAL}")],
@@ -106,5 +109,9 @@ async def sell_product_selected(update: Update, context: ContextTypes.DEFAULT_TY
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
+    
+    # Store message ID for future editing
+    if query.message:
+        ctx.last_message_id = query.message.message_id
     
     return SELECTING_METHOD

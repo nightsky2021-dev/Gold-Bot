@@ -97,7 +97,8 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     all_orders = profile.order_set.all()  # type: ignore[attr-defined]
     total_orders = await sync_to_async(all_orders.count)()
     completed_orders = await sync_to_async(all_orders.filter(status=Order.OrderStatus.COMPLETED).count)()
-    pending_orders = await sync_to_async(all_orders.filter(status=Order.OrderStatus.PENDING).count)()
+    # PENDING status was removed - orders are instant-execution now
+    pending_orders = 0
     cancelled_orders = await sync_to_async(all_orders.filter(status=Order.OrderStatus.CANCELLED).count)()
     
     # Calculate trade volume

@@ -30,16 +30,62 @@ def get_contact_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
 
-def get_prices_menu_keyboard() -> InlineKeyboardMarkup:
-    """کیبورد منوی قیمت‌ها با دکمه‌های اینلاین بهینه شده"""
-    keyboard = [
-        [
-            InlineKeyboardButton("🪙 طلای آبشده", callback_data=CALLBACK_PRICE_GOLD),
-            InlineKeyboardButton("🥇 سکه تمام", callback_data=CALLBACK_PRICE_COIN),
-        ],
-        [InlineKeyboardButton("💵 دلار", callback_data=CALLBACK_PRICE_DOLLAR)],
-        [InlineKeyboardButton("📊 مشاهده همه قیمت‌ها", callback_data=CALLBACK_PRICE_ALL)],
-    ]
+def get_prices_menu_keyboard(products=None) -> InlineKeyboardMarkup:
+    """کیبورد منوی قیمت‌ها با دکمه‌های اینلاین بهینه شده
+    
+    Args:
+        products: لیست محصولات از دیتابیس (اگر None باشد، از دکمه‌های قدیمی استفاده می‌شود)
+    """
+    keyboard = []
+    
+    if products:
+        # ایجاد دکمه برای هر محصول به صورت داینامیک
+        # هر ردیف 2 دکمه
+        row = []
+        for i, product in enumerate(products):
+            # انتخاب ایموجی بر اساس نوع محصول
+            emoji = "💰"  # پیش‌فرض
+            if 'coin' in product.product_code or 'سکه' in product.name:
+                emoji = "🥇"
+            elif 'dollar' in product.product_code or 'دلار' in product.name:
+                emoji = "💵"
+            elif 'euro' in product.product_code or 'یورو' in product.name:
+                emoji = "💶"
+            elif 'pound' in product.product_code or 'پوند' in product.name:
+                emoji = "💷"
+            elif 'yuan' in product.product_code or 'یوان' in product.name:
+                emoji = "💴"
+            elif 'lira' in product.product_code or 'لیر' in product.name:
+                emoji = "💵"
+            elif 'dirham' in product.product_code or 'درهم' in product.name:
+                emoji = "💸"
+            elif 'gold' in product.product_code or 'طلا' in product.name:
+                emoji = "🪙"
+            
+            button = InlineKeyboardButton(
+                f"{emoji} {product.name}", 
+                callback_data=f"price_{product.product_code}"
+            )
+            row.append(button)
+            
+            # هر 2 دکمه یک ردیف
+            if len(row) == 2 or i == len(products) - 1:
+                keyboard.append(row)
+                row = []
+        
+        # دکمه مشاهده همه
+        keyboard.append([InlineKeyboardButton("📊 مشاهده همه قیمت‌ها", callback_data=CALLBACK_PRICE_ALL)])
+    else:
+        # Fallback به دکمه‌های قدیمی
+        keyboard = [
+            [
+                InlineKeyboardButton("🪙 طلای آبشده", callback_data=CALLBACK_PRICE_GOLD),
+                InlineKeyboardButton("🥇 سکه تمام", callback_data=CALLBACK_PRICE_COIN),
+            ],
+            [InlineKeyboardButton("💵 دلار", callback_data=CALLBACK_PRICE_DOLLAR)],
+            [InlineKeyboardButton("📊 مشاهده همه قیمت‌ها", callback_data=CALLBACK_PRICE_ALL)],
+        ]
+    
     return InlineKeyboardMarkup(keyboard)
 
 

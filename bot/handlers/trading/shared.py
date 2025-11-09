@@ -22,8 +22,9 @@ from bot.constants import (
     METHOD_PREFIX,
     PRODUCT_PREFIX,
     CANCEL_PREFIX,
-    PRODUCT_COIN,
-    PRODUCT_DOLLAR,
+    CURRENCY_PRODUCTS,
+    COIN_PRODUCTS,
+    GOLD_PRODUCTS,
     PROMPT_SELECT_METHOD,
     PROMPT_SELECT_METHOD_COUNT,
     PROMPT_ENTER_AMOUNT_GRAMS,
@@ -83,7 +84,8 @@ async def unified_product_selected(update: Update, context: ContextTypes.DEFAULT
         return await BaseTradeHandler.send_error_and_end(update)
     
     # Show method selection based on product type
-    if product.product_code in [PRODUCT_COIN, PRODUCT_DOLLAR]:
+    # Currencies and Coins use count-based, Gold uses weight-based
+    if product.product_code in CURRENCY_PRODUCTS or product.product_code in COIN_PRODUCTS:
         keyboard = [
             [InlineKeyboardButton(BTN_METHOD_COUNT, callback_data=f"{METHOD_PREFIX}{METHOD_COUNT}")],
             [InlineKeyboardButton(BTN_METHOD_RIAL, callback_data=f"{METHOD_PREFIX}{METHOD_RIAL}")],
@@ -91,6 +93,7 @@ async def unified_product_selected(update: Update, context: ContextTypes.DEFAULT
         ]
         prompt = PROMPT_SELECT_METHOD_COUNT
     else:
+        # Gold products
         keyboard = [
             [InlineKeyboardButton(BTN_METHOD_GRAMS, callback_data=f"{METHOD_PREFIX}{METHOD_GRAMS}")],
             [InlineKeyboardButton(BTN_METHOD_RIAL, callback_data=f"{METHOD_PREFIX}{METHOD_RIAL}")],
@@ -105,6 +108,10 @@ async def unified_product_selected(update: Update, context: ContextTypes.DEFAULT
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
+    
+    # Store message ID for future editing
+    if query.message:
+        ctx.last_message_id = query.message.message_id
     
     return SELECTING_METHOD
 
@@ -162,26 +169,27 @@ async def trade_method_selected(update: Update, context: ContextTypes.DEFAULT_TY
     if not prompt:
         return await BaseTradeHandler.send_error_and_end(update)
     
-    # Show method confirmation
-    method_text = _get_method_display_text(method)
-    await query.edit_message_text(
-        f"✅ *روش محاسبه انتخاب شد*\n\n"
-        f"📌 روش: *{method_text}*",
-        parse_mode='Markdown'
-    )
-    
-    # Send new message with prompt
+    # Build cancel keyboard
     cancel_keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("❌ لغو عملیات", callback_data=CALLBACK_CONFIRM_NO)
     ]])
     
-    if update.effective_chat and context.bot:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"{prompt}\n\n━━━━━━━━━━━━━━━━\nبرای لغو، دکمه زیر را بفشارید.",
-            reply_markup=cancel_keyboard,
-            parse_mode='Markdown'
-        )
+    # Edit the same message with amount prompt (replace the method selection)
+    full_prompt = (
+        f"{prompt}\n\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"💡 مقدار مورد نظر خود را تایپ کنید"
+    )
+    
+    await query.edit_message_text(
+        full_prompt,
+        reply_markup=cancel_keyboard,
+        parse_mode='Markdown'
+    )
+    
+    # Store message ID for later editing
+    if query.message:
+        ctx.last_message_id = query.message.message_id
     
     return ENTERING_AMOUNT
 
@@ -191,13 +199,45 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
     if not update.message or not update.message.text or context.user_data is None or not update.effective_user:
         return ConversationHandler.END
     
+    # Get context
+    ctx = BaseTradeHandler.get_context(context)
+    
     # Filter main menu buttons
     if _is_main_menu_button(update.message.text):
-        await update.message.reply_text(
-            "⚠️ *لطفاً عدد وارد کنید*\n\n"
-            "برای لغو، روی دکمه \"❌ لغو عملیات\" کلیک کنید.",
-            parse_mode='Markdown'
-        )
+        # Try to edit the last bot message with error
+        if ctx.last_message_id and update.effective_chat and context.bot:
+            try:
+                cancel_keyboard = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("❌ لغو عملیات", callback_data=CALLBACK_CONFIRM_NO)
+                ]])
+                await context.bot.edit_message_text(
+                    chat_id=update.effective_chat.id,
+                    message_id=ctx.last_message_id,
+                    text="⚠️ *لطفاً عدد وارد کنید*\n\n"
+                         "شما باید مقدار یا مبلغ مورد نظر را تایپ کنید.\n"
+                         "━━━━━━━━━━━━━━━━\n"
+                         "برای لغو، دکمه زیر را بفشارید.",
+                    reply_markup=cancel_keyboard,
+                    parse_mode='Markdown'
+                )
+                # Delete user's invalid message
+                try:
+                    await update.message.delete()
+                except Exception:
+                    pass  # Ignore if can't delete
+            except Exception as e:
+                logger.error(f"Error editing message: {e}")
+                await update.message.reply_text(
+                    "⚠️ *لطفاً عدد وارد کنید*\n\n"
+                    "برای لغو، روی دکمه \"❌ لغو عملیات\" کلیک کنید.",
+                    parse_mode='Markdown'
+                )
+        else:
+            await update.message.reply_text(
+                "⚠️ *لطفاً عدد وارد کنید*\n\n"
+                "برای لغو، روی دکمه \"❌ لغو عملیات\" کلیک کنید.",
+                parse_mode='Markdown'
+            )
         return ENTERING_AMOUNT
     
     try:
@@ -206,9 +246,6 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
         
         if amount <= 0:
             raise ValueError("Amount must be positive")
-        
-        # Get context
-        ctx = BaseTradeHandler.get_context(context)
         
         # Validate context data
         if ctx.product_id is None:
@@ -248,6 +285,23 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         
         if not is_valid:
+            # Try to edit the last message with error
+            if ctx.last_message_id and update.effective_chat and context.bot:
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=update.effective_chat.id,
+                        message_id=ctx.last_message_id,
+                        text=error_msg,
+                        parse_mode='Markdown'
+                    )
+                    # Delete user's message
+                    try:
+                        await update.message.delete()
+                    except Exception:
+                        pass
+                    return ConversationHandler.END
+                except Exception as e:
+                    logger.error(f"Error editing message: {e}")
             await update.message.reply_text(error_msg, parse_mode='Markdown')
             return ConversationHandler.END
         
@@ -266,18 +320,65 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
             total_amount=total_amount
         )
         
-        await update.message.reply_text(
-            invoice,
-            reply_markup=get_confirmation_keyboard(),
-            parse_mode='Markdown'
-        )
+        # Edit the last bot message to show invoice (replace the amount prompt)
+        if ctx.last_message_id and update.effective_chat and context.bot:
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=update.effective_chat.id,
+                    message_id=ctx.last_message_id,
+                    text=invoice,
+                    reply_markup=get_confirmation_keyboard(),
+                    parse_mode='Markdown'
+                )
+                # Delete user's amount message for cleaner chat
+                try:
+                    await update.message.delete()
+                except Exception:
+                    pass  # Ignore if can't delete
+            except Exception as e:
+                logger.error(f"Error editing message for invoice: {e}")
+                # Fallback to reply if edit fails
+                await update.message.reply_text(
+                    invoice,
+                    reply_markup=get_confirmation_keyboard(),
+                    parse_mode='Markdown'
+                )
+        else:
+            # Fallback to reply if we don't have message_id
+            await update.message.reply_text(
+                invoice,
+                reply_markup=get_confirmation_keyboard(),
+                parse_mode='Markdown'
+            )
         
         # Return appropriate confirmation state
         return CONFIRMING_BUY if ctx.order_type == Order.OrderType.BUY else CONFIRMING_SELL
         
     except (ValueError, InvalidOperation, ValidationError) as e:
         logger.error(f"Error processing amount: {str(e)}")
-        await update.message.reply_text(ERROR_INVALID_AMOUNT, parse_mode='Markdown')
+        # Try to edit the last message with error
+        if ctx.last_message_id and update.effective_chat and context.bot:
+            try:
+                cancel_keyboard = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("❌ لغو عملیات", callback_data=CALLBACK_CONFIRM_NO)
+                ]])
+                await context.bot.edit_message_text(
+                    chat_id=update.effective_chat.id,
+                    message_id=ctx.last_message_id,
+                    text=f"{ERROR_INVALID_AMOUNT}\n\n━━━━━━━━━━━━━━━━\n💡 لطفاً مقدار صحیح وارد کنید",
+                    reply_markup=cancel_keyboard,
+                    parse_mode='Markdown'
+                )
+                # Delete user's invalid message
+                try:
+                    await update.message.delete()
+                except Exception:
+                    pass
+            except Exception as edit_error:
+                logger.error(f"Error editing message: {edit_error}")
+                await update.message.reply_text(ERROR_INVALID_AMOUNT, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(ERROR_INVALID_AMOUNT, parse_mode='Markdown')
         return ENTERING_AMOUNT
 
 

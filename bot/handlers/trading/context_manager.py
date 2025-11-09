@@ -13,6 +13,16 @@ class TradingContext:
         self.context = context
         self._data = context.user_data if context.user_data is not None else {}
     
+    @property
+    def last_message_id(self) -> Optional[int]:
+        """Get the last message ID for editing."""
+        return self._data.get('last_message_id')
+    
+    @last_message_id.setter
+    def last_message_id(self, value: int):
+        """Set the last message ID."""
+        self._data['last_message_id'] = value
+    
     # Property getters with validation
     @property
     def product_id(self) -> Optional[int]:

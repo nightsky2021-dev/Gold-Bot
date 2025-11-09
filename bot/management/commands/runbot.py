@@ -288,9 +288,13 @@ class TelegramBotCommand(BaseCommand):
     def _register_callback_handlers(self, application):
         """Register callback query handlers."""
         # Price menu callbacks
+        # OLD format (for backward compatibility)
         application.add_handler(CallbackQueryHandler(handle_product_price_view, pattern=f"^{CALLBACK_PRICE_GOLD}$"))
         application.add_handler(CallbackQueryHandler(handle_product_price_view, pattern=f"^{CALLBACK_PRICE_COIN}$"))
         application.add_handler(CallbackQueryHandler(handle_product_price_view, pattern=f"^{CALLBACK_PRICE_DOLLAR}$"))
+        # NEW format - dynamic product code pattern (price_PRODUCT_CODE)
+        application.add_handler(CallbackQueryHandler(handle_product_price_view, pattern=r"^price_[a-z_]+$"))
+        
         application.add_handler(CallbackQueryHandler(handle_product_price_all, pattern=f"^{CALLBACK_PRICE_ALL}$"))
         application.add_handler(CallbackQueryHandler(handle_price_refresh, pattern=f"^{CALLBACK_PRICE_REFRESH}"))
         application.add_handler(CallbackQueryHandler(handle_back_to_prices_menu, pattern=f"^{CALLBACK_BACK_TO_PRICES_MENU}$"))
