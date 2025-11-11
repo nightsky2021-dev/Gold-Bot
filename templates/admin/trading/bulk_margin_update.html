@@ -1,0 +1,170 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+    .bulk-margin-form {
+        max-width: 800px;
+        margin: 20px auto;
+        padding: 20px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .form-group {
+        margin-bottom: 20px;
+    }
+    
+    .form-group label {
+        display: block;
+        font-weight: bold;
+        margin-bottom: 5px;
+        color: #333;
+    }
+    
+    .form-group input {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+    
+    .form-group .helptext {
+        display: block;
+        font-size: 12px;
+        color: #666;
+        margin-top: 5px;
+    }
+    
+    .product-list {
+        margin: 20px 0;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 4px;
+        border-left: 4px solid #007bff;
+    }
+    
+    .product-list h3 {
+        margin-top: 0;
+        color: #007bff;
+    }
+    
+    .product-item {
+        padding: 8px 0;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .product-item:last-child {
+        border-bottom: none;
+    }
+    
+    .btn-group {
+        margin-top: 20px;
+        display: flex;
+        gap: 10px;
+    }
+    
+    .btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        font-size: 14px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+    }
+    
+    .btn-primary {
+        background: #007bff;
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background: #0056b3;
+    }
+    
+    .btn-secondary {
+        background: #6c757d;
+        color: white;
+    }
+    
+    .btn-secondary:hover {
+        background: #545b62;
+    }
+    
+    .warning-box {
+        padding: 15px;
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        border-radius: 4px;
+        margin-bottom: 20px;
+    }
+    
+    .warning-box strong {
+        color: #856404;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bulk-margin-form">
+    <h1>{{ title }}</h1>
+    
+    <div class="warning-box">
+        <strong>⚠️ توجه:</strong> این عملیات مارجین‌های همه محصولات انتخاب شده را تغییر می‌دهد.
+        در صورت فعال بودن گزینه "آپدیت خودکار قیمت‌ها"، قیمت‌های نهایی نیز بلافاصله محاسبه می‌شوند.
+    </div>
+    
+    <div class="product-list">
+        <h3>📦 محصولات انتخاب شده ({{ products.count }} محصول):</h3>
+        {% for product in products %}
+        <div class="product-item">
+            <strong>{{ product.name }}</strong> 
+            <span style="color: #666; font-size: 12px;">
+                (مارجین خرید: {{ product.buy_margin|floatformat:0 }} ریال، 
+                مارجین فروش: {{ product.sell_margin|floatformat:0 }} ریال)
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <form method="post">
+        {% csrf_token %}
+        
+        {% for field in form %}
+        <div class="form-group">
+            {{ field.label_tag }}
+            {{ field }}
+            {% if field.help_text %}
+            <span class="helptext">{{ field.help_text }}</span>
+            {% endif %}
+            {% if field.errors %}
+            <div style="color: #dc3545; font-size: 12px; margin-top: 5px;">
+                {{ field.errors }}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+        
+        {% for product in products %}
+        <input type="hidden" name="{{ action_checkbox_name }}" value="{{ product.pk }}" />
+        {% endfor %}
+        
+        <input type="hidden" name="action" value="{{ action_name }}" />
+        <input type="hidden" name="index" value="0" />
+        
+        <div class="btn-group">
+            <button type="submit" name="apply" class="btn btn-primary">
+                ✅ اعمال تغییرات
+            </button>
+            <a href="{% url 'admin:trading_product_changelist' %}" class="btn btn-secondary">
+                ❌ لغو
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+

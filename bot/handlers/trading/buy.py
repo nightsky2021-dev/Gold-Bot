@@ -37,6 +37,10 @@ async def buy_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not await BaseTradeHandler.validate_user_approved(update, profile):
         return ConversationHandler.END
     
+    # Initialize context and set order type
+    ctx = BaseTradeHandler.get_context(context)
+    ctx.order_type = Order.OrderType.BUY
+    
     # Get active products
     products = await BaseTradeHandler.get_active_products()
     if not products:

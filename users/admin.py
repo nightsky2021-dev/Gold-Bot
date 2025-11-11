@@ -68,6 +68,26 @@ class BankAccountResource(resources.ModelResource):
         export_order = fields
 
 
+class BankAccountInline(admin.TabularInline):
+    """Inline admin for BankAccount in Profile admin."""
+    model = BankAccount
+    extra = 0
+    verbose_name = 'حساب بانکی'
+    verbose_name_plural = 'حساب‌های بانکی'
+    fields = (
+        'bank_name', 'account_holder_name', 'get_masked_account_number',
+        'account_type', 'is_verified'
+    )
+    readonly_fields = ('get_masked_account_number',)
+    
+    def get_masked_account_number(self, obj):
+        """Display masked account number."""
+        if obj.pk:
+            return obj.get_masked_account_number()
+        return '-'
+    get_masked_account_number.short_description = 'شماره حساب'
+
+
 class ProfileInline(admin.StackedInline):
     """Inline admin for Profile in User admin."""
     model = Profile
@@ -76,8 +96,11 @@ class ProfileInline(admin.StackedInline):
     verbose_name_plural = 'پروفایل‌ها'
     fields = (
         'telegram_id', 'telegram_username', 'phone_number',
-        'is_approved', 'rial_balance', 'gold_balance_grams',
-        'frozen_rial_balance', 'frozen_gold_balance'
+        'is_approved', 
+        'rial_balance', 'frozen_rial_balance',
+        'gold_balance_grams', 'frozen_gold_balance',
+        'coin_balance', 'frozen_coin_balance',
+        'dollar_balance', 'frozen_dollar_balance'
     )
     readonly_fields = ('telegram_id', 'telegram_username', 'phone_number')
 
@@ -86,6 +109,7 @@ class CustomUserAdmin(BaseUserAdmin):
     """Extended User admin with Profile inline."""
     inlines = (ProfileInline,)
     list_display = ('username', 'email', 'first_name', 'last_name', 'is_staff')
+    search_fields = ('username', 'first_name', 'last_name', 'email')
 
 
 # Unregister the original User admin and register the custom one
@@ -104,14 +128,18 @@ class ProfileAdmin(ImportExportModelAdmin):
     
     resource_class = ProfileResource
     
+    inlines = [BankAccountInline]
+    
     list_display = (
         'get_user_display',
         'phone_number',
+        'user_tier_badge',
         'telegram_username',
         'is_approved',
         'formatted_rial_balance',
         'formatted_gold_balance',
         'total_orders_count',
+        'total_trade_volume',
         'view_user_details',
         'created_at'
     )
@@ -122,18 +150,25 @@ class ProfileAdmin(ImportExportModelAdmin):
         ('updated_at', DateRangeFilter),
         ('rial_balance', NumericRangeFilter),
         ('gold_balance_grams', NumericRangeFilter),
+        ('coin_balance', NumericRangeFilter),
+        ('dollar_balance', NumericRangeFilter),
     )
     
     search_fields = (
         'user__first_name',
         'user__last_name',
         'user__username',
+        'user__email',
         'phone_number',
         'telegram_id',
         'telegram_username'
     )
     
     list_editable = ('is_approved',)
+    
+    autocomplete_fields = ('user',)
+    
+    list_per_page = 50
     
     readonly_fields = (
         'telegram_id',
@@ -158,8 +193,10 @@ class ProfileAdmin(ImportExportModelAdmin):
         }),
         ('موجودی‌ها', {
             'fields': (
-                'rial_balance', 'gold_balance_grams',
-                'frozen_rial_balance', 'frozen_gold_balance'
+                'rial_balance', 'frozen_rial_balance',
+                'gold_balance_grams', 'frozen_gold_balance',
+                'coin_balance', 'frozen_coin_balance',
+                'dollar_balance', 'frozen_dollar_balance'
             ),
             'classes': ('wide',)
         }),
@@ -182,6 +219,24 @@ class ProfileAdmin(ImportExportModelAdmin):
             return full_name
         return obj.user.username
     get_user_display.short_description = 'نام کاربر'
+    
+    def user_tier_badge(self, obj: Profile) -> str:
+        """Display user tier badge."""
+        return obj.get_tier_badge_html()
+    user_tier_badge.short_description = '🏆 سطح کاربر'
+    
+    def total_trade_volume(self, obj: Profile) -> str:
+        """Display total trade volume."""
+        volume = obj.get_total_trade_volume()
+        # Convert Decimal to float for formatting
+        volume_millions = float(volume) / 1000000
+        # Format the number first, then pass to format_html
+        formatted_volume = f"{volume_millions:,.0f}"
+        return format_html(
+            '<span style="font-weight: bold; color: #007bff;">{} میلیون</span>',
+            formatted_volume
+        )
+    total_trade_volume.short_description = '💰 حجم معاملات'
     
     def approval_status_badge(self, obj: Profile) -> str:
         """Display approval status with badge."""
@@ -225,14 +280,26 @@ class ProfileAdmin(ImportExportModelAdmin):
     formatted_gold_balance.short_description = 'موجودی طلا'
     formatted_gold_balance.admin_order_field = 'gold_balance_grams'
     
+    def formatted_coin_balance(self, obj: Profile) -> str:
+        """Format coin balance."""
+        return f"{obj.coin_balance:,.0f} سکه"
+    formatted_coin_balance.short_description = 'موجودی سکه'
+    formatted_coin_balance.admin_order_field = 'coin_balance'
+    
+    def formatted_dollar_balance(self, obj: Profile) -> str:
+        """Format dollar balance."""
+        return f"${obj.dollar_balance:,.2f}"
+    formatted_dollar_balance.short_description = 'موجودی دلار'
+    formatted_dollar_balance.admin_order_field = 'dollar_balance'
+    
     def get_total_orders(self, obj: Profile) -> int:
         """Get total number of orders."""
-        return obj.order_set.count()  # type: ignore[attr-defined]
+        return obj.orders.count()
     get_total_orders.short_description = 'تعداد کل سفارشات'
     
     def get_pending_orders(self, obj: Profile) -> int:
         """Get number of pending orders."""
-        return obj.order_set.filter(status='PENDING').count()  # type: ignore[attr-defined]
+        return obj.orders.filter(status='PENDING').count()
     get_pending_orders.short_description = 'سفارشات در انتظار'
     
     def approve_users(self, request, queryset):

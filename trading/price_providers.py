@@ -4,7 +4,7 @@
 """
 from abc import ABC, abstractmethod
 from typing import Dict, Optional
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 import requests  # pyright: ignore[reportMissingModuleSource]
 import logging
 
@@ -145,21 +145,7 @@ class AnigoldPriceProvider(PriceProvider):
     
     BASE_URL = "http://api.anigoldbot.ir/store/prices/"
     
-    # Mapping of product codes to API field names
-    PRODUCT_MAPPING = {
-        'dollar_usa': 'dollar',
-        'euro': 'price_eur',
-        'lira_turkey': 'price_try',
-        'yuan_china': 'price_cny',
-        'pound_uk': 'price_gbp',
-        'dirham_uae': 'price_aed',
-        'coin_full': 'sekeh_tamam_under86',
-        'coin_half': 'nim_sekeh_under86',
-        'coin_quarter': 'rob_sekeh_under86',
-        'gold_abshodeh': 'geram18',
-    }
-    
-    def __init__(self, api_key: str, timeout: int = 5, max_retries: int = 3):
+    def __init__(self, api_key: str, timeout: int = 10, max_retries: int = 3):
         """
         Args:
             api_key: کلید API سرویس Anigold
@@ -169,117 +155,155 @@ class AnigoldPriceProvider(PriceProvider):
         self.api_key = api_key
         self.timeout = timeout
         self.max_retries = max_retries
+        self._cached_prices = None
     
     def _fetch_all_prices(self) -> Optional[Dict[str, Decimal]]:
         """
-        دریافت تمام قیمت‌ها از API با قابلیت تلاش مجدد
+        دریافت تمام قیمت‌ها از API Anigold
         
         Returns:
-            دیکشنری قیمت‌ها یا None در صورت خطا
+            دیکشنری حاوی قیمت‌ها یا None در صورت خطا
         """
+        last_error = None
+        
         for attempt in range(self.max_retries):
             try:
-                # Try with JSON body containing apikey
-                payload = {
-                    'apikey': self.api_key
+                headers = {
+                    'apikey': self.api_key,
+                    'Content-Type': 'application/json'
                 }
                 
                 response = requests.post(
                     self.BASE_URL,
-                    json=payload,
+                    headers=headers,
                     timeout=self.timeout
                 )
                 response.raise_for_status()
                 
                 data = response.json()
                 
-                # Check if API response has the expected format
-                if isinstance(data, dict):
-                    # New API format: {'IsSuccess': bool, 'Message': str, 'Prices': [...]}
-                    if not data.get('IsSuccess', False):
-                        logger.error(f"خطای API Anigold: {data.get('Message', 'خطای نامشخص')}")
-                        return None
-                    
-                    # Get prices list from response
-                    prices_list = data.get('Prices', [])
-                    if not isinstance(prices_list, list):
-                        logger.error(f"فرمت نامعتبر در پاسخ API: Prices باید لیست باشد")
-                        return None
-                    
-                    data = prices_list  # Continue with the prices list
-                elif not isinstance(data, list):
-                    logger.error(f"خطا در پردازش پاسخ API: انتظار می‌رفت لیست یا dict باشد، اما یافت شد: {type(data).__name__}")
-                    logger.error(f"محتوای پاسخ: {data}")
+                # Check if API returned success
+                if isinstance(data, dict) and not data.get('IsSuccess', True):
+                    logger.error(f"Anigold API returned error: {data.get('Message')}")
                     return None
                 
-                # Parse prices from response
+                # Anigold returns array of price objects
+                if isinstance(data, list):
+                    # Convert from array format to dict mapping
+                    data = self._convert_anigold_response(data)
+                elif isinstance(data, dict) and 'Prices' in data:
+                    data = self._convert_anigold_response(data['Prices'])
+                
+                # Extract prices from response
                 prices = {}
-                for item in data:
-                    if not isinstance(item, dict):
-                        logger.warning(f"آیتم نامعتبر در پاسخ API (انتظار dict، یافت شد {type(item).__name__}): {item}")
-                        continue
-                    
-                    en_slug = item.get('en_slug')
-                    price = item.get('price')
-                    
-                    if en_slug and price:
+                for key, value in data.items():
+                    if key != 'status' and value is not None and value != '':
                         try:
-                            # Convert price to Decimal (price is in Tomans)
-                            price_tomans = Decimal(str(price).replace(',', ''))
-                            # Convert Tomans to Rials
-                            prices[en_slug] = price_tomans * Decimal('10')
-                        except (ValueError, InvalidOperation) as e:
-                            logger.warning(f"خطا در تبدیل قیمت برای {en_slug}: {price} - {e}")
+                            # Skip non-numeric values
+                            if isinstance(value, bool) or value in ['true', 'false', True, False]:
+                                continue
+                            
+                            # Convert to Decimal, handle different formats
+                            price_str = str(value).replace(',', '').strip()
+                            
+                            # Skip empty or non-numeric strings
+                            if not price_str or not any(c.isdigit() for c in price_str):
+                                logger.debug(f"Skipping non-numeric value for {key}: {value}")
+                                continue
+                            
+                            prices[key] = Decimal(price_str)
+                            logger.debug(f"Successfully parsed {key}: {value} -> {prices[key]}")
+                        except (ValueError, TypeError, Exception) as e:
+                            logger.warning(f"Could not parse price for {key}: {value} (type: {type(value).__name__}) - {e}")
                             continue
                 
-                logger.info(f"دریافت {len(prices)} قیمت از API Anigold")
+                self._cached_prices = prices
+                logger.info(f"Successfully fetched {len(prices)} prices from Anigold API")
                 return prices
                 
             except requests.exceptions.RequestException as e:
+                last_error = e
                 if attempt < self.max_retries - 1:
-                    logger.warning(f"تلاش {attempt + 1} برای دریافت قیمت‌ها ناموفق بود. تلاش مجدد...")
+                    logger.warning(f"تلاش {attempt + 1} برای دریافت قیمت‌ها از Anigold ناموفق بود. تلاش مجدد...")
                     continue
                 else:
-                    logger.error(f"خطا در دریافت قیمت‌ها از API پس از {self.max_retries} تلاش: {e}")
+                    logger.error(f"خطا در دریافت قیمت‌ها از Anigold API پس از {self.max_retries} تلاش: {e}")
                     return None
-            except (ValueError, KeyError, Exception) as e:
-                logger.error(f"خطا در پردازش پاسخ API: {e}")
+            except Exception as e:
+                logger.error(f"خطا در پردازش پاسخ Anigold API: {e}", exc_info=True)
                 return None
         
         return None
     
-    def get_price(self, product_code: str) -> Optional[Decimal]:
+    def _convert_anigold_response(self, prices_array: list) -> Dict[str, Decimal]:
         """
-        دریافت قیمت یک محصول خاص
+        Convert Anigold API response from array format to dict mapping.
         
-        Args:
-            product_code: کد محصول (مثل 'dollar_usa', 'euro', 'gold_abshodeh')
+        Anigold returns: [{"fa_slug": "دلار آمریکا", "price": "75000", ...}, ...]
+        We need: {"dollar_usa": Decimal("750000"), ...}
+        
+        IMPORTANT: Anigold API returns prices in TOMANS, so we multiply by 10 to convert to RIALS.
+        """
+        result = {}
+        
+        # Mapping from Anigold fa_slug to our product codes
+        # Based on actual API response
+        slug_mapping = {
+            # Currencies
+            'دلار آمریکا': 'dollar_usa',
+            'یورو': 'euro',
+            'لیر ترکیه': 'lira_turkey',
+            'یوان چین': 'yuan_china',
+            'پوند انگلیس': 'pound_uk',
+            'درهم امارات': 'dirham_uae',
+            # Coins - Using سکه 86 (Emami coin) variants
+            'سکه 86': 'coin_full',
+            'نیم سکه 86': 'coin_half',
+            'ربع سکه 86': 'coin_quarter',
+            # Gold - Using گرم 24 عیار (24 karat per gram)
+            'گرم 24 عیار': 'gold_abshodeh',
+        }
+        
+        for item in prices_array:
+            if not isinstance(item, dict):
+                continue
+                
+            fa_slug = item.get('fa_slug', '')
+            price_value = item.get('price') or item.get('buyprice')
             
-        Returns:
-            قیمت به صورت Decimal یا None در صورت خطا
-        """
-        prices = self._fetch_all_prices()
-        if not prices:
-            return None
+            if fa_slug in slug_mapping and price_value:
+                product_code = slug_mapping[fa_slug]
+                try:
+                    price_str = str(price_value).replace(',', '').strip()
+                    # Convert from Tomans to Rials (multiply by 10)
+                    price_tomans = Decimal(price_str)
+                    price_rials = price_tomans * Decimal('10')
+                    result[product_code] = price_rials
+                    logger.debug(f"Mapped {fa_slug} -> {product_code}: {price_tomans:,.0f} Tomans = {price_rials:,.0f} Rials")
+                except Exception as e:
+                    logger.warning(f"Could not parse price for {fa_slug}: {price_value} - {e}")
         
-        # Get API field name from product code
-        api_field = self.PRODUCT_MAPPING.get(product_code)
-        if not api_field:
-            logger.warning(f"کد محصول نامعتبر: {product_code}")
-            return None
+        return result
+    
+    def get_price(self, product_code: str) -> Optional[Decimal]:
+        """دریافت قیمت برای یک محصول خاص"""
+        if not self._cached_prices:
+            self._fetch_all_prices()
         
-        return prices.get(api_field)
+        if self._cached_prices:
+            return self._cached_prices.get(product_code)
+        return None
     
     def get_gold_price(self) -> Optional[Decimal]:
-        """دریافت قیمت طلای آبشده (هر گرم - ریال)"""
+        """دریافت قیمت طلای آبشده"""
         return self.get_price('gold_abshodeh')
     
     def get_dollar_buy_price(self) -> Optional[Decimal]:
-        """دریافت قیمت خرید دلار (برای سازگاری با interface قدیمی)"""
+        """دریافت قیمت خرید دلار - Anigold فقط یک قیمت دارد"""
         return self.get_price('dollar_usa')
     
     def get_dollar_sell_price(self) -> Optional[Decimal]:
-        """دریافت قیمت فروش دلار (برای سازگاری با interface قدیمی)"""
+        """دریافت قیمت فروش دلار - Anigold فقط یک قیمت دارد"""
         return self.get_price('dollar_usa')
 
 
@@ -288,21 +312,37 @@ def get_active_provider() -> PriceProvider:
     """
     دریافت ارائه‌دهنده قیمت فعال
     
-    این تابع را می‌توانید سفارشی‌سازی کنید تا provider مورد نظر را برگرداند
-    از متغیر PRICE_PROVIDER_TYPE در settings برای انتخاب provider استفاده می‌شود.
+    این تابع بر اساس تنظیمات PRICE_PROVIDER_TYPE provider مناسب را برمی‌گرداند
+    
+    Raises:
+        ImproperlyConfigured: If API key is not set in settings
     """
     from django.conf import settings
+    from django.core.exceptions import ImproperlyConfigured
     
-    provider_type = getattr(settings, 'PRICE_PROVIDER_TYPE', 'anigold')
+    provider_type = getattr(settings, 'PRICE_PROVIDER_TYPE', 'anigold').lower()
     
     if provider_type == 'anigold':
-        api_key = getattr(settings, 'ANIGOLD_API_KEY', '1a233fab-04d1-47b2-b732-813d93795c43')
+        api_key = getattr(settings, 'ANIGOLD_API_KEY', None)
+        if not api_key:
+            raise ImproperlyConfigured(
+                'ANIGOLD_API_KEY is not set in Django settings. '
+                'Please set it in your settings.py or environment variables.'
+            )
         return AnigoldPriceProvider(api_key)
+    
     elif provider_type == 'navasan':
-        api_key = getattr(settings, 'NAVASAN_API_KEY', 'freeTET7c1g57cU7kPnjQa4KAMP7BWaS')
+        api_key = getattr(settings, 'NAVASAN_API_KEY', None)
+        if not api_key:
+            raise ImproperlyConfigured(
+                'NAVASAN_API_KEY is not set in Django settings. '
+                'Please set it in your settings.py or environment variables.'
+            )
         return NavasanPriceProvider(api_key)
+    
     else:
-        # Default to Anigold
-        api_key = getattr(settings, 'ANIGOLD_API_KEY', '1a233fab-04d1-47b2-b732-813d93795c43')
-        return AnigoldPriceProvider(api_key)
+        raise ImproperlyConfigured(
+            f'Unknown PRICE_PROVIDER_TYPE: {provider_type}. '
+            'Supported types: "anigold", "navasan"'
+        )
 

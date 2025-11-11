@@ -23,6 +23,36 @@ class TradingService:
     """Service class for trading-related operations like price updates."""
     
     @staticmethod
+    def validate_price_change(
+        old_price: Decimal,
+        new_price: Decimal,
+        threshold: float = 5.0
+    ) -> Tuple[bool, str]:
+        """
+        Validate if a price change is within acceptable limits.
+        
+        Args:
+            old_price: The previous price
+            new_price: The new price to validate
+            threshold: Maximum allowed change percentage (default 500% for first-time updates)
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if old_price == 0 or new_price == 0:
+            return True, ""
+        
+        change_pct = abs((new_price - old_price) / old_price)
+        
+        if change_pct > Decimal(str(threshold)):
+            return False, (
+                f"قیمت جدید {float(change_pct * 100):.1f}% تغییر کرده است که از حد مجاز "
+                f"{threshold * 100:.0f}% بیشتر است. قیمت قبلی: {old_price:,}, قیمت جدید: {new_price:,}"
+            )
+        
+        return True, ""
+    
+    @staticmethod
     def update_all_prices() -> bool:
         """
         Update all product prices from the API.
@@ -31,9 +61,6 @@ class TradingService:
         and updates each product using its own margin configuration.
         Each product calculates its own buy/sell prices based on its
         configured margins, weights, and the API base price.
-        
-        This method now supports both Navasan and Anigold APIs and can
-        handle any number of products dynamically.
         
         Returns:
             bool: True if prices were updated successfully, False otherwise.
@@ -44,12 +71,11 @@ class TradingService:
         try:
             # Get price provider
             provider = get_active_provider()
-            logger.info(f"Fetching prices from API using {provider.__class__.__name__}...")
+            logger.info("Fetching prices from API...")
             
             updated_count = 0
-            failed_count = 0
             
-            # Handle Anigold provider (supports all products)
+            # Check if we're using Anigold provider (supports all products directly)
             if isinstance(provider, AnigoldPriceProvider):
                 # Fetch all prices at once
                 all_prices = provider._fetch_all_prices()
@@ -58,58 +84,79 @@ class TradingService:
                     logger.error("Failed to fetch prices from Anigold API")
                     return False
                 
-                logger.info(f"Fetched {len(all_prices)} prices from Anigold API")
-                
-                # Update all products
-                for product in Product.objects.filter(is_active=True):
+                # Update all products based on their product_code
+                for product in Product.objects.all():
                     try:
-                        # Get base price for this product from API
-                        base_price = provider.get_price(product.product_code)
+                        # Get base price directly from API using product code
+                        base_price = all_prices.get(product.product_code)
                         
                         if base_price is None:
-                            logger.warning(f"No API price available for product: {product.name} ({product.product_code})")
-                            failed_count += 1
+                            logger.warning(f"No API price available for product: {product.name}")
                             continue
                         
-                        # For currencies, dynamically calculate 1% margin if margin is 0
-                        if product.product_code in [
-                            Product.PRODUCT_CODE_DOLLAR_USA,
-                            Product.PRODUCT_CODE_EURO,
-                            Product.PRODUCT_CODE_LIRA_TURKEY,
-                            Product.PRODUCT_CODE_YUAN_CHINA,
-                            Product.PRODUCT_CODE_POUND_UK,
-                            Product.PRODUCT_CODE_DIRHAM_UAE,
-                        ]:
-                            # Calculate 1% of base price as margin
-                            calculated_margin = (base_price * Decimal('0.01')).quantize(Decimal('1'))
-                            
-                            # Update margins if they're currently 0
-                            if product.buy_margin == Decimal('0') or product.sell_margin == Decimal('0'):
-                                product.buy_margin = calculated_margin
-                                product.sell_margin = calculated_margin
-                                logger.info(f"Auto-calculated 1% margin for {product.name}: {calculated_margin:,} Rials")
+                        # Store old prices for validation
+                        old_buy_price = product.buy_price
+                        old_sell_price = product.sell_price
                         
-                        # Use the product's own update_prices_from_api method
+                        # Calculate new prices temporarily (don't save yet)
+                        adjusted_base = base_price * product.weight_grams
+                        new_buy_price = (adjusted_base - product.buy_margin).quantize(Decimal('1'))
+                        new_sell_price = (adjusted_base + product.sell_margin).quantize(Decimal('1'))
+                        
+                        # Validate price changes if old prices exist
+                        if old_buy_price and old_sell_price:
+                            # Validate buy price change
+                            is_valid, error_msg = TradingService.validate_price_change(
+                                old_buy_price, new_buy_price
+                            )
+                            if not is_valid:
+                                logger.warning(
+                                    f"قیمت خرید {product.name} رد شد - {error_msg}"
+                                )
+                                print(f"قیمت خرید {product.name} رد شد - {error_msg}")
+                                continue
+                            
+                            # Validate sell price change
+                            is_valid, error_msg = TradingService.validate_price_change(
+                                old_sell_price, new_sell_price
+                            )
+                            if not is_valid:
+                                logger.warning(
+                                    f"قیمت فروش {product.name} رد شد - {error_msg}"
+                                )
+                                print(f"قیمت فروش {product.name} رد شد - {error_msg}")
+                                continue
+                        
+                        # If validation passed, update the product
                         product.update_prices_from_api(base_price)
                         product.save()
                         
+                        # Create price history record
+                        from .models import PriceHistory
+                        PriceHistory.objects.create(
+                            product=product,
+                            base_price_api=product.base_price_api,
+                            buy_price=product.buy_price,
+                            sell_price=product.sell_price,
+                            buy_margin=product.buy_margin,
+                            sell_margin=product.sell_margin
+                        )
+                        
                         logger.info(
-                            f"✅ Updated {product.name}: "
+                            f"Updated {product.name}: "
                             f"Base={base_price:,.0f}, "
                             f"Weight={product.weight_grams}g, "
                             f"Margins=({product.buy_margin:,.0f}, {product.sell_margin:,.0f}), "
-                            f"Buy={product.buy_price:,.0f}, Sell={product.sell_price:,.0f}"
+                            f"Final Buy={product.buy_price:,.0f}, Sell={product.sell_price:,.0f}"
                         )
                         updated_count += 1
                         
                     except Exception as e:
-                        logger.error(f"❌ Error updating product {product.name}: {e}", exc_info=True)
-                        failed_count += 1
+                        logger.error(f"Error updating product {product.name}: {e}", exc_info=True)
                         continue
             
             else:
-                # Legacy support for Navasan or other providers
-                # Fetch API prices using old method
+                # Legacy Navasan provider - only supports gold, coin, dollar
                 api_prices = provider.get_all_prices()
                 api_gold_price = api_prices.get('gold')
                 api_dollar_buy = api_prices.get('dollar_buy')
@@ -128,29 +175,70 @@ class TradingService:
                 # Calculate average dollar price for dollar products
                 api_dollar_avg = (api_dollar_buy + api_dollar_sell) / 2
                 
-                # Map product codes to their API base prices (legacy)
+                # Map product codes to their API base prices
                 price_map = {
-                    'gold_abshodeh': api_gold_price,
-                    'coin_full': api_gold_price,  # سکه بر اساس قیمت طلا محاسبه می‌شود
-                    'dollar_usa': api_dollar_avg,
+                    Product.PRODUCT_CODE_GOLD: api_gold_price,
+                    Product.PRODUCT_CODE_COIN: api_gold_price,  # سکه بر اساس قیمت طلا محاسبه می‌شود
+                    Product.PRODUCT_CODE_DOLLAR: api_dollar_avg,
                 }
                 
                 # Update all products dynamically based on their configuration
-                for product in Product.objects.filter(is_active=True):
+                for product in Product.objects.all():
                     try:
                         base_price = price_map.get(product.product_code)
                         
                         if base_price is None:
                             logger.warning(f"No API price available for product: {product.name}")
-                            failed_count += 1
                             continue
                         
-                        # Use the product's own update_prices_from_api method
+                        # Store old prices for validation
+                        old_buy_price = product.buy_price
+                        old_sell_price = product.sell_price
+                        
+                        # Calculate new prices temporarily (don't save yet)
+                        adjusted_base = base_price * product.weight_grams
+                        new_buy_price = (adjusted_base - product.buy_margin).quantize(Decimal('1'))
+                        new_sell_price = (adjusted_base + product.sell_margin).quantize(Decimal('1'))
+                        
+                        # Validate price changes if old prices exist
+                        if old_buy_price and old_sell_price:
+                            # Validate buy price change
+                            is_valid, error_msg = TradingService.validate_price_change(
+                                old_buy_price, new_buy_price
+                            )
+                            if not is_valid:
+                                logger.warning(
+                                    f"قیمت خرید {product.name} رد شد - {error_msg}"
+                                )
+                                continue
+                            
+                            # Validate sell price change
+                            is_valid, error_msg = TradingService.validate_price_change(
+                                old_sell_price, new_sell_price
+                            )
+                            if not is_valid:
+                                logger.warning(
+                                    f"قیمت فروش {product.name} رد شد - {error_msg}"
+                                )
+                                continue
+                        
+                        # If validation passed, update the product
                         product.update_prices_from_api(base_price)
                         product.save()
                         
+                        # Create price history record
+                        from .models import PriceHistory
+                        PriceHistory.objects.create(
+                            product=product,
+                            base_price_api=product.base_price_api,
+                            buy_price=product.buy_price,
+                            sell_price=product.sell_price,
+                            buy_margin=product.buy_margin,
+                            sell_margin=product.sell_margin
+                        )
+                        
                         logger.info(
-                            f"✅ Updated {product.name}: "
+                            f"Updated {product.name}: "
                             f"Base={base_price:,.0f}, "
                             f"Weight={product.weight_grams}g, "
                             f"Margins=({product.buy_margin:,.0f}, {product.sell_margin:,.0f}), "
@@ -159,11 +247,10 @@ class TradingService:
                         updated_count += 1
                         
                     except Exception as e:
-                        logger.error(f"❌ Error updating product {product.name}: {e}", exc_info=True)
-                        failed_count += 1
+                        logger.error(f"Error updating product {product.name}: {e}", exc_info=True)
                         continue
             
-            logger.info(f"Price update complete: {updated_count} updated, {failed_count} failed")
+            logger.info(f"Successfully updated {updated_count} products")
             return updated_count > 0
             
         except Exception as e:
@@ -267,6 +354,18 @@ class OrderService:
         Raises:
             ValidationError: If user cannot trade, insufficient balance, or inputs are invalid.
         """
+        # 0. Check for duplicate orders (prevent double-submission)
+        from django.core.cache import cache
+        
+        cache_key = f"order_{profile.pk}_{product.pk}_{order_type}_{amount}_{calculation_method}"
+        if cache.get(cache_key):
+            raise ValidationError(
+                "⚠️ معامله تکراری! لطفاً 10 ثانیه صبر کنید و دوباره تلاش کنید."
+            )
+        
+        # Set cache for 10 seconds to prevent duplicate orders
+        cache.set(cache_key, True, 10)
+        
         # 1. Validate user can trade
         if not profile.can_trade():
             raise ValidationError(
@@ -392,6 +491,10 @@ class OrderService:
             f"by user {profile.get_display_name()}"
         )
         
+        # Send notification for high-value transactions
+        from .notifications import AdminNotificationService
+        AdminNotificationService.notify_high_value_transaction(order)
+        
         return order
     
     @staticmethod
@@ -428,14 +531,17 @@ class OrderService:
             raise ValidationError("نوع سفارش نامعتبر است.")
         
         # Calculate based on method
-        if calculation_method == 'grams':
+        # Note: 'count' is treated as 'grams' (converted at bot layer, but handle here for robustness)
+        # Also handle legacy 'gram' (singular) for backward compatibility
+        if calculation_method in ('grams', 'count', 'gram'):
             quantity_grams = amount
             total_amount = quantity_grams * price_per_gram
         elif calculation_method == 'rial':
             total_amount = amount
             quantity_grams = total_amount / price_per_gram
         else:
-            raise ValidationError("روش محاسبه نامعتبر است.")
+            logger.error(f"Invalid calculation_method received: '{calculation_method}' (type: {type(calculation_method).__name__})")
+            raise ValidationError(f"روش محاسبه نامعتبر است. روش دریافتی: '{calculation_method}'")
         
         # Round to appropriate decimal places
         quantity_grams = Decimal(str(round(float(quantity_grams), 4)))

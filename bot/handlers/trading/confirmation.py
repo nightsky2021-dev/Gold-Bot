@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 from trading.models import Order
 from trading.services import OrderService
 from users.models import Profile
-from bot.constants import ERROR_NOT_APPROVED, ERROR_GENERAL
+from bot.constants import ERROR_NOT_APPROVED, ERROR_GENERAL, METHOD_COUNT
 from .base import BaseTradeHandler, ProgressIndicator
 
 logger = logging.getLogger('bot.trading.confirmation')
@@ -49,6 +49,7 @@ async def buy_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         
         # Get context values
         calculation_method = ctx.calculation_method or 'grams'
+        logger.info(f"Buy confirmation: calculation_method='{calculation_method}', product_id={ctx.product_id}")
         
         # Use the calculation method to determine what was entered
         if calculation_method == 'rial':
@@ -59,6 +60,10 @@ async def buy_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         if not amount:
             await query.edit_message_text(ERROR_GENERAL, parse_mode='Markdown')
             return ConversationHandler.END
+        
+        # Normalize calculation method - service accepts 'grams', 'rial', 'count', 'gram'
+        # No need to convert 'count' to 'grams' - the service handles both
+        logger.info(f"Buy: amount={amount}, calculation_method='{calculation_method}'")
         
         # Execute instant order (atomic operation)
         order = await sync_to_async(OrderService.execute_instant_order)(
@@ -93,6 +98,28 @@ async def buy_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         )
         
         await query.edit_message_text(success_msg, parse_mode='Markdown')
+        
+        # Generate and send invoice PDF
+        try:
+            from trading.invoice_generator import InvoiceGenerator
+            from telegram import InputFile
+            
+            logger.info(f"Generating invoice for order {order.id}")
+            invoice_buffer = await sync_to_async(InvoiceGenerator.generate_order_invoice)(order)
+            filename = await sync_to_async(InvoiceGenerator.get_invoice_filename)(order)
+            
+            # Send the PDF document
+            if update.effective_chat and context.bot:
+                await context.bot.send_document(
+                    chat_id=update.effective_chat.id,
+                    document=InputFile(invoice_buffer, filename=filename),
+                    caption=f"📄 فاکتور خرید شماره #{order.id}",
+                    parse_mode='Markdown'
+                )
+                logger.info(f"Invoice sent successfully for order {order.id}")
+        except Exception as e:
+            logger.error(f"Error generating/sending invoice: {e}", exc_info=True)
+            # Don't fail the order if invoice generation fails
         
         # Clear context
         ctx.clear()
@@ -138,6 +165,7 @@ async def sell_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         
         # Get context values
         calculation_method = ctx.calculation_method or 'grams'
+        logger.info(f"Sell confirmation: calculation_method='{calculation_method}', product_id={ctx.product_id}")
         
         # Use the calculation method to determine what was entered
         if calculation_method == 'rial':
@@ -148,6 +176,10 @@ async def sell_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         if not amount:
             await query.edit_message_text(ERROR_GENERAL, parse_mode='Markdown')
             return ConversationHandler.END
+        
+        # Normalize calculation method - service accepts 'grams', 'rial', 'count', 'gram'
+        # No need to convert 'count' to 'grams' - the service handles both
+        logger.info(f"Sell: amount={amount}, calculation_method='{calculation_method}'")
         
         # Execute instant order (atomic operation)
         order = await sync_to_async(OrderService.execute_instant_order)(
@@ -182,6 +214,28 @@ async def sell_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
         
         await query.edit_message_text(success_msg, parse_mode='Markdown')
+        
+        # Generate and send invoice PDF
+        try:
+            from trading.invoice_generator import InvoiceGenerator
+            from telegram import InputFile
+            
+            logger.info(f"Generating invoice for order {order.id}")
+            invoice_buffer = await sync_to_async(InvoiceGenerator.generate_order_invoice)(order)
+            filename = await sync_to_async(InvoiceGenerator.get_invoice_filename)(order)
+            
+            # Send the PDF document
+            if update.effective_chat and context.bot:
+                await context.bot.send_document(
+                    chat_id=update.effective_chat.id,
+                    document=InputFile(invoice_buffer, filename=filename),
+                    caption=f"📄 فاکتور فروش شماره #{order.id}",
+                    parse_mode='Markdown'
+                )
+                logger.info(f"Invoice sent successfully for order {order.id}")
+        except Exception as e:
+            logger.error(f"Error generating/sending invoice: {e}", exc_info=True)
+            # Don't fail the order if invoice generation fails
         
         # Clear context
         ctx.clear()

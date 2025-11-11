@@ -138,8 +138,11 @@ async def trade_method_selected(update: Update, context: ContextTypes.DEFAULT_TY
         # Fallback for legacy prefixed callbacks
         from bot.constants import METHOD_PREFIX
         method = query.data.replace(METHOD_PREFIX, "")
+        logger.warning(f"Using fallback method parsing: query.data='{query.data}' -> method='{method}'")
     
     ctx.calculation_method = method
+    logger.info(f"Method selected: callback='{query.data}', stored_method='{method}'")
+
     
     # Validate product_id is set
     if ctx.product_id is None:
@@ -269,14 +272,15 @@ async def trade_amount_entered(update: Update, context: ContextTypes.DEFAULT_TYP
             return await BaseTradeHandler.send_error_and_end(update)
         
         # Calculate order details
-        calc_method = 'grams' if ctx.calculation_method == METHOD_COUNT else ctx.calculation_method
+        # Service handles 'grams', 'rial', 'count', 'gram' - no conversion needed
+        logger.info(f"Calculating order: method='{ctx.calculation_method}', amount={amount}, order_type={ctx.order_type}")
         quantity_grams, price_per_gram, total_amount = await sync_to_async(
             OrderService.calculate_order_details
         )(
             product=product,
             order_type=ctx.order_type,
             amount=amount,
-            calculation_method=calc_method
+            calculation_method=ctx.calculation_method
         )
         
         # Validate balances BEFORE showing invoice

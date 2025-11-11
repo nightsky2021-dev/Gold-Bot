@@ -79,7 +79,7 @@ class Command(BaseCommand):
             {
                 'product_code': Product.PRODUCT_CODE_GOLD_ABSHODEH,
                 'name': 'طلای آبشده',
-                'weight_grams': Decimal('1'),
+                'weight_grams': Decimal('1'),  # Sold per gram
                 'buy_margin': Decimal('300000'),
                 'sell_margin': Decimal('300000'),
                 'buy_price': Decimal('5000000'),
@@ -87,11 +87,13 @@ class Command(BaseCommand):
                 'is_active': True,
             },
             
-            # Coins (with specific weights)
+            # Coins (API returns price per coin, not per gram!)
+            # Note: Physical weights are 8.133g (full), 4.0665g (half), 2.03325g (quarter)
+            # But we use weight_grams=1 because API gives us price per coin already
             {
                 'product_code': Product.PRODUCT_CODE_COIN_FULL,
                 'name': 'سکه تمام غیربانکی',
-                'weight_grams': Decimal('8.133'),  # Weight of a full coin in grams
+                'weight_grams': Decimal('1'),  # Per coin (not gram!)
                 'buy_margin': Decimal('4500000'),
                 'sell_margin': Decimal('4500000'),
                 'buy_price': Decimal('40000000'),
@@ -101,7 +103,7 @@ class Command(BaseCommand):
             {
                 'product_code': Product.PRODUCT_CODE_COIN_HALF,
                 'name': 'نیم سکه غیربانکی',
-                'weight_grams': Decimal('4.0665'),  # Half of full coin weight
+                'weight_grams': Decimal('1'),  # Per coin (not gram!)
                 'buy_margin': Decimal('2250000'),
                 'sell_margin': Decimal('2250000'),
                 'buy_price': Decimal('20000000'),
@@ -111,7 +113,7 @@ class Command(BaseCommand):
             {
                 'product_code': Product.PRODUCT_CODE_COIN_QUARTER,
                 'name': 'ربع سکه غیربانکی',
-                'weight_grams': Decimal('2.03325'),  # Quarter of full coin weight
+                'weight_grams': Decimal('1'),  # Per coin (not gram!)
                 'buy_margin': Decimal('1125000'),
                 'sell_margin': Decimal('1125000'),
                 'buy_price': Decimal('10000000'),

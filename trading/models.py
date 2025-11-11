@@ -35,7 +35,9 @@ class Product(models.Model):
         orders: 'Manager["Order"]'
     
     # Product code constants for standardized product identification
-    # Currencies
+    # Updated for AniGold API integration - 10 products total
+    
+    # Currencies (6 products)
     PRODUCT_CODE_DOLLAR_USA = 'dollar_usa'  # دلار آمریکا
     PRODUCT_CODE_EURO = 'euro'  # یورو
     PRODUCT_CODE_LIRA_TURKEY = 'lira_turkey'  # لیر ترکیه
@@ -43,12 +45,12 @@ class Product(models.Model):
     PRODUCT_CODE_POUND_UK = 'pound_uk'  # پوند انگلیس
     PRODUCT_CODE_DIRHAM_UAE = 'dirham_uae'  # درهم امارات
     
-    # Coins
+    # Coins (3 products)
     PRODUCT_CODE_COIN_FULL = 'coin_full'  # سکه غیربانکی
     PRODUCT_CODE_COIN_HALF = 'coin_half'  # نیم سکه غیربانکی
     PRODUCT_CODE_COIN_QUARTER = 'coin_quarter'  # ربع سکه غیربانکی
     
-    # Gold
+    # Gold (1 product)
     PRODUCT_CODE_GOLD_ABSHODEH = 'gold_abshodeh'  # طلای آبشده
     
     # Legacy codes for backward compatibility
@@ -58,20 +60,20 @@ class Product(models.Model):
     
     PRODUCT_CODE_CHOICES = [
         # Currencies
-        (PRODUCT_CODE_DOLLAR_USA, 'دلار آمریکا'),
-        (PRODUCT_CODE_EURO, 'یورو'),
-        (PRODUCT_CODE_LIRA_TURKEY, 'لیر ترکیه'),
-        (PRODUCT_CODE_YUAN_CHINA, 'یوان چین'),
-        (PRODUCT_CODE_POUND_UK, 'پوند انگلیس'),
-        (PRODUCT_CODE_DIRHAM_UAE, 'درهم امارات'),
+        (PRODUCT_CODE_DOLLAR_USA, '💵 دلار آمریکا'),
+        (PRODUCT_CODE_EURO, '💶 یورو'),
+        (PRODUCT_CODE_POUND_UK, '💷 پوند انگلیس'),
+        (PRODUCT_CODE_YUAN_CHINA, '💴 یوان چین'),
+        (PRODUCT_CODE_LIRA_TURKEY, '🇹🇷 لیر ترکیه'),
+        (PRODUCT_CODE_DIRHAM_UAE, '🇦🇪 درهم امارات'),
         
         # Coins
-        (PRODUCT_CODE_COIN_FULL, 'سکه غیربانکی'),
-        (PRODUCT_CODE_COIN_HALF, 'نیم سکه غیربانکی'),
-        (PRODUCT_CODE_COIN_QUARTER, 'ربع سکه غیربانکی'),
+        (PRODUCT_CODE_COIN_FULL, '🪙 سکه غیربانکی (تمام)'),
+        (PRODUCT_CODE_COIN_HALF, '🪙 نیم سکه غیربانکی'),
+        (PRODUCT_CODE_COIN_QUARTER, '🪙 ربع سکه غیربانکی'),
         
         # Gold
-        (PRODUCT_CODE_GOLD_ABSHODEH, 'طلای آبشده'),
+        (PRODUCT_CODE_GOLD_ABSHODEH, '✨ طلای آبشده (18 عیار)'),
     ]
     
     product_code = models.CharField(
@@ -121,8 +123,8 @@ class Product(models.Model):
         decimal_places=4,
         default=Decimal('1'),
         validators=[MinValueValidator(Decimal('0.0001'))],
-        verbose_name="وزن واحد (گرم)",
-        help_text="وزن یک واحد محصول به گرم - برای طلا و دلار = 1، برای سکه = 8.133 یا به تناسب نوع سکه"
+        verbose_name="ضریب واحد",
+        help_text="ضریب محاسبه قیمت - معمولاً = 1 (سکه‌ها واحدی هستند، ارزها واحدی، طلا گرمی). فقط در موارد خاص تغییر دهید"
     )
     
     # Calculated prices (auto-updated from API + margins)
@@ -191,12 +193,20 @@ class Product(models.Model):
         Calculate buy and sell prices from a base market price.
         
         Args:
-            base_price: The base price from API (per gram or unit)
+            base_price: The base price from API (per unit: coin, currency) or per gram (gold)
             
         Returns:
             Tuple of (buy_price, sell_price) calculated with margins
+            
+        Note:
+            - For COINS: API returns price per coin → weight_grams should be 1
+            - For CURRENCIES: API returns price per unit → weight_grams should be 1  
+            - For GOLD: API returns price per gram → weight_grams = 1 (sold by gram)
+            
+            The weight_grams field is kept at 1 for all products in this system.
+            If you need gram-weight for reference, store it in a separate field.
         """
-        # For products with weight > 1 gram (like coins), multiply base by weight
+        # Multiply base price by weight (usually 1 for all products)
         adjusted_base = base_price * self.weight_grams
         
         buy_price = (adjusted_base - self.buy_margin).quantize(Decimal('1'))
@@ -209,7 +219,10 @@ class Product(models.Model):
         Update prices based on API base price and configured margins.
         
         Args:
-            api_base_price: Base price from API (per gram)
+            api_base_price: Base price from API
+                - For coins: price per coin
+                - For currencies: price per unit
+                - For gold: price per gram
         """
         self.base_price_api = api_base_price
         self.buy_price, self.sell_price = self.calculate_prices_from_base(api_base_price)
@@ -697,3 +710,105 @@ class WithdrawRequest(models.Model):
     def get_status_display(self) -> str:
         """Get display value for status field (Django auto-generated method stub for type checking)."""
         return cast(str, dict(self.WithdrawStatus.choices).get(self.status, self.status))
+
+
+class PriceHistory(models.Model):
+    """
+    Historical price tracking for products.
+    
+    Stores price snapshots for trend analysis and charting.
+    """
+    
+    # Type annotations for auto-generated Django fields
+    id: int
+    
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='price_history',
+        verbose_name="محصول",
+        help_text="محصول مربوطه"
+    )
+    
+    base_price_api = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="قیمت پایه API",
+        help_text="قیمت دریافتی از API"
+    )
+    
+    buy_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="قیمت خرید",
+        help_text="قیمت خرید از مشتری"
+    )
+    
+    sell_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="قیمت فروش",
+        help_text="قیمت فروش به مشتری"
+    )
+    
+    buy_margin = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="مارجین خرید",
+        help_text="مارجین خرید در زمان ثبت"
+    )
+    
+    sell_margin = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="مارجین فروش",
+        help_text="مارجین فروش در زمان ثبت"
+    )
+    
+    recorded_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="زمان ثبت",
+        help_text="زمان ثبت این قیمت"
+    )
+    
+    class Meta:
+        verbose_name = "تاریخچه قیمت"
+        verbose_name_plural = "تاریخچه قیمت‌ها"
+        ordering = ['-recorded_at']
+        indexes = [
+            models.Index(fields=['product', '-recorded_at']),
+            models.Index(fields=['-recorded_at']),
+        ]
+    
+    def __str__(self) -> str:
+        """Return string representation of price history."""
+        from django.utils import timezone
+        return f"{self.product.name} - {self.recorded_at.strftime('%Y-%m-%d %H:%M')}"
+    
+    def get_price_change_from_previous(self) -> Optional[tuple[Decimal, Decimal]]:
+        """
+        Calculate price change from previous record.
+        
+        Returns:
+            Tuple of (buy_price_change_pct, sell_price_change_pct) or None
+        """
+        previous = PriceHistory.objects.filter(
+            product=self.product,
+            recorded_at__lt=self.recorded_at
+        ).order_by('-recorded_at').first()
+        
+        if not previous:
+            return None
+        
+        if previous.buy_price > 0:
+            buy_change = ((self.buy_price - previous.buy_price) / previous.buy_price) * 100
+        else:
+            buy_change = Decimal('0')
+        
+        if previous.sell_price > 0:
+            sell_change = ((self.sell_price - previous.sell_price) / previous.sell_price) * 100
+        else:
+            sell_change = Decimal('0')
+        
+        return (buy_change, sell_change)

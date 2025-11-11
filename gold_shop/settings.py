@@ -85,7 +85,11 @@ TEMPLATES = [
         },
     },
 ]
-
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+    }
+}
 WSGI_APPLICATION = 'gold_shop.wsgi.application'
 
 # Database (force SQLite regardless of DATABASE_URL)

@@ -10,7 +10,6 @@ from django.core.management.base import BaseCommand
 from trading.services import TradingService
 from trading.models import Product
 from trading.price_providers import get_active_provider
-from trading.price_calculator import PriceCalculator
 import logging
 
 logger = logging.getLogger(__name__)
