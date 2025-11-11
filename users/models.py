@@ -247,6 +247,48 @@ class Profile(models.Model):
             return self.get_available_dollar_balance()
         else:
             return Decimal('0')
+    
+    def get_total_trade_volume(self) -> Decimal:
+        """
+        Calculate total trade volume (sum of all completed orders).
+        
+        Returns:
+            Total trade volume in Rial
+        """
+        from django.db.models import Sum
+        from trading.models import Order
+        
+        total = self.orders.filter(
+            status=Order.OrderStatus.COMPLETED
+        ).aggregate(
+            total=Sum('total_amount')
+        )['total']
+        
+        return total or Decimal('0')
+    
+    def get_user_tier(self) -> dict:
+        """
+        Get user tier based on total trade volume.
+        
+        Returns:
+            Dictionary with tier information (Bronze/Silver/Gold/Platinum)
+        """
+        from trading.utils import get_user_tier
+        
+        total_volume = self.get_total_trade_volume()
+        return get_user_tier(total_volume)
+    
+    def get_tier_badge_html(self) -> str:
+        """
+        Get HTML badge for user tier.
+        
+        Returns:
+            HTML string for tier badge
+        """
+        from trading.utils import get_tier_badge_html
+        
+        tier_info = self.get_user_tier()
+        return get_tier_badge_html(tier_info)
 
 
 class BankAccount(models.Model):

@@ -21,9 +21,16 @@ from rangefilter.filters import DateRangeFilter, NumericRangeFilter  # type: ign
 from import_export import resources, fields  # type: ignore[import-untyped]
 from import_export.admin import ImportExportModelAdmin, ExportActionMixin  # type: ignore[import-untyped]
 
-from .models import Product, Order, Transaction, WithdrawRequest
+from .models import Product, Order, Transaction, WithdrawRequest, PriceHistory
 from users.models import Profile
 from .reporting import BusinessReportService
+from .utils import (
+    to_persian_numbers, 
+    format_price_persian, 
+    get_tier_badge_html,
+    format_percentage_change,
+    get_trend_color
+)
 
 
 # ============================================
@@ -129,9 +136,11 @@ class ProductAdmin(ImportExportModelAdmin):
         'margin_display',
         'calculated_buy_price',
         'calculated_sell_price',
+        'price_trend_24h',
         'base_api_price_display',
         'is_active',
         'order_count',
+        'total_volume_30d',
         'updated_at'
     )
     
@@ -316,6 +325,53 @@ class ProductAdmin(ImportExportModelAdmin):
             '</div>'
         )
     calculated_price_preview.short_description = '📊 پیش‌نمای محاسبه'
+    
+    def price_trend_24h(self, obj: Product) -> str:
+        """Show price trend for last 24 hours."""
+        from django.utils import timezone
+        
+        # Get price from 24 hours ago
+        time_24h_ago = timezone.now() - timedelta(hours=24)
+        old_price = PriceHistory.objects.filter(
+            product=obj,
+            recorded_at__lte=time_24h_ago
+        ).order_by('-recorded_at').first()
+        
+        if not old_price:
+            return format_html('<span style="color: #999;">—</span>')
+        
+        # Calculate change
+        change_pct, trend = format_percentage_change(obj.sell_price, old_price.sell_price)
+        color = get_trend_color(obj.sell_price - old_price.sell_price)
+        
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{} {}</span>',
+            color,
+            trend,
+            change_pct
+        )
+    price_trend_24h.short_description = '📈 روند ۲۴ ساعت'
+    
+    def total_volume_30d(self, obj: Product) -> str:
+        """Show total trade volume for last 30 days."""
+        from django.utils import timezone
+        
+        time_30d_ago = timezone.now() - timedelta(days=30)
+        volume = obj.orders.filter(
+            status=Order.OrderStatus.COMPLETED,
+            created_at__gte=time_30d_ago
+        ).aggregate(
+            total=Sum('total_amount')
+        )['total'] or Decimal('0')
+        
+        # Format with Persian numbers
+        volume_formatted = format_price_persian(volume, include_currency=False)
+        
+        return format_html(
+            '<span style="font-weight: bold;">{} میلیون</span>',
+            to_persian_numbers(f"{float(volume / 1000000):.1f}")
+        )
+    total_volume_30d.short_description = '💰 حجم معاملات ۳۰ روز'
     
 
 
@@ -539,6 +595,7 @@ class TransactionAdmin(ImportExportModelAdmin):
         'status_badge',
         'receipt_preview',
         'bank_account_display',
+        'quick_actions',
         'created_at'
     )
     
@@ -655,6 +712,29 @@ class TransactionAdmin(ImportExportModelAdmin):
             return f"{obj.bank_account.bank_name} - {obj.bank_account.get_masked_account_number()}"
         return '-'
     bank_account_display.short_description = 'حساب بانکی'
+    
+    def quick_actions(self, obj: Transaction) -> str:
+        """Display quick action buttons for pending transactions."""
+        if obj.status == Transaction.TransactionStatus.PENDING and obj.transaction_type == Transaction.TransactionType.DEPOSIT:
+            approve_url = reverse('admin:trading_transaction_changelist')
+            return format_html(
+                '<div style="white-space: nowrap;">'
+                '<button class="button" style="background-color: #28a745; color: white; padding: 3px 10px; border-radius: 4px; border: none; cursor: pointer; margin-right: 3px;" '
+                'onclick="if(confirm(\'آیا از تأیید این تراکنش مطمئن هستید؟\')) {{ '
+                'fetch(\'/admin/trading/transaction/{}/change/\', {{method: \'POST\', headers: {{\'X-CSRFToken\': document.querySelector(\'[name=csrfmiddlewaretoken]\').value}}, '
+                'body: new URLSearchParams({{\'action\': \'approve\'}}) }}).then(() => location.reload()); '
+                '}}">✓ تأیید</button>'
+                '<button class="button" style="background-color: #dc3545; color: white; padding: 3px 10px; border-radius: 4px; border: none; cursor: pointer;" '
+                'onclick="if(confirm(\'آیا از رد این تراکنش مطمئن هستید؟\')) {{ '
+                'fetch(\'/admin/trading/transaction/{}/change/\', {{method: \'POST\', headers: {{\'X-CSRFToken\': document.querySelector(\'[name=csrfmiddlewaretoken]\').value}}, '
+                'body: new URLSearchParams({{\'action\': \'reject\'}}) }}).then(() => location.reload()); '
+                '}}">✗ رد</button>'
+                '</div>',
+                obj.id,
+                obj.id
+            )
+        return format_html('<span style="color: #999;">—</span>')
+    quick_actions.short_description = '⚡ عملیات سریع'
     
     def save_model(self, request, obj, form, change):
         """
@@ -789,6 +869,7 @@ class WithdrawRequestAdmin(ImportExportModelAdmin):
         'status_badge',
         'bank_account_display',
         'user_balance_check',
+        'quick_actions',
         'created_at'
     )
     
@@ -891,6 +972,20 @@ class WithdrawRequestAdmin(ImportExportModelAdmin):
         return f"{obj.bank_account.bank_name} - {obj.bank_account.get_masked_account_number()}"
     bank_account_display.short_description = 'حساب بانکی'
     
+    def quick_actions(self, obj: WithdrawRequest) -> str:
+        """Display quick action buttons for pending withdrawal requests."""
+        if obj.status == 'PENDING':
+            return format_html(
+                '<div style="white-space: nowrap;">'
+                '<button class="button" style="background-color: #28a745; color: white; padding: 3px 10px; border-radius: 4px; border: none; cursor: pointer; margin-right: 3px;" '
+                'title="پردازش و تکمیل برداشت">✓ پردازش</button>'
+                '<button class="button" style="background-color: #dc3545; color: white; padding: 3px 10px; border-radius: 4px; border: none; cursor: pointer;" '
+                'title="رد درخواست برداشت">✗ رد</button>'
+                '</div>'
+            )
+        return format_html('<span style="color: #999;">—</span>')
+    quick_actions.short_description = '⚡ عملیات سریع'
+    
     @db_transaction.atomic
     def process_withdrawals(self, request, queryset):
         """Process pending withdrawal requests and deduct balances."""
@@ -979,6 +1074,97 @@ class WithdrawRequestAdmin(ImportExportModelAdmin):
             f'{updated} درخواست برداشت لغو شد.'
         )
     cancel_withdrawals.short_description = 'لغو برداشت‌های انتخاب شده'
+
+
+@admin.register(PriceHistory)
+class PriceHistoryAdmin(admin.ModelAdmin):
+    """
+    Admin interface for PriceHistory model.
+    
+    View-only interface for price history tracking.
+    """
+    
+    list_display = (
+        'id',
+        'product',
+        'buy_price_display',
+        'sell_price_display',
+        'price_change',
+        'recorded_at'
+    )
+    
+    list_filter = (
+        'product',
+        ('recorded_at', DateRangeFilter),
+    )
+    
+    search_fields = ('product__name',)
+    
+    readonly_fields = (
+        'product',
+        'base_price_api',
+        'buy_price',
+        'sell_price',
+        'buy_margin',
+        'sell_margin',
+        'recorded_at'
+    )
+    
+    date_hierarchy = 'recorded_at'
+    
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """Disable adding price history manually."""
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        """Only superusers can delete price history."""
+        return bool(request.user and getattr(request.user, 'is_superuser', False))
+    
+    def buy_price_display(self, obj: PriceHistory) -> str:
+        """Display buy price."""
+        return format_html(
+            '<span style="color: #2e7d32; font-weight: bold;">{:,.0f} ریال</span>',
+            obj.buy_price
+        )
+    buy_price_display.short_description = 'قیمت خرید'
+    buy_price_display.admin_order_field = 'buy_price'
+    
+    def sell_price_display(self, obj: PriceHistory) -> str:
+        """Display sell price."""
+        return format_html(
+            '<span style="color: #c62828; font-weight: bold;">{:,.0f} ریال</span>',
+            obj.sell_price
+        )
+    sell_price_display.short_description = 'قیمت فروش'
+    sell_price_display.admin_order_field = 'sell_price'
+    
+    def price_change(self, obj: PriceHistory) -> str:
+        """Display price change from previous."""
+        change = obj.get_price_change_from_previous()
+        
+        if not change:
+            return format_html('<span style="color: #999;">—</span>')
+        
+        buy_change, sell_change = change
+        avg_change = (buy_change + sell_change) / 2
+        
+        if avg_change > 0:
+            color = '#28a745'
+            emoji = '📈'
+        elif avg_change < 0:
+            color = '#dc3545'
+            emoji = '📉'
+        else:
+            color = '#6c757d'
+            emoji = '➡️'
+        
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{} {:+.2f}%</span>',
+            color,
+            emoji,
+            avg_change
+        )
+    price_change.short_description = 'تغییر قیمت'
 
 
 # ============================================
