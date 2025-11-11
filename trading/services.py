@@ -326,6 +326,10 @@ class OrderService:
             f"by user {profile.get_display_name()}"
         )
         
+        # Send notification for high-value transactions
+        from .notifications import AdminNotificationService
+        AdminNotificationService.notify_high_value_transaction(order)
+        
         return order
     
     @staticmethod

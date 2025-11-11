@@ -668,3 +668,105 @@ class WithdrawRequest(models.Model):
     def get_status_display(self) -> str:
         """Get display value for status field (Django auto-generated method stub for type checking)."""
         return cast(str, dict(self.WithdrawStatus.choices).get(self.status, self.status))
+
+
+class PriceHistory(models.Model):
+    """
+    Historical price tracking for products.
+    
+    Stores price snapshots for trend analysis and charting.
+    """
+    
+    # Type annotations for auto-generated Django fields
+    id: int
+    
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='price_history',
+        verbose_name="محصول",
+        help_text="محصول مربوطه"
+    )
+    
+    base_price_api = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="قیمت پایه API",
+        help_text="قیمت دریافتی از API"
+    )
+    
+    buy_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="قیمت خرید",
+        help_text="قیمت خرید از مشتری"
+    )
+    
+    sell_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="قیمت فروش",
+        help_text="قیمت فروش به مشتری"
+    )
+    
+    buy_margin = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="مارجین خرید",
+        help_text="مارجین خرید در زمان ثبت"
+    )
+    
+    sell_margin = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        verbose_name="مارجین فروش",
+        help_text="مارجین فروش در زمان ثبت"
+    )
+    
+    recorded_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="زمان ثبت",
+        help_text="زمان ثبت این قیمت"
+    )
+    
+    class Meta:
+        verbose_name = "تاریخچه قیمت"
+        verbose_name_plural = "تاریخچه قیمت‌ها"
+        ordering = ['-recorded_at']
+        indexes = [
+            models.Index(fields=['product', '-recorded_at']),
+            models.Index(fields=['-recorded_at']),
+        ]
+    
+    def __str__(self) -> str:
+        """Return string representation of price history."""
+        from django.utils import timezone
+        return f"{self.product.name} - {self.recorded_at.strftime('%Y-%m-%d %H:%M')}"
+    
+    def get_price_change_from_previous(self) -> Optional[tuple[Decimal, Decimal]]:
+        """
+        Calculate price change from previous record.
+        
+        Returns:
+            Tuple of (buy_price_change_pct, sell_price_change_pct) or None
+        """
+        previous = PriceHistory.objects.filter(
+            product=self.product,
+            recorded_at__lt=self.recorded_at
+        ).order_by('-recorded_at').first()
+        
+        if not previous:
+            return None
+        
+        if previous.buy_price > 0:
+            buy_change = ((self.buy_price - previous.buy_price) / previous.buy_price) * 100
+        else:
+            buy_change = Decimal('0')
+        
+        if previous.sell_price > 0:
+            sell_change = ((self.sell_price - previous.sell_price) / previous.sell_price) * 100
+        else:
+            sell_change = Decimal('0')
+        
+        return (buy_change, sell_change)

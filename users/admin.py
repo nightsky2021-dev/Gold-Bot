@@ -107,11 +107,13 @@ class ProfileAdmin(ImportExportModelAdmin):
     list_display = (
         'get_user_display',
         'phone_number',
+        'user_tier_badge',
         'telegram_username',
         'is_approved',
         'formatted_rial_balance',
         'formatted_gold_balance',
         'total_orders_count',
+        'total_trade_volume',
         'view_user_details',
         'created_at'
     )
@@ -182,6 +184,20 @@ class ProfileAdmin(ImportExportModelAdmin):
             return full_name
         return obj.user.username
     get_user_display.short_description = 'نام کاربر'
+    
+    def user_tier_badge(self, obj: Profile) -> str:
+        """Display user tier badge."""
+        return obj.get_tier_badge_html()
+    user_tier_badge.short_description = '🏆 سطح کاربر'
+    
+    def total_trade_volume(self, obj: Profile) -> str:
+        """Display total trade volume."""
+        volume = obj.get_total_trade_volume()
+        return format_html(
+            '<span style="font-weight: bold; color: #007bff;">{:,.0f} میلیون</span>',
+            volume / 1000000
+        )
+    total_trade_volume.short_description = '💰 حجم معاملات'
     
     def approval_status_badge(self, obj: Profile) -> str:
         """Display approval status with badge."""
