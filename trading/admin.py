@@ -21,7 +21,7 @@ from rangefilter.filters import DateRangeFilter, NumericRangeFilter  # type: ign
 from import_export import resources, fields  # type: ignore[import-untyped]
 from import_export.admin import ImportExportModelAdmin, ExportActionMixin  # type: ignore[import-untyped]
 
-from .models import Product, Order, Transaction, WithdrawRequest
+from .models import Product, Order, Transaction, WithdrawRequest, PortalAccessToken
 from users.models import Profile
 from .reporting import BusinessReportService
 
@@ -1225,3 +1225,95 @@ class BusinessReportingAdmin(admin.ModelAdmin):
             'admin/trading/reporting_dashboard.html',
             context
         )
+
+
+@admin.register(PortalAccessToken)
+class PortalAccessTokenAdmin(admin.ModelAdmin):
+    """
+    Admin interface for PortalAccessToken model.
+    
+    Allows admins to view and manage portal access tokens.
+    """
+    
+    list_display = (
+        'id',
+        'profile',
+        'token_preview',
+        'is_used',
+        'created_at',
+        'expires_at',
+        'is_valid_display',
+        'last_used_at',
+    )
+    
+    list_filter = (
+        'is_used',
+        ('created_at', DateRangeFilter),
+        ('expires_at', DateRangeFilter),
+    )
+    
+    search_fields = (
+        'token',
+        'profile__user__username',
+        'profile__user__first_name',
+        'profile__user__last_name',
+        'profile__phone_number',
+    )
+    
+    readonly_fields = (
+        'token',
+        'profile',
+        'is_used',
+        'created_at',
+        'expires_at',
+        'last_used_at',
+        'ip_address',
+        'user_agent',
+        'is_valid_display',
+    )
+    
+    fieldsets = (
+        ('اطلاعات کاربر', {
+            'fields': ('profile',)
+        }),
+        ('اطلاعات توکن', {
+            'fields': ('token', 'is_used', 'is_valid_display')
+        }),
+        ('اطلاعات زمانی', {
+            'fields': ('created_at', 'expires_at', 'last_used_at')
+        }),
+        ('اطلاعات دسترسی', {
+            'fields': ('ip_address', 'user_agent'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    date_hierarchy = 'created_at'
+    
+    def token_preview(self, obj):
+        """Show preview of token."""
+        return format_html(
+            '<code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px;">{}</code>',
+            obj.token[:16] + '...'
+        )
+    token_preview.short_description = 'توکن'
+    
+    def is_valid_display(self, obj):
+        """Show validity status."""
+        if obj.is_valid():
+            return format_html(
+                '<span style="color: #2e7d32; font-weight: bold;">✅ معتبر</span>'
+            )
+        else:
+            return format_html(
+                '<span style="color: #c62828; font-weight: bold;">❌ نامعتبر</span>'
+            )
+    is_valid_display.short_description = 'وضعیت'
+    
+    def has_add_permission(self, request):
+        """Disable manual token creation in admin."""
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        """Make tokens read-only."""
+        return False

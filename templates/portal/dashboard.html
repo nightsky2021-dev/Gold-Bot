@@ -1,0 +1,169 @@
+{% extends 'portal/base.html' %}
+{% load static %}
+
+{% block title %}داشبورد{% endblock %}
+
+{% block content %}
+<h1 class="page-title">📊 داشبورد</h1>
+
+<!-- Stats Grid -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">ارزش کل پورتفولیو</div>
+        <div class="stat-value" data-format-number>{{ total_portfolio_value|floatformat:0 }}</div>
+        <div class="stat-change">ریال</div>
+    </div>
+    
+    <div class="stat-card secondary">
+        <div class="stat-label">موجودی ریالی</div>
+        <div class="stat-value" data-format-number>{{ rial_balance|floatformat:0 }}</div>
+        <div class="stat-change">ریال</div>
+    </div>
+    
+    <div class="stat-card {% if today_pl >= 0 %}accent{% else %}danger{% endif %}">
+        <div class="stat-label">سود/زیان امروز</div>
+        <div class="stat-value" data-format-number>{{ today_pl|floatformat:0 }}</div>
+        <div class="stat-change">ریال</div>
+    </div>
+    
+    <div class="stat-card accent">
+        <div class="stat-label">تعداد معاملات</div>
+        <div class="stat-value">{{ total_orders }}</div>
+        <div class="stat-change">معامله</div>
+    </div>
+</div>
+
+<!-- Portfolio Holdings -->
+{% if portfolio_items %}
+<div class="card">
+    <div class="card-header">
+        💼 دارایی‌های شما
+        <button id="refresh-prices-btn" class="btn btn-small btn-secondary">🔄 بروزرسانی قیمت‌ها</button>
+    </div>
+    <div class="card-body">
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>محصول</th>
+                        <th>موجودی</th>
+                        <th>قیمت فعلی</th>
+                        <th>ارزش (ریال)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in portfolio_items %}
+                    <tr>
+                        <td>{{ item.product.name }}</td>
+                        <td>{{ item.balance }} {{ item.unit }}</td>
+                        <td id="sell-price-{{ item.product.id }}" data-format-number>{{ item.current_price|floatformat:0 }}</td>
+                        <td data-format-number>{{ item.value|floatformat:0 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div id="prices-updated-at" class="text-secondary font-small mt-2">
+            آخرین بروزرسانی: اکنون
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Performance Summary -->
+<div class="card">
+    <div class="card-header">📈 عملکرد کلی</div>
+    <div class="card-body">
+        <div class="pl-summary">
+            <div class="pl-item">
+                <div class="pl-item-label">کل سرمایه‌گذاری</div>
+                <div class="pl-item-value" data-format-number>{{ total_invested|floatformat:0 }}</div>
+            </div>
+            <div class="pl-item">
+                <div class="pl-item-label">سود/زیان خالص</div>
+                <div class="pl-item-value {% if net_pl >= 0 %}pl-positive{% else %}pl-negative{% endif %}" data-format-number>
+                    {{ net_pl|floatformat:0 }}
+                </div>
+            </div>
+            <div class="pl-item">
+                <div class="pl-item-label">بازده (ROI)</div>
+                <div class="pl-item-value {% if roi_percentage >= 0 %}pl-positive{% else %}pl-negative{% endif %}">
+                    {{ roi_percentage|floatformat:2 }}%
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Transactions -->
+<div class="card">
+    <div class="card-header">
+        🕐 آخرین معاملات
+        <a href="{% url 'trading:portal_transactions' %}" class="btn btn-small btn-outline">مشاهده همه</a>
+    </div>
+    <div class="card-body">
+        {% if recent_orders %}
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>تاریخ</th>
+                        <th>نوع</th>
+                        <th>محصول</th>
+                        <th>مقدار</th>
+                        <th>مبلغ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in recent_orders %}
+                    <tr>
+                        <td>{{ order.created_at|date:"Y/m/d H:i" }}</td>
+                        <td>
+                            <span class="badge {% if order.order_type == 'BUY' %}badge-success{% else %}badge-warning{% endif %}">
+                                {{ order.get_order_type_display }}
+                            </span>
+                        </td>
+                        <td>{{ order.product.name }}</td>
+                        <td>{{ order.quantity_grams|floatformat:4 }}</td>
+                        <td data-format-number>{{ order.total_amount|floatformat:0 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Mobile Cards -->
+        {% for order in recent_orders %}
+        <div class="transaction-card">
+            <div class="transaction-header">
+                <div class="transaction-product">{{ order.product.name }}</div>
+                <div class="transaction-type {% if order.order_type == 'BUY' %}buy{% else %}sell{% endif %}">
+                    {{ order.get_order_type_display }}
+                </div>
+            </div>
+            <div class="transaction-details">
+                <div class="transaction-detail">
+                    <div class="transaction-detail-label">تاریخ</div>
+                    <div class="transaction-detail-value">{{ order.created_at|date:"Y/m/d" }}</div>
+                </div>
+                <div class="transaction-detail">
+                    <div class="transaction-detail-label">مقدار</div>
+                    <div class="transaction-detail-value">{{ order.quantity_grams|floatformat:4 }}</div>
+                </div>
+                <div class="transaction-detail">
+                    <div class="transaction-detail-label">مبلغ</div>
+                    <div class="transaction-detail-value" data-format-number>{{ order.total_amount|floatformat:0 }}</div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <div class="empty-state-message">هنوز معامله‌ای ثبت نشده است</div>
+            <div class="empty-state-hint">از ربات تلگرام معامله جدید انجام دهید</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
