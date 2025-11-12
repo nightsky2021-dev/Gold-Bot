@@ -1,0 +1,203 @@
+{% extends 'portal/base.html' %}
+{% load static %}
+
+{% block title %}صورتحساب{% endblock %}
+
+{% block content %}
+<h1 class="page-title">📋 صورتحساب</h1>
+
+<!-- Export Button -->
+<div class="mb-3 text-center">
+    <button id="export-pdf-btn" class="btn btn-export">📄 دریافت صورتحساب PDF</button>
+</div>
+
+<!-- Account Overview -->
+<div class="card">
+    <div class="card-header">💼 خلاصه حساب</div>
+    <div class="card-body">
+        <div class="pl-summary">
+            <div class="pl-item">
+                <div class="pl-item-label">موجودی ریالی</div>
+                <div class="pl-item-value" data-format-number>{{ rial_balance.total|floatformat:0 }}</div>
+            </div>
+            <div class="pl-item">
+                <div class="pl-item-label">موجودی آزاد</div>
+                <div class="pl-item-value text-success" data-format-number>{{ rial_balance.available|floatformat:0 }}</div>
+            </div>
+            <div class="pl-item">
+                <div class="pl-item-label">موجودی مسدود</div>
+                <div class="pl-item-value text-warning" data-format-number>{{ rial_balance.frozen|floatformat:0 }}</div>
+            </div>
+        </div>
+        <p class="text-secondary font-small mt-2">
+            آخرین بروزرسانی: {{ updated_at|date:"Y/m/d H:i" }}
+        </p>
+    </div>
+</div>
+
+<!-- Product Balances -->
+<div class="card">
+    <div class="card-header">💎 موجودی دارایی‌ها</div>
+    <div class="card-body">
+        {% if product_balances %}
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>محصول</th>
+                        <th>موجودی</th>
+                        <th>قیمت فعلی</th>
+                        <th>ارزش (ریال)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for balance in product_balances %}
+                    <tr>
+                        <td>{{ balance.product.name }}</td>
+                        <td>{{ balance.balance }} {{ balance.unit }}</td>
+                        <td data-format-number>{{ balance.current_price|floatformat:0 }}</td>
+                        <td data-format-number>{{ balance.value_in_rial|floatformat:0 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">💎</div>
+            <div class="empty-state-message">موجودی دارایی ندارید</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Cash Flow -->
+<div class="card">
+    <div class="card-header">💵 جریان نقدی</div>
+    <div class="card-body">
+        <div class="pl-summary">
+            <div class="pl-item">
+                <div class="pl-item-label">کل واریزها</div>
+                <div class="pl-item-value pl-positive" data-format-number>{{ deposits|floatformat:0 }}</div>
+            </div>
+            <div class="pl-item">
+                <div class="pl-item-label">کل برداشت‌ها</div>
+                <div class="pl-item-value pl-negative" data-format-number>{{ withdrawals|floatformat:0 }}</div>
+            </div>
+            <div class="pl-item">
+                <div class="pl-item-label">جریان نقدی خالص</div>
+                <div class="pl-item-value {% if net_cash_flow >= 0 %}pl-positive{% else %}pl-negative{% endif %}" data-format-number>
+                    {{ net_cash_flow|floatformat:0 }}
+                </div>
+            </div>
+            <div class="pl-item">
+                <div class="pl-item-label">وضعیت</div>
+                <div class="pl-item-value {% if is_creditor %}pl-positive{% else %}pl-negative{% endif %}">
+                    {% if is_creditor %}بستانکار{% else %}بدهکار{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Transaction Statistics -->
+<div class="card">
+    <div class="card-header">📊 آمار معاملات</div>
+    <div class="card-body">
+        <div class="table-container">
+            <table class="table">
+                <tbody>
+                    <tr>
+                        <td><strong>تعداد کل معاملات</strong></td>
+                        <td>{{ total_transactions }} معامله</td>
+                    </tr>
+                    <tr>
+                        <td><strong>تعداد خریدها</strong></td>
+                        <td>{{ total_buy_orders.count }} معامله ({{ total_buy_orders.total|floatformat:0 }} ریال)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>تعداد فروش‌ها</strong></td>
+                        <td>{{ total_sell_orders.count }} معامله ({{ total_sell_orders.total|floatformat:0 }} ریال)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>محصول پرمعامله</strong></td>
+                        <td>{{ most_traded_product }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>اولین معامله</strong></td>
+                        <td>{% if first_transaction_date %}{{ first_transaction_date|date:"Y/m/d" }}{% else %}ندارد{% endif %}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>آخرین معامله</strong></td>
+                        <td>{% if last_transaction_date %}{{ last_transaction_date|date:"Y/m/d" }}{% else %}ندارد{% endif %}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Pending Items -->
+{% if pending_deposits or pending_withdrawals %}
+<div class="card">
+    <div class="card-header">⏳ موارد در انتظار</div>
+    <div class="card-body">
+        {% if pending_deposits %}
+        <h4 class="mb-2">واریزهای در انتظار تأیید</h4>
+        <div class="table-container mb-3">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>شماره</th>
+                        <th>مقدار</th>
+                        <th>ارز</th>
+                        <th>تاریخ</th>
+                        <th>وضعیت</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for deposit in pending_deposits %}
+                    <tr>
+                        <td>#{{ deposit.id }}</td>
+                        <td data-format-number>{{ deposit.amount|floatformat:0 }}</td>
+                        <td>{{ deposit.get_currency_display }}</td>
+                        <td>{{ deposit.created_at|date:"Y/m/d H:i" }}</td>
+                        <td><span class="badge badge-warning">در انتظار</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+        
+        {% if pending_withdrawals %}
+        <h4 class="mb-2">برداشت‌های در انتظار</h4>
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>شماره</th>
+                        <th>مقدار</th>
+                        <th>ارز</th>
+                        <th>تاریخ</th>
+                        <th>وضعیت</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for withdrawal in pending_withdrawals %}
+                    <tr>
+                        <td>#{{ withdrawal.id }}</td>
+                        <td data-format-number>{{ withdrawal.amount|floatformat:0 }}</td>
+                        <td>{{ withdrawal.get_currency_display }}</td>
+                        <td>{{ withdrawal.created_at|date:"Y/m/d H:i" }}</td>
+                        <td><span class="badge badge-warning">{{ withdrawal.get_status_display }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

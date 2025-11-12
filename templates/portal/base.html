@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>{% block title %}پورتال معاملات{% endblock %} | سامانه معاملات طلای آنلاین</title>
+    
+    <!-- Preload fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    
+    <!-- CSS -->
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/portal.css' %}">
+    <link rel="stylesheet" href="{% static 'css/persian_fonts.css' %}">
+    
+    {% block extra_css %}{% endblock %}
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+</head>
+<body>
+    <!-- Header -->
+    <header class="portal-header">
+        <div class="header-content">
+            <div class="logo">
+                ✨ سامانه معاملات طلا
+            </div>
+            <div class="user-info">
+                {% if profile %}
+                <span class="user-greeting">سلام، {{ profile.get_display_name }}</span>
+                <a href="{% url 'trading:portal_logout' %}" class="btn-back-bot">خروج</a>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+    
+    <!-- Navigation -->
+    <nav class="portal-nav">
+        <ul class="nav-tabs">
+            <li>
+                <a href="{% url 'trading:portal_dashboard' %}" 
+                   class="{% if request.resolver_match.url_name == 'portal_dashboard' %}active{% endif %}">
+                    📊 داشبورد
+                </a>
+            </li>
+            <li>
+                <a href="{% url 'trading:portal_transactions' %}" 
+                   class="{% if request.resolver_match.url_name == 'portal_transactions' %}active{% endif %}">
+                    💳 تراکنش‌ها
+                </a>
+            </li>
+            <li>
+                <a href="{% url 'trading:portal_profitloss' %}" 
+                   class="{% if request.resolver_match.url_name == 'portal_profitloss' %}active{% endif %}">
+                    📈 سود و زیان
+                </a>
+            </li>
+            <li>
+                <a href="{% url 'trading:portal_statement' %}" 
+                   class="{% if request.resolver_match.url_name == 'portal_statement' %}active{% endif %}">
+                    📋 صورتحساب
+                </a>
+            </li>
+        </ul>
+    </nav>
+    
+    <!-- Main Content -->
+    <main class="portal-container">
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Footer -->
+    <footer class="portal-footer text-center mt-4 mb-4">
+        <p class="text-secondary font-small">
+            © 2024 سامانه معاملات طلای آنلاین | تمامی حقوق محفوظ است
+        </p>
+    </footer>
+    
+    <!-- JavaScript -->
+    <script src="{% static 'js/portal.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

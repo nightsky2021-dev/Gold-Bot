@@ -668,3 +668,96 @@ class WithdrawRequest(models.Model):
     def get_status_display(self) -> str:
         """Get display value for status field (Django auto-generated method stub for type checking)."""
         return cast(str, dict(self.WithdrawStatus.choices).get(self.status, self.status))
+
+
+class PortalAccessToken(models.Model):
+    """
+    Portal access token for secure web portal authentication from Telegram.
+    
+    Tokens are time-limited and can be configured as single-use or reusable.
+    """
+    
+    # Type annotations for auto-generated Django fields
+    id: int
+    
+    profile = models.ForeignKey(
+        Profile,
+        on_delete=models.CASCADE,
+        related_name='portal_tokens',
+        verbose_name="پروفایل کاربر",
+        help_text="کاربری که این توکن برای اوست"
+    )
+    
+    token = models.CharField(
+        max_length=64,
+        unique=True,
+        db_index=True,
+        verbose_name="توکن دسترسی",
+        help_text="توکن یکتای امن برای احراز هویت"
+    )
+    
+    is_used = models.BooleanField(
+        default=False,
+        verbose_name="استفاده شده",
+        help_text="آیا این توکن قبلاً استفاده شده است؟"
+    )
+    
+    expires_at = models.DateTimeField(
+        verbose_name="زمان انقضا",
+        help_text="زمان انقضای توکن"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="تاریخ ایجاد"
+    )
+    
+    last_used_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="آخرین استفاده",
+        help_text="زمان آخرین استفاده از توکن"
+    )
+    
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        verbose_name="آدرس IP",
+        help_text="آدرس IP که از این توکن استفاده کرده"
+    )
+    
+    user_agent = models.TextField(
+        blank=True,
+        verbose_name="User Agent",
+        help_text="اطلاعات مرورگر"
+    )
+
+    class Meta:
+        verbose_name = "توکن دسترسی پورتال"
+        verbose_name_plural = "توکن‌های دسترسی پورتال"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['token', 'expires_at']),
+            models.Index(fields=['profile', '-created_at']),
+        ]
+
+    def __str__(self) -> str:
+        """Return string representation of the token."""
+        return f"توکن {self.token[:8]}... - {self.profile.get_display_name()}"
+    
+    def is_valid(self) -> bool:
+        """Check if token is valid (not expired and not used)."""
+        from django.utils import timezone
+        return not self.is_used and self.expires_at > timezone.now()
+    
+    def mark_as_used(self, ip_address: Optional[str] = None, user_agent: str = "") -> None:
+        """Mark token as used."""
+        from django.utils import timezone
+        self.is_used = True
+        self.last_used_at = timezone.now()
+        if ip_address:
+            self.ip_address = ip_address
+        if user_agent:
+            self.user_agent = user_agent
+        self.save()

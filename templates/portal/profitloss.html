@@ -1,0 +1,172 @@
+{% extends 'portal/base.html' %}
+{% load static %}
+
+{% block title %}سود و زیان{% endblock %}
+
+{% block content %}
+<h1 class="page-title">📈 سود و زیان</h1>
+
+<!-- Date Filter -->
+<div class="filter-bar">
+    <form id="filter-form" method="get">
+        <div class="filter-row">
+            <div class="filter-group">
+                <label class="filter-label" for="filter-date-range">بازه زمانی</label>
+                <select id="filter-date-range" name="date_range" class="filter-select">
+                    <option value="all" {% if selected_date_range == 'all' %}selected{% endif %}>همه زمان‌ها</option>
+                    <option value="today" {% if selected_date_range == 'today' %}selected{% endif %}>امروز</option>
+                    <option value="7d" {% if selected_date_range == '7d' %}selected{% endif %}>7 روز گذشته</option>
+                    <option value="30d" {% if selected_date_range == '30d' %}selected{% endif %}>30 روز گذشته</option>
+                    <option value="3m" {% if selected_date_range == '3m' %}selected{% endif %}>3 ماه گذشته</option>
+                    <option value="6m" {% if selected_date_range == '6m' %}selected{% endif %}>6 ماه گذشته</option>
+                    <option value="1y" {% if selected_date_range == '1y' %}selected{% endif %}>1 سال گذشته</option>
+                </select>
+            </div>
+            <div class="filter-buttons">
+                <button type="button" id="apply-filters-btn" class="btn btn-primary">اعمال فیلتر</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Portfolio Summary -->
+<div class="card">
+    <div class="card-header">📊 خلاصه پورتفولیو</div>
+    <div class="card-body">
+        <div class="pl-summary">
+            <div class="pl-item">
+                <div class="pl-item-label">کل سرمایه‌گذاری</div>
+                <div class="pl-item-value" data-format-number>{{ total_invested|floatformat:0 }}</div>
+            </div>
+            <div class="pl-item">
+                <div class="pl-item-label">ارزش فعلی پورتفولیو</div>
+                <div class="pl-item-value" data-format-number>{{ current_portfolio_value|floatformat:0 }}</div>
+            </div>
+            <div class="pl-item">
+                <div class="pl-item-label">سود/زیان محقق شده</div>
+                <div class="pl-item-value {% if realized_pl >= 0 %}pl-positive{% else %}pl-negative{% endif %}" data-format-number>
+                    {{ realized_pl|floatformat:0 }}
+                </div>
+            </div>
+            <div class="pl-item">
+                <div class="pl-item-label">سود/زیان محقق نشده</div>
+                <div class="pl-item-value {% if unrealized_pl >= 0 %}pl-positive{% else %}pl-negative{% endif %}" data-format-number>
+                    {{ unrealized_pl|floatformat:0 }}
+                </div>
+            </div>
+            <div class="pl-item">
+                <div class="pl-item-label">سود/زیان کل</div>
+                <div class="pl-item-value {% if total_pl >= 0 %}pl-positive{% else %}pl-negative{% endif %}" data-format-number>
+                    {{ total_pl|floatformat:0 }}
+                </div>
+            </div>
+            <div class="pl-item">
+                <div class="pl-item-label">بازده (ROI)</div>
+                <div class="pl-item-value {% if roi_percentage >= 0 %}pl-positive{% else %}pl-negative{% endif %}">
+                    {{ roi_percentage|floatformat:2 }}%
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Per-Product P/L -->
+<div class="card">
+    <div class="card-header">💎 سود و زیان به تفکیک محصول</div>
+    <div class="card-body">
+        {% if products %}
+        {% for pl in products %}
+        <div class="card pl-card {% if pl.total_pl >= 0 %}positive{% else %}negative{% endif %}">
+            <div class="card-header">
+                <strong>{{ pl.product.name }}</strong>
+                <span class="{% if pl.total_pl >= 0 %}pl-positive{% else %}pl-negative{% endif %} font-large">
+                    {{ pl.total_pl|floatformat:0 }} ریال
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="table-container">
+                    <table class="table">
+                        <tbody>
+                            <tr>
+                                <td><strong>موجودی فعلی</strong></td>
+                                <td>{{ pl.current_holdings|floatformat:4 }}</td>
+                                <td><strong>قیمت بازار</strong></td>
+                                <td data-format-number>{{ pl.current_market_price|floatformat:0 }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>کل خرید</strong></td>
+                                <td>{{ pl.total_bought|floatformat:4 }}</td>
+                                <td><strong>میانگین خرید</strong></td>
+                                <td data-format-number>{{ pl.avg_buy_price|floatformat:0 }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>کل فروش</strong></td>
+                                <td>{{ pl.total_sold|floatformat:4 }}</td>
+                                <td><strong>میانگین فروش</strong></td>
+                                <td data-format-number>{{ pl.avg_sell_price|floatformat:0 }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>سود/زیان محقق شده</strong></td>
+                                <td class="{% if pl.realized_pl >= 0 %}pl-positive{% else %}pl-negative{% endif %}" data-format-number>
+                                    {{ pl.realized_pl|floatformat:0 }}
+                                </td>
+                                <td><strong>سود/زیان محقق نشده</strong></td>
+                                <td class="{% if pl.unrealized_pl >= 0 %}pl-positive{% else %}pl-negative{% endif %}" data-format-number>
+                                    {{ pl.unrealized_pl|floatformat:0 }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>تعداد خرید</strong></td>
+                                <td>{{ pl.buy_count }} معامله</td>
+                                <td><strong>تعداد فروش</strong></td>
+                                <td>{{ pl.sell_count }} معامله</td>
+                            </tr>
+                            <tr>
+                                <td colspan="2"><strong>بازده (ROI)</strong></td>
+                                <td colspan="2" class="{% if pl.roi_percentage >= 0 %}pl-positive{% else %}pl-negative{% endif %} font-large">
+                                    {{ pl.roi_percentage|floatformat:2 }}%
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        
+        <!-- Best/Worst Performers -->
+        {% if best_product or worst_product %}
+        <div class="mt-4">
+            <h3 class="mb-2">🏆 عملکرد برتر و ضعیف</h3>
+            <div class="pl-summary">
+                {% if best_product %}
+                <div class="pl-item">
+                    <div class="pl-item-label">بهترین عملکرد</div>
+                    <div class="pl-item-value pl-positive">
+                        {{ best_product.product.name }}<br>
+                        <span class="font-small">{{ best_product.total_pl|floatformat:0 }} ریال</span>
+                    </div>
+                </div>
+                {% endif %}
+                {% if worst_product %}
+                <div class="pl-item">
+                    <div class="pl-item-label">ضعیف‌ترین عملکرد</div>
+                    <div class="pl-item-value pl-negative">
+                        {{ worst_product.product.name }}<br>
+                        <span class="font-small">{{ worst_product.total_pl|floatformat:0 }} ریال</span>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">📊</div>
+            <div class="empty-state-message">هنوز معامله‌ای برای تحلیل وجود ندارد</div>
+            <div class="empty-state-hint">از ربات تلگرام معامله جدید انجام دهید</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
