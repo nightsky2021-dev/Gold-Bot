@@ -11,7 +11,6 @@ from bot.constants import (
     MENU_PRICES,
     MENU_WALLET,
     MENU_ACCOUNT,
-    MENU_PORTFOLIO,
     MENU_HISTORY,
 )
 
@@ -23,7 +22,7 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [MENU_PRICES],
         [MENU_WALLET, MENU_ACCOUNT],
-        [MENU_PORTFOLIO, MENU_HISTORY],
+        [MENU_HISTORY],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 

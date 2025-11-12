@@ -18,6 +18,8 @@ from bot.constants import (
     BTN_BANK_ACCOUNTS,
     BTN_STATISTICS,
 )
+
+BTN_UPDATE_PROFILE = "🔧 به‌روزرسانی پروفایل"
 from .base import get_or_create_profile
 
 logger = logging.getLogger('bot.settings')
@@ -37,6 +39,7 @@ async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     
     keyboard = [
         [InlineKeyboardButton(BTN_PROFILE, callback_data="settings_profile")],
+        [InlineKeyboardButton(BTN_UPDATE_PROFILE, callback_data="update_profile")],
         [InlineKeyboardButton(BTN_BANK_ACCOUNTS, callback_data="settings_bank_accounts")],
         [InlineKeyboardButton(BTN_STATISTICS, callback_data="settings_statistics")]
     ]
@@ -66,10 +69,12 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     
     status = "✅ تأیید شده" if profile.is_approved else "⏳ در انتظار تأیید"
     display_name = await sync_to_async(profile.get_display_name)()
+    national_code = profile.national_code if profile.national_code else "ثبت نشده"
     
     profile_text = PROFILE_DISPLAY.format(
         full_name=display_name,
         phone_number=profile.phone_number,
+        national_code=national_code,
         telegram_username=profile.telegram_username or "ندارد",
         created_at=profile.created_at.strftime('%Y/%m/%d'),
         status=status
@@ -94,7 +99,7 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     
     # Get statistics using sync_to_async for each query
-    all_orders = profile.order_set.all()  # type: ignore[attr-defined]
+    all_orders = profile.orders.all()
     total_orders = await sync_to_async(all_orders.count)()
     completed_orders = await sync_to_async(all_orders.filter(status=Order.OrderStatus.COMPLETED).count)()
     # PENDING status was removed - orders are instant-execution now

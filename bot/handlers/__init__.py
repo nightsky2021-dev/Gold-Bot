@@ -61,6 +61,14 @@ from .settings import (
     show_profile,
     show_statistics,
 )
+from .profile import (
+    profile_update_start,
+    profile_update_choice_selected,
+    profile_name_entered,
+    profile_national_code_entered,
+    profile_update_confirm,
+    profile_update_cancel,
+)
 from .menu import (
     show_account,
     show_history,
@@ -94,6 +102,10 @@ __all__ = [
     'bank_account_add_confirm', 'bank_account_add_cancel',
     # Settings
     'show_settings', 'show_profile', 'show_statistics',
+    # Profile Update
+    'profile_update_start', 'profile_update_choice_selected',
+    'profile_name_entered', 'profile_national_code_entered',
+    'profile_update_confirm', 'profile_update_cancel',
     # Menu
     'show_account', 'show_history', 'cancel',
     # Base

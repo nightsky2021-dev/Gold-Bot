@@ -25,6 +25,11 @@ class WalletService:
         """
         Get complete wallet balance information for a user.
         
+        Note: In the Profile model:
+        - rial_balance, gold_balance_grams, etc. represent AVAILABLE (unfrozen) balance
+        - frozen_*_balance fields represent FROZEN balance
+        - Total = Available + Frozen
+        
         Args:
             profile: User profile.
             
@@ -33,24 +38,24 @@ class WalletService:
         """
         return {
             'rial': {
-                'available': profile.rial_balance,
+                'available': profile.get_available_rial_balance(),
                 'frozen': profile.frozen_rial_balance,
-                'total': profile.rial_balance + profile.frozen_rial_balance
+                'total': profile.rial_balance
             },
             'gold': {
-                'available': profile.gold_balance_grams,
+                'available': profile.get_available_gold_balance(),
                 'frozen': profile.frozen_gold_balance,
-                'total': profile.gold_balance_grams + profile.frozen_gold_balance
+                'total': profile.gold_balance_grams
             },
             'coin': {
-                'available': profile.coin_balance,
+                'available': profile.get_available_coin_balance(),
                 'frozen': profile.frozen_coin_balance,
-                'total': profile.coin_balance + profile.frozen_coin_balance
+                'total': profile.coin_balance
             },
             'dollar': {
-                'available': profile.dollar_balance,
+                'available': profile.get_available_dollar_balance(),
                 'frozen': profile.frozen_dollar_balance,
-                'total': profile.dollar_balance + profile.frozen_dollar_balance
+                'total': profile.dollar_balance
             }
         }
     
@@ -293,23 +298,27 @@ class WalletService:
         
         # Rial balance
         text += "💵 *موجودی ریالی:*\n"
-        text += f"├─ آزاد: {balances['rial']['available']:,.0f} ریال\n"
+        text += f"├─ کل: {balances['rial']['total']:,.0f} ریال\n"
+        text += f"├─ قابل استفاده: {balances['rial']['available']:,.0f} ریال\n"
         text += f"└─ مسدود شده: {balances['rial']['frozen']:,.0f} ریال\n\n"
         
         # Gold balance
         text += "🪙 *موجودی طلا:*\n"
-        text += f"├─ آزاد: {balances['gold']['available']} گرم\n"
+        text += f"├─ کل: {balances['gold']['total']} گرم\n"
+        text += f"├─ قابل استفاده: {balances['gold']['available']} گرم\n"
         text += f"└─ مسدود شده: {balances['gold']['frozen']} گرم\n\n"
         
         # Coin balance
         text += "🥇 *موجودی سکه:*\n"
-        text += f"├─ آزاد: {balances['coin']['available']} عدد\n"
-        text += f"└─ مسدود شده: {balances['coin']['frozen']} عدد\n\n"
+        text += f"├─ کل: {balances['coin']['total']:,.0f} عدد\n"
+        text += f"├─ قابل استفاده: {balances['coin']['available']:,.0f} عدد\n"
+        text += f"└─ مسدود شده: {balances['coin']['frozen']:,.0f} عدد\n\n"
         
         # Dollar balance
         text += "💵 *موجودی دلار:*\n"
-        text += f"├─ آزاد: {balances['dollar']['available']} دلار\n"
-        text += f"└─ مسدود شده: {balances['dollar']['frozen']} دلار\n\n"
+        text += f"├─ کل: ${balances['dollar']['total']:,.2f}\n"
+        text += f"├─ قابل استفاده: ${balances['dollar']['available']:,.2f}\n"
+        text += f"└─ مسدود شده: ${balances['dollar']['frozen']:,.2f}\n\n"
         
         text += f"⏰ آخرین بروزرسانی: {profile.updated_at.strftime('%Y/%m/%d - %H:%M')}"
         

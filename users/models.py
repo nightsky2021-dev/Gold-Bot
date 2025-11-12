@@ -13,6 +13,13 @@ from django.db import models
 from django.core.validators import MinValueValidator
 from django.utils import timezone
 
+from .validators import (
+    validate_iranian_phone_number,
+    validate_iranian_national_code,
+    validate_iranian_iban,
+    validate_bank_account_number,
+)
+
 if TYPE_CHECKING:
     from django.db.models import Manager
     from trading.models import Order
@@ -58,7 +65,18 @@ class Profile(models.Model):
         unique=True,
         db_index=True,
         verbose_name="شماره تماس",
-        help_text="شماره تماس کاربر (برای احراز هویت)"
+        help_text="شماره تماس کاربر (برای احراز هویت)",
+        validators=[validate_iranian_phone_number]
+    )
+    
+    national_code = models.CharField(
+        max_length=10,
+        blank=True,
+        null=True,
+        unique=True,
+        verbose_name="کد ملی",
+        help_text="کد ملی 10 رقمی",
+        validators=[validate_iranian_national_code]
     )
     
     is_approved = models.BooleanField(
@@ -160,6 +178,7 @@ class Profile(models.Model):
         indexes = [
             models.Index(fields=['telegram_id']),
             models.Index(fields=['phone_number']),
+            models.Index(fields=['national_code']),
             models.Index(fields=['is_approved', '-created_at']),
         ]
 
@@ -326,14 +345,16 @@ class BankAccount(models.Model):
     account_number = models.CharField(
         max_length=16,
         verbose_name="شماره حساب",
-        help_text="شماره حساب 16 رقمی"
+        help_text="شماره حساب 16 رقمی",
+        validators=[validate_bank_account_number]
     )
     
     iban = models.CharField(
         max_length=26,
         blank=True,
         verbose_name="شماره شبا",
-        help_text="شماره شبای 26 رقمی (اختیاری)"
+        help_text="شماره شبای 26 رقمی (اختیاری)",
+        validators=[validate_iranian_iban]
     )
     
     account_type = models.CharField(

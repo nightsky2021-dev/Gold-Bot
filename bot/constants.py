@@ -35,6 +35,12 @@ ACCOUNT_ADD_NUMBER: Final[int] = 32
 ACCOUNT_ADD_TYPE: Final[int] = 33
 ACCOUNT_ADD_CONFIRM: Final[int] = 34
 
+# States for profile update
+PROFILE_UPDATE_CHOICE: Final[int] = 40
+PROFILE_UPDATE_NAME: Final[int] = 41
+PROFILE_UPDATE_NATIONAL_CODE: Final[int] = 42
+PROFILE_UPDATE_CONFIRM: Final[int] = 43
+
 # ==================== Callback Data Prefixes ====================
 PRODUCT_PREFIX: Final[str] = "product_"
 METHOD_PREFIX: Final[str] = "method_"
@@ -467,6 +473,7 @@ PROFILE_DISPLAY: Final[str] = (
     "👤 *پروفایل من*\n\n"
     "نام: {full_name}\n"
     "شماره تماس: {phone_number}\n"
+    "کد ملی: {national_code}\n"
     "نام کاربری تلگرام: @{telegram_username}\n"
     "تاریخ عضویت: {created_at}\n"
     "وضعیت حساب: {status}\n"

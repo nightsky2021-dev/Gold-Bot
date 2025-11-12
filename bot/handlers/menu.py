@@ -38,10 +38,12 @@ async def show_account(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     # Show profile information
     status = "✅ تأیید شده" if profile.is_approved else "⏳ در انتظار تأیید"
     display_name = await sync_to_async(profile.get_display_name)()
+    national_code = profile.national_code if profile.national_code else "ثبت نشده"
     
     profile_text = PROFILE_DISPLAY.format(
         full_name=display_name,
         phone_number=profile.phone_number,
+        national_code=national_code,
         telegram_username=profile.telegram_username or "ندارد",
         created_at=profile.created_at.strftime('%Y/%m/%d'),
         status=status

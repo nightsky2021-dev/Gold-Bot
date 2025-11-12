@@ -41,7 +41,7 @@ class ProfileResource(resources.ModelResource):
         model = Profile
         fields = (
             'id', 'user_full_name', 'user_email', 'telegram_id', 
-            'telegram_username', 'phone_number', 'is_approved',
+            'telegram_username', 'phone_number', 'national_code', 'is_approved',
             'rial_balance', 'gold_balance_grams', 'coin_balance', 'dollar_balance',
             'frozen_rial_balance', 'frozen_gold_balance', 'frozen_coin_balance', 
             'frozen_dollar_balance', 'created_at', 'updated_at'
@@ -95,7 +95,7 @@ class ProfileInline(admin.StackedInline):
     verbose_name = 'پروفایل'
     verbose_name_plural = 'پروفایل‌ها'
     fields = (
-        'telegram_id', 'telegram_username', 'phone_number',
+        'telegram_id', 'telegram_username', 'phone_number', 'national_code',
         'is_approved', 
         'rial_balance', 'frozen_rial_balance',
         'gold_balance_grams', 'frozen_gold_balance',
@@ -160,6 +160,7 @@ class ProfileAdmin(ImportExportModelAdmin):
         'user__username',
         'user__email',
         'phone_number',
+        'national_code',
         'telegram_id',
         'telegram_username'
     )
@@ -185,8 +186,8 @@ class ProfileAdmin(ImportExportModelAdmin):
         ('اطلاعات تلگرام', {
             'fields': ('telegram_id', 'telegram_username')
         }),
-        ('اطلاعات تماس', {
-            'fields': ('phone_number',)
+        ('اطلاعات تماس و هویت', {
+            'fields': ('phone_number', 'national_code')
         }),
         ('وضعیت حساب', {
             'fields': ('is_approved',)

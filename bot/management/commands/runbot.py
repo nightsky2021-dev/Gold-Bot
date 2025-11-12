@@ -44,6 +44,10 @@ from bot.handlers import (
     bank_account_add_confirm, bank_account_add_cancel,
     # Settings
     show_settings, show_profile, show_statistics,
+    # Profile Update
+    profile_update_start, profile_update_choice_selected,
+    profile_name_entered, profile_national_code_entered,
+    profile_update_confirm, profile_update_cancel,
     # Menu
     show_account, show_history, cancel,
 )
@@ -53,7 +57,6 @@ from bot.constants import (
     MENU_PRICE,
     MENU_PRICES,
     MENU_WALLET,
-    MENU_PORTFOLIO,
     MENU_ACCOUNT,
     MENU_HISTORY,
     MENU_SETTINGS,
@@ -92,6 +95,10 @@ from bot.constants import (
     ACCOUNT_ADD_HOLDER_NAME,
     ACCOUNT_ADD_NUMBER,
     ACCOUNT_ADD_CONFIRM,
+    PROFILE_UPDATE_CHOICE,
+    PROFILE_UPDATE_NAME,
+    PROFILE_UPDATE_NATIONAL_CODE,
+    PROFILE_UPDATE_CONFIRM,
 )
 
 # Configure logging
@@ -135,6 +142,7 @@ class TelegramBotCommand(BaseCommand):
         self._register_deposit_handler(application)
         self._register_withdraw_handler(application)
         self._register_bank_account_handler(application)
+        self._register_profile_update_handler(application)
         
         # Register menu handlers
         self._register_menu_handlers(application)
@@ -275,12 +283,39 @@ class TelegramBotCommand(BaseCommand):
         )
         application.add_handler(bank_account_handler)
     
+    def _register_profile_update_handler(self, application):
+        """Register profile update conversation handler."""
+        profile_update_handler = ConversationHandler(
+            entry_points=[CallbackQueryHandler(profile_update_start, pattern="^update_profile$")],
+            states={
+                PROFILE_UPDATE_CHOICE: [
+                    CallbackQueryHandler(profile_update_choice_selected, pattern="^update_name$|^update_national_code$"),
+                    CallbackQueryHandler(profile_update_cancel, pattern=f"^{CANCEL_PREFIX}profile")
+                ],
+                PROFILE_UPDATE_NAME: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, profile_name_entered)
+                ],
+                PROFILE_UPDATE_NATIONAL_CODE: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, profile_national_code_entered)
+                ],
+                PROFILE_UPDATE_CONFIRM: [
+                    CallbackQueryHandler(profile_update_confirm, pattern=f"^{CONFIRM_PREFIX}name$|^{CONFIRM_PREFIX}national_code$"),
+                    CallbackQueryHandler(profile_update_cancel, pattern=f"^{CANCEL_PREFIX}profile")
+                ],
+            },
+            fallbacks=[
+                CallbackQueryHandler(profile_update_cancel, pattern=f"^{CANCEL_PREFIX}"),
+                CommandHandler("cancel", cancel)
+            ],
+            per_message=True,
+        )
+        application.add_handler(profile_update_handler)
+    
     def _register_menu_handlers(self, application):
         """Register main menu handlers."""
         application.add_handler(MessageHandler(filters.Regex(f"^{MENU_PRICE}$"), show_prices))
         application.add_handler(MessageHandler(filters.Regex(f"^{MENU_PRICES}$"), show_prices))
         application.add_handler(MessageHandler(filters.Regex(f"^{MENU_WALLET}$"), show_wallet))
-        application.add_handler(MessageHandler(filters.Regex(f"^{MENU_PORTFOLIO}$"), show_wallet))
         application.add_handler(MessageHandler(filters.Regex(f"^{MENU_ACCOUNT}$"), show_account))
         application.add_handler(MessageHandler(filters.Regex(f"^{MENU_HISTORY}$"), show_history))
         application.add_handler(MessageHandler(filters.Regex(f"^{MENU_SETTINGS}$"), show_settings))

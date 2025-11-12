@@ -45,7 +45,6 @@ from bot.constants import (
     MENU_WALLET,
     MENU_HISTORY,
     MENU_ACCOUNT,
-    MENU_PORTFOLIO,
     MENU_SETTINGS,
     MENU_CANCEL,
     MENU_BUY,
@@ -420,7 +419,7 @@ def _is_main_menu_button(text: str) -> bool:
     """Check if text is a main menu button."""
     return text in [
         MENU_PRICES, MENU_WALLET, MENU_HISTORY, MENU_ACCOUNT,
-        MENU_PORTFOLIO, MENU_SETTINGS, MENU_CANCEL, MENU_BUY, MENU_SELL
+        MENU_SETTINGS, MENU_CANCEL, MENU_BUY, MENU_SELL
     ]
 
 
