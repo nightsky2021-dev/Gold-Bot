@@ -67,6 +67,33 @@ class AdminNotificationService:
             )
     
     @staticmethod
+    def notify_new_user_registration(profile, request=None):
+        """
+        Notify admins of new user registration.
+        
+        Args:
+            profile: Profile instance
+            request: HttpRequest object (optional)
+        """
+        message = (
+            f'👤 کاربر جدید ثبت‌نام کرد: {profile.get_display_name()} - '
+            f'{profile.phone_number} - کد ملی: {profile.national_code or "ندارد"}'
+        )
+        
+        # Log notification
+        logger.info(message)
+        
+        # Send in-app message if request is available
+        if request:
+            messages.info(request, message)
+        
+        # Email notification to admins
+        AdminNotificationService._send_email_to_admins(
+            subject='ثبت‌نام کاربر جدید',
+            message=message
+        )
+    
+    @staticmethod
     def notify_pending_approvals(count: int, notification_type: str):
         """
         Notify admins of pending approvals.

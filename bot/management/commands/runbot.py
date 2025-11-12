@@ -50,6 +50,12 @@ from bot.handlers import (
     profile_update_confirm, profile_update_cancel,
     # Menu
     show_account, show_history, cancel,
+    # Portal
+    portal_access, portal_refresh_callback, portal_info,
+    # Registration
+    registration_contact_received,
+    registration_name_received, registration_national_code_received,
+    registration_confirm, registration_edit, registration_cancel,
 )
 from bot.constants import (
     MENU_BUY,
@@ -61,6 +67,7 @@ from bot.constants import (
     MENU_HISTORY,
     MENU_SETTINGS,
     MENU_CANCEL,
+    MENU_PORTAL,
     CALLBACK_TRADE_PRODUCT_PREFIX,
     CALLBACK_PRICE_GOLD,
     CALLBACK_PRICE_COIN,
@@ -68,6 +75,7 @@ from bot.constants import (
     CALLBACK_PRICE_ALL,
     CALLBACK_PRICE_REFRESH,
     CALLBACK_BACK_TO_PRICES_MENU,
+    CALLBACK_PORTAL_REFRESH,
     PRODUCT_PREFIX,
     METHOD_PREFIX,
     CANCEL_PREFIX,
@@ -99,6 +107,10 @@ from bot.constants import (
     PROFILE_UPDATE_NAME,
     PROFILE_UPDATE_NATIONAL_CODE,
     PROFILE_UPDATE_CONFIRM,
+    REG_COLLECT_CONTACT,
+    REG_COLLECT_NAME,
+    REG_COLLECT_NATIONAL_CODE,
+    REG_CONFIRM_PROFILE,
 )
 
 # Configure logging
@@ -133,9 +145,15 @@ class TelegramBotCommand(BaseCommand):
         # Build application
         application = Application.builder().token(bot_token).build()
         
-        # Add command handlers
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("help", help_command))
+        # Add command handlers in group 0 (default - highest priority for existing users)
+        application.add_handler(CommandHandler("start", start), group=0)
+        application.add_handler(CommandHandler("help", help_command), group=0)
+        application.add_handler(CommandHandler("portal", portal_access), group=0)
+        application.add_handler(CommandHandler("portal_info", portal_info), group=0)
+        
+        # Register registration handler in group 1 (lower priority - only for new users)
+        # This will only trigger if the /start command wasn't handled in group 0
+        self._register_registration_handler(application)
         
         # Register all conversation handlers
         self._register_trade_handler(application)
@@ -150,11 +168,42 @@ class TelegramBotCommand(BaseCommand):
         # Register callback query handlers
         self._register_callback_handlers(application)
         
-        # Contact handler for registration
-        application.add_handler(MessageHandler(filters.CONTACT, handle_contact))
-        
         # Start the bot
         application.run_polling(allowed_updates=Update.ALL_TYPES)
+    
+    def _register_registration_handler(self, application):
+        """
+        Register registration conversation handler for new users.
+        
+        This handler uses MessageHandler for initial contact to avoid
+        conflicting with the CommandHandler for /start.
+        """
+        registration_handler = ConversationHandler(
+            entry_points=[
+                # Use a callback that checks for new users
+                MessageHandler(filters.CONTACT, registration_contact_received)
+            ],
+            states={
+                REG_COLLECT_NAME: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, registration_name_received)
+                ],
+                REG_COLLECT_NATIONAL_CODE: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, registration_national_code_received)
+                ],
+                REG_CONFIRM_PROFILE: [
+                    CallbackQueryHandler(registration_confirm, pattern=f"^{CONFIRM_PREFIX}registration$"),
+                    CallbackQueryHandler(registration_edit, pattern="^edit_registration$"),
+                    CallbackQueryHandler(registration_cancel, pattern=f"^{CANCEL_PREFIX}registration$")
+                ],
+            },
+            fallbacks=[
+                CommandHandler("cancel", registration_cancel),
+                CallbackQueryHandler(registration_cancel, pattern=f"^{CANCEL_PREFIX}")
+            ],
+            per_user=True,
+            allow_reentry=True,
+        )
+        application.add_handler(registration_handler)
     
     def _register_trade_handler(self, application):
         """Register trading conversation handler."""
@@ -319,6 +368,7 @@ class TelegramBotCommand(BaseCommand):
         application.add_handler(MessageHandler(filters.Regex(f"^{MENU_ACCOUNT}$"), show_account))
         application.add_handler(MessageHandler(filters.Regex(f"^{MENU_HISTORY}$"), show_history))
         application.add_handler(MessageHandler(filters.Regex(f"^{MENU_SETTINGS}$"), show_settings))
+        application.add_handler(MessageHandler(filters.Regex(f"^{MENU_PORTAL}$"), portal_access))
     
     def _register_callback_handlers(self, application):
         """Register callback query handlers."""
@@ -339,6 +389,9 @@ class TelegramBotCommand(BaseCommand):
         application.add_handler(CallbackQueryHandler(show_profile, pattern="^settings_profile$"))
         application.add_handler(CallbackQueryHandler(show_bank_accounts, pattern="^settings_bank_accounts$"))
         application.add_handler(CallbackQueryHandler(show_statistics, pattern="^settings_statistics$"))
+        
+        # Portal callbacks
+        application.add_handler(CallbackQueryHandler(portal_refresh_callback, pattern=f"^{CALLBACK_PORTAL_REFRESH}$"))
 
 
 # Command class

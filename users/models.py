@@ -207,12 +207,22 @@ class Profile(models.Model):
         return self.gold_balance_grams >= amount_grams
     
     def get_available_rial_balance(self) -> Decimal:
-        """Get available Rial balance (total - frozen)."""
-        return self.rial_balance - self.frozen_rial_balance
+        """
+        Get available Rial balance.
+        
+        Note: rial_balance already represents available (unfrozen) balance.
+        When balance is frozen, it's moved FROM rial_balance TO frozen_rial_balance.
+        """
+        return self.rial_balance
     
     def get_available_gold_balance(self) -> Decimal:
-        """Get available gold balance (total - frozen)."""
-        return self.gold_balance_grams - self.frozen_gold_balance
+        """
+        Get available gold balance.
+        
+        Note: gold_balance_grams already represents available (unfrozen) balance.
+        When balance is frozen, it's moved FROM gold_balance_grams TO frozen_gold_balance.
+        """
+        return self.gold_balance_grams
     
     def has_sufficient_available_rial(self, amount: Decimal) -> bool:
         """Check if user has sufficient available Rial balance."""
@@ -223,12 +233,22 @@ class Profile(models.Model):
         return self.get_available_gold_balance() >= amount_grams
     
     def get_available_coin_balance(self) -> Decimal:
-        """Get available coin balance (total - frozen)."""
-        return self.coin_balance - self.frozen_coin_balance
+        """
+        Get available coin balance.
+        
+        Note: coin_balance already represents available (unfrozen) balance.
+        When balance is frozen, it's moved FROM coin_balance TO frozen_coin_balance.
+        """
+        return self.coin_balance
     
     def get_available_dollar_balance(self) -> Decimal:
-        """Get available dollar balance (total - frozen)."""
-        return self.dollar_balance - self.frozen_dollar_balance
+        """
+        Get available dollar balance.
+        
+        Note: dollar_balance already represents available (unfrozen) balance.
+        When balance is frozen, it's moved FROM dollar_balance TO frozen_dollar_balance.
+        """
+        return self.dollar_balance
     
     def has_sufficient_coin_balance(self, amount: Decimal) -> bool:
         """Check if user has sufficient coin balance."""

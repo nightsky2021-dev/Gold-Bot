@@ -41,6 +41,12 @@ PROFILE_UPDATE_NAME: Final[int] = 41
 PROFILE_UPDATE_NATIONAL_CODE: Final[int] = 42
 PROFILE_UPDATE_CONFIRM: Final[int] = 43
 
+# States for registration (profile completion)
+REG_COLLECT_CONTACT: Final[int] = 50
+REG_COLLECT_NAME: Final[int] = 51
+REG_COLLECT_NATIONAL_CODE: Final[int] = 52
+REG_CONFIRM_PROFILE: Final[int] = 53
+
 # ==================== Callback Data Prefixes ====================
 PRODUCT_PREFIX: Final[str] = "product_"
 METHOD_PREFIX: Final[str] = "method_"
@@ -120,6 +126,7 @@ MENU_HISTORY: Final[str] = "📋 تاریخچه معاملات"
 MENU_SETTINGS: Final[str] = "⚙️ تنظیمات"
 MENU_CANCEL: Final[str] = "❌ لغو"
 MENU_ACCOUNT: Final[str] = "👤 حساب من"
+MENU_PORTAL: Final[str] = "🌐 پورتال وب"
 
 # Legacy buttons (for backward compatibility)
 MENU_BUY: Final[str] = "💰 خرید طلا"
@@ -707,3 +714,6 @@ CALLBACK_DATE_THIS_MONTH: Final[str] = "date_this_month"
 CALLBACK_DATE_LAST_MONTH: Final[str] = "date_last_month"
 CALLBACK_DATE_CUSTOM: Final[str] = "date_custom"
 CALLBACK_DATE_ALL: Final[str] = "date_all"
+
+# ==================== Portal Callbacks ====================
+CALLBACK_PORTAL_REFRESH: Final[str] = "portal_refresh"

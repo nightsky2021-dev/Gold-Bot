@@ -1,0 +1,71 @@
+{% extends "admin/change_list.html" %}
+{% load static %}
+
+{% block content_title %}
+    <h1>{{ title }}</h1>
+    
+    <!-- Statistics Dashboard -->
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 25px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+        <h2 style="color: white; margin: 0 0 20px 0; font-size: 22px;">📊 آمار سریع کاربران</h2>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <!-- Total Users -->
+            <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 20px; border-radius: 10px; text-align: center; border: 1px solid rgba(255,255,255,0.2);">
+                <div style="font-size: 36px; font-weight: bold; color: white; margin-bottom: 8px;">{{ total_users|default:0 }}</div>
+                <div style="color: rgba(255,255,255,0.9); font-size: 14px;">👥 کل کاربران</div>
+            </div>
+            
+            <!-- Pending Approval -->
+            <div style="background: rgba(255,152,0,0.25); backdrop-filter: blur(10px); padding: 20px; border-radius: 10px; text-align: center; border: 1px solid rgba(255,152,0,0.3);">
+                <div style="font-size: 36px; font-weight: bold; color: white; margin-bottom: 8px;">{{ pending_approval|default:0 }}</div>
+                <div style="color: rgba(255,255,255,0.9); font-size: 14px;">⏳ در انتظار تأیید</div>
+                {% if pending_approval > 0 %}
+                <a href="?approval_status=pending" style="display: inline-block; margin-top: 10px; padding: 6px 12px; background: rgba(255,255,255,0.9); color: #ff6b00; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: bold;">مشاهده</a>
+                {% endif %}
+            </div>
+            
+            <!-- Approved Users -->
+            <div style="background: rgba(76,175,80,0.25); backdrop-filter: blur(10px); padding: 20px; border-radius: 10px; text-align: center; border: 1px solid rgba(76,175,80,0.3);">
+                <div style="font-size: 36px; font-weight: bold; color: white; margin-bottom: 8px;">{{ approved_users|default:0 }}</div>
+                <div style="color: rgba(255,255,255,0.9); font-size: 14px;">✅ تأیید شده</div>
+            </div>
+            
+            <!-- New Registrations -->
+            {% if new_registrations > 0 %}
+            <div style="background: rgba(244,67,54,0.3); backdrop-filter: blur(10px); padding: 20px; border-radius: 10px; text-align: center; border: 1px solid rgba(244,67,54,0.3); animation: pulse 2s infinite;">
+                <div style="font-size: 36px; font-weight: bold; color: white; margin-bottom: 8px;">{{ new_registrations }}</div>
+                <div style="color: rgba(255,255,255,0.9); font-size: 14px;">🔥 ثبت‌نام جدید (24h)</div>
+                <a href="?approval_status=new_registrations" style="display: inline-block; margin-top: 10px; padding: 6px 12px; background: rgba(255,255,255,0.9); color: #f44336; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: bold;">بررسی فوری</a>
+            </div>
+            {% else %}
+            <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 20px; border-radius: 10px; text-align: center; border: 1px solid rgba(255,255,255,0.2);">
+                <div style="font-size: 36px; font-weight: bold; color: white; margin-bottom: 8px;">{{ new_registrations|default:0 }}</div>
+                <div style="color: rgba(255,255,255,0.9); font-size: 14px;">🆕 ثبت‌نام جدید (24h)</div>
+            </div>
+            {% endif %}
+            
+            <!-- Incomplete Profiles -->
+            {% if incomplete_profiles > 0 %}
+            <div style="background: rgba(255,193,7,0.25); backdrop-filter: blur(10px); padding: 20px; border-radius: 10px; text-align: center; border: 1px solid rgba(255,193,7,0.3);">
+                <div style="font-size: 36px; font-weight: bold; color: white; margin-bottom: 8px;">{{ incomplete_profiles }}</div>
+                <div style="color: rgba(255,255,255,0.9); font-size: 14px;">⚠️ پروفایل ناقص</div>
+                <a href="?approval_status=incomplete_profile" style="display: inline-block; margin-top: 10px; padding: 6px 12px; background: rgba(255,255,255,0.9); color: #ffa000; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: bold;">مشاهده</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <style>
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(244,67,54,0.7);
+            }
+            50% {
+                transform: scale(1.02);
+                box-shadow: 0 0 0 10px rgba(244,67,54,0);
+            }
+        }
+    </style>
+{% endblock %}
+

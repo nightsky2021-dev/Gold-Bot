@@ -150,6 +150,47 @@ ANIGOLD_API_KEY = os.getenv('ANIGOLD_API_KEY', '1a233fab-04d1-47b2-b732-813d9379
 NAVASAN_API_KEY = os.getenv('NAVASAN_API_KEY', 'freeTET7c1g57cU7kPnjQa4KAMP7BWaS')
 
 # ============================================
+# WEB PORTAL CONFIGURATION
+# ============================================
+
+# Portal Base URL - Set this to your server's URL
+# For local development: http://localhost:8000 or http://127.0.0.1:8000
+# For production: https://yourdomain.com
+PORTAL_BASE_URL = os.getenv('PORTAL_BASE_URL', 'http://localhost:8000')
+
+# CSRF and CORS Configuration for local/production environments
+# Automatically configure trusted origins based on PORTAL_BASE_URL
+_portal_domain = PORTAL_BASE_URL.replace('http://', '').replace('https://', '').split(':')[0]
+
+CSRF_TRUSTED_ORIGINS = [
+    PORTAL_BASE_URL,
+]
+
+# If using localhost, add common local development URLs
+if 'localhost' in PORTAL_BASE_URL or '127.0.0.1' in PORTAL_BASE_URL:
+    CSRF_TRUSTED_ORIGINS.extend([
+        'http://localhost:8000',
+        'http://127.0.0.1:8000',
+        'http://localhost',
+        'http://127.0.0.1',
+    ])
+
+# Session configuration for portal access
+SESSION_COOKIE_AGE = 3600  # 1 hour session timeout
+SESSION_COOKIE_SECURE = not DEBUG  # Only send cookies over HTTPS in production
+SESSION_COOKIE_HTTPONLY = True  # Prevent JavaScript access to session cookie
+SESSION_COOKIE_SAMESITE = 'Lax' if DEBUG else 'Strict'  # CSRF protection
+
+# Portal token expiration (in hours)
+PORTAL_TOKEN_EXPIRATION_HOURS = 24
+
+# Allow iframe embedding only in development
+if DEBUG:
+    X_FRAME_OPTIONS = 'SAMEORIGIN'
+else:
+    X_FRAME_OPTIONS = 'DENY'
+
+# ============================================
 # ADMIN PANEL ENHANCEMENTS
 # ============================================
 

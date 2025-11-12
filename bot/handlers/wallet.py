@@ -355,6 +355,16 @@ async def withdraw_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await query.edit_message_text(ERROR_NOT_APPROVED, parse_mode='Markdown')
         return ConversationHandler.END
     
+    # Check if profile is complete (has national code) - required for withdrawals
+    if not profile.national_code:
+        await query.edit_message_text(
+            "⚠️ *برای برداشت، تکمیل پروفایل الزامی است*\n\n"
+            "لطفاً ابتدا از منوی *حساب من* کد ملی خود را ثبت کنید.\n\n"
+            "این اطلاعات برای امنیت معاملات و تطابق با قوانین بانکی ضروری است.",
+            parse_mode='Markdown'
+        )
+        return ConversationHandler.END
+    
     # Show currency selection with available balances
     rial_available = profile.get_available_rial_balance()
     gold_available = profile.get_available_gold_balance()

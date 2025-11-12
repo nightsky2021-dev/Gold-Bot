@@ -3,7 +3,7 @@
 """
 from telegram import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton, KeyboardButton
 from .constants import (
-    MENU_PRICES, MENU_HISTORY, MENU_CANCEL, MENU_WALLET, MENU_ACCOUNT,
+    MENU_PRICES, MENU_HISTORY, MENU_CANCEL, MENU_WALLET, MENU_ACCOUNT, MENU_PORTAL,
     CALLBACK_PRICE_GOLD, CALLBACK_PRICE_COIN, CALLBACK_PRICE_DOLLAR, CALLBACK_PRICE_ALL,
     CALLBACK_PRICE_REFRESH, CALLBACK_BACK_TO_PRICES_MENU,
     CALLBACK_TRADE_PRODUCT_PREFIX, CALLBACK_ACTION_BUY, CALLBACK_ACTION_SELL,
@@ -17,7 +17,7 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [MENU_PRICES],
         [MENU_WALLET, MENU_ACCOUNT],
-        [MENU_HISTORY],
+        [MENU_HISTORY, MENU_PORTAL],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 

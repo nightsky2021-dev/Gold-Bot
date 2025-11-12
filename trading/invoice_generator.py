@@ -226,6 +226,7 @@ class InvoiceGenerator:
         customer_data = [
             [cls._prepare_persian_text('نام:'), cls._prepare_persian_text(order.profile.get_display_name())],
             [cls._prepare_persian_text('شماره تماس:'), order.profile.phone_number or 'N/A'],
+            [cls._prepare_persian_text('کد ملی:'), order.profile.national_code or 'N/A'],
         ]
         
         customer_table = Table(customer_data, colWidths=[40*mm, 80*mm])

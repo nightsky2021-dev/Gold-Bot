@@ -42,6 +42,7 @@ django-filter>=23.5
 reportlab>=4.0.0  # PDF generation for transaction reports
 arabic-reshaper>=3.0.0  # Proper Arabic/Persian text reshaping for RTL languages
 python-bidi>=0.4.2  # Bidirectional text support for Persian/Arabic in PDFs
+weasyprint>=60.0  # PDF generation for web portal (HTML to PDF)
 
 # ============================================
 # Development & Testing (optional)

@@ -1,22 +1,20 @@
 """
 Authentication and registration handlers.
+
+This module handles user authentication and initial bot interactions.
+For the full registration flow (profile completion), see registration.py.
 """
 
 import logging
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ContextTypes
-from django.contrib.auth.models import User
-from django.db import transaction
 from asgiref.sync import sync_to_async
 
 from users.models import Profile
 from bot.constants import (
-    BTN_SHARE_CONTACT,
-    WELCOME_NEW_USER,
     WELCOME_PENDING_USER,
     WELCOME_APPROVED_USER,
-    REGISTRATION_SUCCESS,
-    ERROR_GENERAL,
+    BTN_SHARE_CONTACT,
 )
 from .base import get_or_create_profile, get_main_menu_keyboard
 
@@ -24,7 +22,14 @@ logger = logging.getLogger('bot.auth')
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /start command."""
+    """
+    Handle /start command.
+    
+    This checks if the user exists:
+    - If new user, shows registration welcome and contact button
+    - If user exists but not approved, shows pending message
+    - If user is approved, shows main menu with welcome message
+    """
     if not update.message or not update.effective_user:
         return
     
@@ -32,30 +37,48 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     profile = await get_or_create_profile(telegram_user)
     
     if profile is None:
-        # New user - request contact
+        # New user - Show registration welcome message
+        welcome_message = (
+            "👋 *سلام! به ربات معاملات طلا خوش آمدید*\n\n"
+            "برای استفاده از خدمات ما، لطفاً اطلاعات خود را تکمیل کنید.\n"
+            "این فرآیند تنها چند دقیقه زمان می‌برد.\n\n"
+            "🔒 *اطلاعات شما کاملاً محرمانه است*\n\n"
+            "📱 *مرحله ۱ از ۳:* اشتراک شماره تماس\n\n"
+            "لطفاً روی دکمه زیر کلیک کنید تا شماره تماس خود را با ما به اشتراک بگذارید.\n"
+            "این برای احراز هویت و امنیت حساب شما ضروری است."
+        )
+        
         keyboard = [[KeyboardButton(BTN_SHARE_CONTACT, request_contact=True)]]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
         
         await update.message.reply_text(
-            WELCOME_NEW_USER,
+            welcome_message,
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
+        logger.info(f"New user {telegram_user.id} started registration process")
+        return
+        
     elif not profile.is_approved:
         # User registered but not approved
+        # Show more detailed message with status
         await update.message.reply_text(
             WELCOME_PENDING_USER,
             parse_mode='Markdown'
         )
+        logger.info(f"User {telegram_user.id} ({profile.phone_number}) waiting for approval")
+        
     else:
-        # Approved user - show main menu
+        # Approved user - show main menu with personalized welcome
         display_name = await sync_to_async(profile.get_display_name)()
         welcome_msg = WELCOME_APPROVED_USER.format(name=display_name)
+        
         await update.message.reply_text(
             welcome_msg,
             reply_markup=get_main_menu_keyboard(),
             parse_mode='Markdown'
         )
+        logger.info(f"Approved user {telegram_user.id} ({profile.phone_number}) accessed bot")
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -68,73 +91,30 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "• *📈 قیمت‌ها و معامله:* مشاهده قیمت‌های روز و خرید/فروش\n"
         "• *💼 کیف پول:* مشاهده موجودی، واریز و برداشت\n"
         "• *📋 تاریخچه:* مشاهده سفارشات و تراکنش‌ها\n"
-        "• *⚙️ تنظیمات:* پروفایل، حساب‌های بانکی و آمار\n\n"
-        "برای شروع، از منوی پایین گزینه مورد نظر را انتخاب کنید."
+        "• *👤 حساب من:* مدیریت پروفایل و اطلاعات کاربری\n"
+        "• *🌐 پورتال وب:* دسترسی به پنل کاربری پیشرفته\n\n"
+        "برای شروع، از منوی پایین گزینه مورد نظر را انتخاب کنید.\n\n"
+        "💡 *دستورات مفید:*\n"
+        "• /portal - دریافت لینک دسترسی به پورتال\n"
+        "• /portal_info - اطلاعات بیشتر درباره پورتال\n"
+        "• /help - نمایش این راهنما"
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
 
 async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle contact sharing for registration."""
-    if not update.message or not update.message.contact or not update.effective_user:
+    """
+    Handle contact sharing.
+    
+    This is now handled by the registration conversation handler.
+    This function is kept for backward compatibility but shouldn't be called
+    during normal registration flow.
+    """
+    if not update.message or not update.message.contact:
         return
     
-    contact = update.message.contact
-    telegram_user = update.effective_user
-    
-    # Check if contact is user's own contact
-    if contact.user_id != telegram_user.id:
-        await update.message.reply_text(
-            "❌ لطفاً شماره تماس خودتان را ارسال کنید.",
-            parse_mode='Markdown'
-        )
-        return
-    
-    # Check if user already exists
-    existing_profile = await get_or_create_profile(telegram_user)
-    if existing_profile:
-        await update.message.reply_text(
-            "شما قبلاً ثبت‌نام کرده‌اید.",
-            parse_mode='Markdown'
-        )
-        return
-    
-    # Create user and profile
-    try:
-        @sync_to_async
-        def create_user_and_profile():
-            with transaction.atomic():
-                # Create Django User
-                username = f"tg_{telegram_user.id}"
-                user = User.objects.create_user(
-                    username=username,
-                    first_name=telegram_user.first_name or "",
-                    last_name=telegram_user.last_name or "",
-                )
-                
-                # Create Profile
-                profile = Profile.objects.create(
-                    user=user,
-                    telegram_id=str(telegram_user.id),
-                    telegram_username=telegram_user.username or "",
-                    phone_number=contact.phone_number,
-                    is_approved=False
-                )
-                return profile
-        
-        profile = await create_user_and_profile()
-        
-        success_msg = REGISTRATION_SUCCESS.format(phone=contact.phone_number)
-        await update.message.reply_text(
-            success_msg,
-            parse_mode='Markdown'
-        )
-        
-        logger.info(f"New user registered: {profile.phone_number} (TG: {telegram_user.id})")
-            
-    except Exception as e:
-        logger.error(f"Error during registration: {str(e)}")
-        await update.message.reply_text(
-            ERROR_GENERAL,
-            parse_mode='Markdown'
-        )
+    # Inform user that registration is handled through /start
+    await update.message.reply_text(
+        "لطفاً از دستور /start برای ثبت‌نام استفاده کنید.",
+        parse_mode='Markdown'
+    )

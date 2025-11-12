@@ -1,0 +1,169 @@
+{% extends 'portal/base.html' %}
+{% load static %}
+
+{% block title %}تراکنش‌ها{% endblock %}
+
+{% block content %}
+<h1 class="page-title">💳 تراکنش‌ها</h1>
+
+<!-- Filter Bar -->
+<div class="filter-bar">
+    <form id="filter-form" method="get">
+        <div class="filter-row">
+            <div class="filter-group">
+                <label class="filter-label" for="filter-product">محصول</label>
+                <select id="filter-product" name="product_id" class="filter-select">
+                    <option value="">همه محصولات</option>
+                    {% for product in products %}
+                    <option value="{{ product.id }}" {% if selected_product_id == product.id|stringformat:"s" %}selected{% endif %}>
+                        {{ product.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label class="filter-label" for="filter-type">نوع معامله</label>
+                <select id="filter-type" name="transaction_type" class="filter-select">
+                    <option value="">همه</option>
+                    <option value="BUY" {% if selected_transaction_type == 'BUY' %}selected{% endif %}>خرید</option>
+                    <option value="SELL" {% if selected_transaction_type == 'SELL' %}selected{% endif %}>فروش</option>
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label class="filter-label" for="filter-date-range">بازه زمانی</label>
+                <select id="filter-date-range" name="date_range" class="filter-select">
+                    <option value="all" {% if selected_date_range == 'all' %}selected{% endif %}>همه</option>
+                    <option value="today" {% if selected_date_range == 'today' %}selected{% endif %}>امروز</option>
+                    <option value="7d" {% if selected_date_range == '7d' %}selected{% endif %}>7 روز گذشته</option>
+                    <option value="30d" {% if selected_date_range == '30d' %}selected{% endif %}>30 روز گذشته</option>
+                    <option value="3m" {% if selected_date_range == '3m' %}selected{% endif %}>3 ماه گذشته</option>
+                    <option value="6m" {% if selected_date_range == '6m' %}selected{% endif %}>6 ماه گذشته</option>
+                    <option value="1y" {% if selected_date_range == '1y' %}selected{% endif %}>1 سال گذشته</option>
+                    <option value="custom" {% if selected_date_range == 'custom' %}selected{% endif %}>دلخواه</option>
+                </select>
+            </div>
+        </div>
+        
+        <div id="custom-date-range" class="filter-row" style="display: none;">
+            <div class="filter-group">
+                <label class="filter-label" for="filter-date-from">از تاریخ</label>
+                <input type="date" id="filter-date-from" name="date_from" class="filter-input">
+            </div>
+            <div class="filter-group">
+                <label class="filter-label" for="filter-date-to">تا تاریخ</label>
+                <input type="date" id="filter-date-to" name="date_to" class="filter-input">
+            </div>
+        </div>
+        
+        <div class="filter-buttons">
+            <button type="button" id="apply-filters-btn" class="btn btn-primary">اعمال فیلتر</button>
+            <button type="button" id="reset-filters-btn" class="btn btn-outline">حذف فیلترها</button>
+        </div>
+    </form>
+</div>
+
+<!-- Export Buttons -->
+<div class="card">
+    <div class="card-header">
+        📊 نتایج ({{ total_count }} معامله)
+        <div>
+            <button id="export-csv-btn" class="btn btn-small btn-export">📊 دریافت Excel</button>
+            <button id="export-pdf-btn" class="btn btn-small btn-export">📄 دریافت PDF</button>
+        </div>
+    </div>
+    <div class="card-body">
+        {% if orders %}
+        <!-- Desktop Table -->
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>شماره</th>
+                        <th>تاریخ</th>
+                        <th>نوع</th>
+                        <th>محصول</th>
+                        <th>مقدار</th>
+                        <th>قیمت واحد</th>
+                        <th>مبلغ کل</th>
+                        <th>وضعیت</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr>
+                        <td>#{{ order.id }}</td>
+                        <td>{{ order.created_at|date:"Y/m/d H:i" }}</td>
+                        <td>
+                            <span class="badge {% if order.order_type == 'BUY' %}badge-success{% else %}badge-warning{% endif %}">
+                                {{ order.get_order_type_display }}
+                            </span>
+                        </td>
+                        <td>{{ order.product.name }}</td>
+                        <td>{{ order.quantity_grams|floatformat:4 }}</td>
+                        <td data-format-number>{{ order.price_per_gram|floatformat:0 }}</td>
+                        <td data-format-number>{{ order.total_amount|floatformat:0 }}</td>
+                        <td>
+                            <span class="badge badge-success">{{ order.get_status_display }}</span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Mobile Cards -->
+        {% for order in orders %}
+        <div class="transaction-card">
+            <div class="transaction-header">
+                <div class="transaction-product">#{{ order.id }} - {{ order.product.name }}</div>
+                <div class="transaction-type {% if order.order_type == 'BUY' %}buy{% else %}sell{% endif %}">
+                    {{ order.get_order_type_display }}
+                </div>
+            </div>
+            <div class="transaction-details">
+                <div class="transaction-detail">
+                    <div class="transaction-detail-label">تاریخ</div>
+                    <div class="transaction-detail-value">{{ order.created_at|date:"Y/m/d H:i" }}</div>
+                </div>
+                <div class="transaction-detail">
+                    <div class="transaction-detail-label">مقدار</div>
+                    <div class="transaction-detail-value">{{ order.quantity_grams|floatformat:4 }}</div>
+                </div>
+                <div class="transaction-detail">
+                    <div class="transaction-detail-label">قیمت واحد</div>
+                    <div class="transaction-detail-value" data-format-number>{{ order.price_per_gram|floatformat:0 }}</div>
+                </div>
+                <div class="transaction-detail">
+                    <div class="transaction-detail-label">مبلغ کل</div>
+                    <div class="transaction-detail-value" data-format-number>{{ order.total_amount|floatformat:0 }}</div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">🔍</div>
+            <div class="empty-state-message">هیچ نتیجه‌ای یافت نشد</div>
+            <div class="empty-state-hint">فیلترهای دیگری را امتحان کنید</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if has_prev %}
+    <a href="?page={{ page|add:"-1" }}&{{ request.GET.urlencode }}" class="pagination-btn">قبلی</a>
+    {% endif %}
+    
+    <span class="pagination-info">صفحه {{ page }} از {{ total_pages }}</span>
+    
+    {% if has_next %}
+    <a href="?page={{ page|add:"1" }}&{{ request.GET.urlencode }}" class="pagination-btn">بعدی</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

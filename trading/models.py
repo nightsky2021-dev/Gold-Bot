@@ -35,45 +35,14 @@ class Product(models.Model):
         orders: 'Manager["Order"]'
     
     # Product code constants for standardized product identification
-    # Updated for AniGold API integration - 10 products total
-    
-    # Currencies (6 products)
-    PRODUCT_CODE_DOLLAR_USA = 'dollar_usa'  # دلار آمریکا
-    PRODUCT_CODE_EURO = 'euro'  # یورو
-    PRODUCT_CODE_LIRA_TURKEY = 'lira_turkey'  # لیر ترکیه
-    PRODUCT_CODE_YUAN_CHINA = 'yuan_china'  # یوان چین
-    PRODUCT_CODE_POUND_UK = 'pound_uk'  # پوند انگلیس
-    PRODUCT_CODE_DIRHAM_UAE = 'dirham_uae'  # درهم امارات
-    
-    # Coins (3 products)
-    PRODUCT_CODE_COIN_FULL = 'coin_full'  # سکه غیربانکی
-    PRODUCT_CODE_COIN_HALF = 'coin_half'  # نیم سکه غیربانکی
-    PRODUCT_CODE_COIN_QUARTER = 'coin_quarter'  # ربع سکه غیربانکی
-    
-    # Gold (1 product)
-    PRODUCT_CODE_GOLD_ABSHODEH = 'gold_abshodeh'  # طلای آبشده
-    
-    # Legacy codes for backward compatibility
-    PRODUCT_CODE_GOLD = 'gold_abshodeh'  # Alias
-    PRODUCT_CODE_COIN = 'coin_full'  # Alias
-    PRODUCT_CODE_DOLLAR = 'dollar_usa'  # Alias
+    PRODUCT_CODE_GOLD = 'gold'  # طلای آبشده
+    PRODUCT_CODE_COIN = 'coin'  # سکه تمام
+    PRODUCT_CODE_DOLLAR = 'dollar'  # دلار آمریکا
     
     PRODUCT_CODE_CHOICES = [
-        # Currencies
-        (PRODUCT_CODE_DOLLAR_USA, '💵 دلار آمریکا'),
-        (PRODUCT_CODE_EURO, '💶 یورو'),
-        (PRODUCT_CODE_POUND_UK, '💷 پوند انگلیس'),
-        (PRODUCT_CODE_YUAN_CHINA, '💴 یوان چین'),
-        (PRODUCT_CODE_LIRA_TURKEY, '🇹🇷 لیر ترکیه'),
-        (PRODUCT_CODE_DIRHAM_UAE, '🇦🇪 درهم امارات'),
-        
-        # Coins
-        (PRODUCT_CODE_COIN_FULL, '🪙 سکه غیربانکی (تمام)'),
-        (PRODUCT_CODE_COIN_HALF, '🪙 نیم سکه غیربانکی'),
-        (PRODUCT_CODE_COIN_QUARTER, '🪙 ربع سکه غیربانکی'),
-        
-        # Gold
-        (PRODUCT_CODE_GOLD_ABSHODEH, '✨ طلای آبشده (18 عیار)'),
+        (PRODUCT_CODE_GOLD, 'طلای آبشده'),
+        (PRODUCT_CODE_COIN, 'سکه تمام'),
+        (PRODUCT_CODE_DOLLAR, 'دلار آمریکا'),
     ]
     
     product_code = models.CharField(
@@ -123,8 +92,8 @@ class Product(models.Model):
         decimal_places=4,
         default=Decimal('1'),
         validators=[MinValueValidator(Decimal('0.0001'))],
-        verbose_name="ضریب واحد",
-        help_text="ضریب محاسبه قیمت - معمولاً = 1 (سکه‌ها واحدی هستند، ارزها واحدی، طلا گرمی). فقط در موارد خاص تغییر دهید"
+        verbose_name="وزن واحد (گرم)",
+        help_text="وزن یک واحد محصول به گرم - برای طلا و دلار = 1، برای سکه = 8.133 یا به تناسب نوع سکه"
     )
     
     # Calculated prices (auto-updated from API + margins)
@@ -193,20 +162,12 @@ class Product(models.Model):
         Calculate buy and sell prices from a base market price.
         
         Args:
-            base_price: The base price from API (per unit: coin, currency) or per gram (gold)
+            base_price: The base price from API (per gram or unit)
             
         Returns:
             Tuple of (buy_price, sell_price) calculated with margins
-            
-        Note:
-            - For COINS: API returns price per coin → weight_grams should be 1
-            - For CURRENCIES: API returns price per unit → weight_grams should be 1  
-            - For GOLD: API returns price per gram → weight_grams = 1 (sold by gram)
-            
-            The weight_grams field is kept at 1 for all products in this system.
-            If you need gram-weight for reference, store it in a separate field.
         """
-        # Multiply base price by weight (usually 1 for all products)
+        # For products with weight > 1 gram (like coins), multiply base by weight
         adjusted_base = base_price * self.weight_grams
         
         buy_price = (adjusted_base - self.buy_margin).quantize(Decimal('1'))
@@ -219,10 +180,7 @@ class Product(models.Model):
         Update prices based on API base price and configured margins.
         
         Args:
-            api_base_price: Base price from API
-                - For coins: price per coin
-                - For currencies: price per unit
-                - For gold: price per gram
+            api_base_price: Base price from API (per gram)
         """
         self.base_price_api = api_base_price
         self.buy_price, self.sell_price = self.calculate_prices_from_base(api_base_price)
@@ -712,11 +670,105 @@ class WithdrawRequest(models.Model):
         return cast(str, dict(self.WithdrawStatus.choices).get(self.status, self.status))
 
 
+class PortalAccessToken(models.Model):
+    """
+    Portal access token for secure web portal authentication from Telegram.
+    
+    Tokens are time-limited and can be configured as single-use or reusable.
+    """
+    
+    # Type annotations for auto-generated Django fields
+    id: int
+    
+    profile = models.ForeignKey(
+        Profile,
+        on_delete=models.CASCADE,
+        related_name='portal_tokens',
+        verbose_name="پروفایل کاربر",
+        help_text="کاربری که این توکن برای اوست"
+    )
+    
+    token = models.CharField(
+        max_length=64,
+        unique=True,
+        db_index=True,
+        verbose_name="توکن دسترسی",
+        help_text="توکن یکتای امن برای احراز هویت"
+    )
+    
+    is_used = models.BooleanField(
+        default=False,
+        verbose_name="استفاده شده",
+        help_text="آیا این توکن قبلاً استفاده شده است؟"
+    )
+    
+    expires_at = models.DateTimeField(
+        verbose_name="زمان انقضا",
+        help_text="زمان انقضای توکن"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name="تاریخ ایجاد"
+    )
+    
+    last_used_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="آخرین استفاده",
+        help_text="زمان آخرین استفاده از توکن"
+    )
+    
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        verbose_name="آدرس IP",
+        help_text="آدرس IP که از این توکن استفاده کرده"
+    )
+    
+    user_agent = models.TextField(
+        blank=True,
+        verbose_name="User Agent",
+        help_text="اطلاعات مرورگر"
+    )
+
+    class Meta:
+        verbose_name = "توکن دسترسی پورتال"
+        verbose_name_plural = "توکن‌های دسترسی پورتال"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['token', 'expires_at']),
+            models.Index(fields=['profile', '-created_at']),
+        ]
+
+    def __str__(self) -> str:
+        """Return string representation of the token."""
+        return f"توکن {self.token[:8]}... - {self.profile.get_display_name()}"
+    
+    def is_valid(self) -> bool:
+        """Check if token is valid (not expired and not used)."""
+        from django.utils import timezone
+        return not self.is_used and self.expires_at > timezone.now()
+    
+    def mark_as_used(self, ip_address: Optional[str] = None, user_agent: str = "") -> None:
+        """Mark token as used."""
+        from django.utils import timezone
+        self.is_used = True
+        self.last_used_at = timezone.now()
+        if ip_address:
+            self.ip_address = ip_address
+        if user_agent:
+            self.user_agent = user_agent
+        self.save()
+
+
 class PriceHistory(models.Model):
     """
-    Historical price tracking for products.
+    Historical price records for products.
     
-    Stores price snapshots for trend analysis and charting.
+    Automatically created by the price update management command to track
+    price changes over time for analysis and reporting.
     """
     
     # Type annotations for auto-generated Django fields
@@ -771,7 +823,7 @@ class PriceHistory(models.Model):
         verbose_name="زمان ثبت",
         help_text="زمان ثبت این قیمت"
     )
-    
+
     class Meta:
         verbose_name = "تاریخچه قیمت"
         verbose_name_plural = "تاریخچه قیمت‌ها"
@@ -780,15 +832,14 @@ class PriceHistory(models.Model):
             models.Index(fields=['product', '-recorded_at']),
             models.Index(fields=['-recorded_at']),
         ]
-    
+
     def __str__(self) -> str:
-        """Return string representation of price history."""
-        from django.utils import timezone
+        """Return string representation of the price history record."""
         return f"{self.product.name} - {self.recorded_at.strftime('%Y-%m-%d %H:%M')}"
     
     def get_price_change_from_previous(self) -> Optional[tuple[Decimal, Decimal]]:
         """
-        Calculate price change from previous record.
+        Calculate percentage change from previous record.
         
         Returns:
             Tuple of (buy_price_change_pct, sell_price_change_pct) or None
@@ -801,14 +852,7 @@ class PriceHistory(models.Model):
         if not previous:
             return None
         
-        if previous.buy_price > 0:
-            buy_change = ((self.buy_price - previous.buy_price) / previous.buy_price) * 100
-        else:
-            buy_change = Decimal('0')
-        
-        if previous.sell_price > 0:
-            sell_change = ((self.sell_price - previous.sell_price) / previous.sell_price) * 100
-        else:
-            sell_change = Decimal('0')
+        buy_change = ((self.buy_price - previous.buy_price) / previous.buy_price * 100) if previous.buy_price > 0 else Decimal('0')
+        sell_change = ((self.sell_price - previous.sell_price) / previous.sell_price * 100) if previous.sell_price > 0 else Decimal('0')
         
         return (buy_change, sell_change)

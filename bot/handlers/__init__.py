@@ -74,6 +74,19 @@ from .menu import (
     show_history,
     cancel,
 )
+from .portal import (
+    portal_access,
+    portal_refresh_callback,
+    portal_info,
+)
+from .registration import (
+    registration_contact_received,
+    registration_name_received,
+    registration_national_code_received,
+    registration_confirm,
+    registration_edit,
+    registration_cancel,
+)
 from .base import (
     get_or_create_profile,
     get_main_menu_keyboard,
@@ -108,6 +121,12 @@ __all__ = [
     'profile_update_confirm', 'profile_update_cancel',
     # Menu
     'show_account', 'show_history', 'cancel',
+    # Portal
+    'portal_access', 'portal_refresh_callback', 'portal_info',
+    # Registration
+    'registration_contact_received',
+    'registration_name_received', 'registration_national_code_received',
+    'registration_confirm', 'registration_edit', 'registration_cancel',
     # Base
     'get_or_create_profile', 'get_main_menu_keyboard',
 ]
