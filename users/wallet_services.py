@@ -34,43 +34,93 @@ class WalletService:
     """Service class for wallet and balance operations."""
     
     @staticmethod
+    def _update_balance(profile: Profile, currency_type: str, amount: Decimal, operation: str) -> None:
+        """
+        Internal helper to update balance (available or frozen) for a currency.
+        
+        Supports both WalletBalance model (new) and legacy Profile fields.
+        Updates both to maintain backward compatibility during transition.
+        
+        Args:
+            profile: User profile.
+            currency_type: Currency code ('RIAL', 'GOLD', 'COIN', 'DOLLAR').
+            amount: Amount to update (positive for add, negative for deduct).
+            operation: 'available' or 'frozen' - which balance to update.
+        """
+        from trading.models import Currency, WalletBalance
+        
+        # Try to update WalletBalance (new dynamic system)
+        try:
+            currency = Currency.objects.get(code=currency_type, is_active=True)
+            wallet_balance = profile.get_or_create_wallet_balance(currency_type)
+            
+            if operation == 'available':
+                wallet_balance.available_balance += amount
+            elif operation == 'frozen':
+                wallet_balance.frozen_balance += amount
+            
+            wallet_balance.save()
+        except (Currency.DoesNotExist, Exception) as e:
+            logger.debug(f"Could not update WalletBalance for {currency_type}: {e}")
+        
+        # Also update legacy Profile fields for backward compatibility
+        if currency_type == 'RIAL':
+            if operation == 'available':
+                profile.rial_balance += amount
+            elif operation == 'frozen':
+                profile.frozen_rial_balance += amount
+        elif currency_type == 'GOLD':
+            if operation == 'available':
+                profile.gold_balance_grams += amount
+            elif operation == 'frozen':
+                profile.frozen_gold_balance += amount
+        elif currency_type == 'COIN':
+            if operation == 'available':
+                profile.coin_balance += amount
+            elif operation == 'frozen':
+                profile.frozen_coin_balance += amount
+        elif currency_type == 'DOLLAR':
+            if operation == 'available':
+                profile.dollar_balance += amount
+            elif operation == 'frozen':
+                profile.frozen_dollar_balance += amount
+        
+        profile.save()
+    
+    @staticmethod
     def get_wallet_balance(profile: Profile) -> Dict[str, Any]:
         """
         Get complete wallet balance information for a user.
         
-        Note: In the Profile model:
-        - rial_balance, gold_balance_grams, etc. represent AVAILABLE (unfrozen) balance
-        - frozen_*_balance fields represent FROZEN balance
-        - Total = Available + Frozen
+        Now dynamically queries active currencies from the Currency model.
+        Supports both new WalletBalance model and legacy Profile fields.
         
         Args:
             profile: User profile.
             
         Returns:
-            Dict containing all balance information.
+            Dict containing all balance information, keyed by currency code (lowercase).
         """
-        return {
-            'rial': {
-                'available': profile.rial_balance,
-                'frozen': profile.frozen_rial_balance,
-                'total': profile.rial_balance + profile.frozen_rial_balance
-            },
-            'gold': {
-                'available': profile.gold_balance_grams,
-                'frozen': profile.frozen_gold_balance,
-                'total': profile.gold_balance_grams + profile.frozen_gold_balance
-            },
-            'coin': {
-                'available': profile.coin_balance,
-                'frozen': profile.frozen_coin_balance,
-                'total': profile.coin_balance + profile.frozen_coin_balance
-            },
-            'dollar': {
-                'available': profile.dollar_balance,
-                'frozen': profile.frozen_dollar_balance,
-                'total': profile.dollar_balance + profile.frozen_dollar_balance
+        from trading.models import Currency
+        
+        balances = {}
+        
+        # Get all active currencies
+        active_currencies = Currency.objects.filter(is_active=True).order_by('display_order', 'code')
+        
+        for currency in active_currencies:
+            currency_code_lower = currency.code.lower()
+            available = profile.get_balance(currency.code)
+            frozen = profile.get_frozen_balance(currency.code)
+            
+            balances[currency_code_lower] = {
+                'available': available,
+                'frozen': frozen,
+                'total': available + frozen,
+                'currency': currency  # Include currency object for metadata
             }
-        }
+        
+        return balances
     
     @staticmethod
     def validate_withdrawal_amount(currency_type: str, amount: Decimal) -> None:
@@ -150,23 +200,9 @@ class WalletService:
                 f"موجودی قابل استفاده: {available}, مقدار درخواستی: {amount}"
             )
         
-        # Freeze the balance
-        if currency_type == 'RIAL':
-            profile.rial_balance -= amount
-            profile.frozen_rial_balance += amount
-        elif currency_type == 'GOLD':
-            profile.gold_balance_grams -= amount
-            profile.frozen_gold_balance += amount
-        elif currency_type == 'COIN':
-            profile.coin_balance -= amount
-            profile.frozen_coin_balance += amount
-        elif currency_type == 'DOLLAR':
-            profile.dollar_balance -= amount
-            profile.frozen_dollar_balance += amount
-        else:
-            raise ValidationError("نوع ارز نامعتبر است.")
-        
-        profile.save()
+        # Freeze the balance (move from available to frozen)
+        WalletService._update_balance(profile, currency_type, -amount, 'available')
+        WalletService._update_balance(profile, currency_type, amount, 'frozen')
         
         logger.info(
             f"Froze {amount} {currency_type} for user {profile.get_display_name()}"
@@ -198,42 +234,17 @@ class WalletService:
             )
         
         # Validate that unfreezing won't cause negative balances
-        if currency_type == 'RIAL':
-            if profile.frozen_rial_balance < amount:
-                raise ValidationError(
-                    f"خطای سیستمی: موجودی مسدود شده ریال کافی نیست. "
-                    f"این نباید رخ دهد. لطفاً با پشتیبانی تماس بگیرید."
-                )
-            profile.frozen_rial_balance -= amount
-            profile.rial_balance += amount
-        elif currency_type == 'GOLD':
-            if profile.frozen_gold_balance < amount:
-                raise ValidationError(
-                    f"خطای سیستمی: موجودی مسدود شده طلا کافی نیست. "
-                    f"این نباید رخ دهد. لطفاً با پشتیبانی تماس بگیرید."
-                )
-            profile.frozen_gold_balance -= amount
-            profile.gold_balance_grams += amount
-        elif currency_type == 'COIN':
-            if profile.frozen_coin_balance < amount:
-                raise ValidationError(
-                    f"خطای سیستمی: موجودی مسدود شده سکه کافی نیست. "
-                    f"این نباید رخ دهد. لطفاً با پشتیبانی تماس بگیرید."
-                )
-            profile.frozen_coin_balance -= amount
-            profile.coin_balance += amount
-        elif currency_type == 'DOLLAR':
-            if profile.frozen_dollar_balance < amount:
-                raise ValidationError(
-                    f"خطای سیستمی: موجودی مسدود شده دلار کافی نیست. "
-                    f"این نباید رخ دهد. لطفاً با پشتیبانی تماس بگیرید."
-                )
-            profile.frozen_dollar_balance -= amount
-            profile.dollar_balance += amount
-        else:
-            raise ValidationError("نوع ارز نامعتبر است.")
+        frozen_balance = WalletService.get_frozen_balance(profile, currency_type)
+        if frozen_balance < amount:
+            currency_name = WalletService.get_currency_display_name(currency_type)
+            raise ValidationError(
+                f"خطای سیستمی: موجودی مسدود شده {currency_name} کافی نیست. "
+                f"این نباید رخ دهد. لطفاً با پشتیبانی تماس بگیرید."
+            )
         
-        profile.save()
+        # Unfreeze the balance (move from frozen to available)
+        WalletService._update_balance(profile, currency_type, -amount, 'frozen')
+        WalletService._update_balance(profile, currency_type, amount, 'available')
         
         logger.info(
             f"Unfroze {amount} {currency_type} for user {profile.get_display_name()} "
@@ -270,18 +281,7 @@ class WalletService:
         old_balance = WalletService.get_available_balance(profile, currency_type)
         
         # Deduct the balance
-        if currency_type == 'RIAL':
-            profile.rial_balance -= amount
-        elif currency_type == 'GOLD':
-            profile.gold_balance_grams -= amount
-        elif currency_type == 'COIN':
-            profile.coin_balance -= amount
-        elif currency_type == 'DOLLAR':
-            profile.dollar_balance -= amount
-        else:
-            raise ValidationError("نوع ارز نامعتبر است.")
-        
-        profile.save()
+        WalletService._update_balance(profile, currency_type, -amount, 'available')
         
         new_balance = WalletService.get_available_balance(profile, currency_type)
         logger.info(
@@ -310,18 +310,7 @@ class WalletService:
         old_balance = WalletService.get_available_balance(profile, currency_type)
         
         # Add the balance
-        if currency_type == 'RIAL':
-            profile.rial_balance += amount
-        elif currency_type == 'GOLD':
-            profile.gold_balance_grams += amount
-        elif currency_type == 'COIN':
-            profile.coin_balance += amount
-        elif currency_type == 'DOLLAR':
-            profile.dollar_balance += amount
-        else:
-            raise ValidationError("نوع ارز نامعتبر است.")
-        
-        profile.save()
+        WalletService._update_balance(profile, currency_type, amount, 'available')
         
         new_balance = WalletService.get_available_balance(profile, currency_type)
         logger.info(
@@ -334,6 +323,8 @@ class WalletService:
         """
         Check if user has sufficient balance for a transaction.
         
+        Uses Profile.get_balance() which supports both dynamic and legacy systems.
+        
         Args:
             profile: User profile.
             currency_type: Type of currency ('RIAL', 'GOLD', 'COIN', 'DOLLAR').
@@ -342,16 +333,8 @@ class WalletService:
         Returns:
             True if sufficient balance, False otherwise.
         """
-        if currency_type == 'RIAL':
-            return profile.rial_balance >= amount
-        elif currency_type == 'GOLD':
-            return profile.gold_balance_grams >= amount
-        elif currency_type == 'COIN':
-            return profile.coin_balance >= amount
-        elif currency_type == 'DOLLAR':
-            return profile.dollar_balance >= amount
-        else:
-            return False
+        available_balance = profile.get_balance(currency_type)
+        return available_balance >= amount
     
     @staticmethod
     def get_available_balance(profile: Profile, currency_type: str) -> Decimal:
@@ -372,6 +355,8 @@ class WalletService:
         """
         Get frozen balance for a currency type.
         
+        Uses Profile.get_frozen_balance() which supports both dynamic and legacy systems.
+        
         Args:
             profile: User profile.
             currency_type: Type of currency ('RIAL', 'GOLD', 'COIN', 'DOLLAR').
@@ -379,16 +364,7 @@ class WalletService:
         Returns:
             Frozen balance amount.
         """
-        if currency_type == 'RIAL':
-            return profile.frozen_rial_balance
-        elif currency_type == 'GOLD':
-            return profile.frozen_gold_balance
-        elif currency_type == 'COIN':
-            return profile.frozen_coin_balance
-        elif currency_type == 'DOLLAR':
-            return profile.frozen_dollar_balance
-        else:
-            return Decimal('0')
+        return profile.get_frozen_balance(currency_type)
     
     @staticmethod
     @transaction.atomic
@@ -429,27 +405,14 @@ class WalletService:
                 f"موجودی مسدود شده: {frozen_balance}, مقدار درخواستی: {amount}"
             )
         
-        # Deduct from frozen balance (permanently remove)
-        if currency_type == 'RIAL':
-            if profile.frozen_rial_balance < amount:
-                raise ValidationError("خطای سیستمی: موجودی مسدود شده ریال کافی نیست.")
-            profile.frozen_rial_balance -= amount
-        elif currency_type == 'GOLD':
-            if profile.frozen_gold_balance < amount:
-                raise ValidationError("خطای سیستمی: موجودی مسدود شده طلا کافی نیست.")
-            profile.frozen_gold_balance -= amount
-        elif currency_type == 'COIN':
-            if profile.frozen_coin_balance < amount:
-                raise ValidationError("خطای سیستمی: موجودی مسدود شده سکه کافی نیست.")
-            profile.frozen_coin_balance -= amount
-        elif currency_type == 'DOLLAR':
-            if profile.frozen_dollar_balance < amount:
-                raise ValidationError("خطای سیستمی: موجودی مسدود شده دلار کافی نیست.")
-            profile.frozen_dollar_balance -= amount
-        else:
-            raise ValidationError("نوع ارز نامعتبر است.")
+        # Validate sufficient frozen balance
+        frozen_balance = WalletService.get_frozen_balance(profile, currency_type)
+        if frozen_balance < amount:
+            currency_name = WalletService.get_currency_display_name(currency_type)
+            raise ValidationError(f"خطای سیستمی: موجودی مسدود شده {currency_name} کافی نیست.")
         
-        profile.save()
+        # Deduct from frozen balance (permanently remove)
+        WalletService._update_balance(profile, currency_type, -amount, 'frozen')
         
         logger.info(
             f"Processed withdrawal of {amount} {currency_type} for user {profile.get_display_name()} "
@@ -484,19 +447,27 @@ class WalletService:
         """
         Get display name for a currency type.
         
+        Now queries the Currency model dynamically, with fallback to hardcoded names.
+        
         Args:
             currency_type: Type of currency ('RIAL', 'GOLD', 'COIN', 'DOLLAR').
             
         Returns:
             Persian display name for the currency.
         """
-        currency_names = {
-            'RIAL': 'ریال',
-            'GOLD': 'طلا',
-            'COIN': 'سکه',
-            'DOLLAR': 'دلار'
-        }
-        return currency_names.get(currency_type, currency_type)
+        try:
+            from trading.models import Currency
+            currency = Currency.objects.get(code=currency_type, is_active=True)
+            return currency.get_display_name()
+        except Currency.DoesNotExist:
+            # Fallback to hardcoded names for backward compatibility
+            currency_names = {
+                'RIAL': 'ریال',
+                'GOLD': 'طلا',
+                'COIN': 'سکه',
+                'DOLLAR': 'دلار'
+            }
+            return currency_names.get(currency_type, currency_type)
     
     @staticmethod
     def has_pending_transactions(profile: Profile, currency_type: Optional[str] = None) -> bool:
@@ -541,6 +512,8 @@ class WalletService:
         """
         Format wallet balance for display in Telegram.
         
+        Now dynamically formats all active currencies using Currency model metadata.
+        
         Args:
             profile: User profile.
             
@@ -551,29 +524,62 @@ class WalletService:
         
         text = "💼 *کیف پول شما:*\n\n"
         
-        # Rial balance - consistent formatting with :,.0f for all amounts
-        text += "💵 *موجودی ریالی:*\n"
-        text += f"├─ کل: {balances['rial']['total']:,.0f} ریال\n"
-        text += f"├─ قابل استفاده: {balances['rial']['available']:,.0f} ریال\n"
-        text += f"└─ مسدود شده: {balances['rial']['frozen']:,.0f} ریال\n\n"
+        # Currency emoji mapping (fallback if not in currency metadata)
+        currency_emojis = {
+            'rial': '💵',
+            'gold': '🪙',
+            'coin': '🥇',
+            'dollar': '💵',
+        }
         
-        # Gold balance - consistent formatting with ,.4f for precision
-        text += "🪙 *موجودی طلا:*\n"
-        text += f"├─ کل: {balances['gold']['total']:,.4f} گرم\n"
-        text += f"├─ قابل استفاده: {balances['gold']['available']:,.4f} گرم\n"
-        text += f"└─ مسدود شده: {balances['gold']['frozen']:,.4f} گرم\n\n"
-        
-        # Coin balance - consistent formatting with :,.0f for whole numbers
-        text += "🥇 *موجودی سکه:*\n"
-        text += f"├─ کل: {balances['coin']['total']:,.0f} عدد\n"
-        text += f"├─ قابل استفاده: {balances['coin']['available']:,.0f} عدد\n"
-        text += f"└─ مسدود شده: {balances['coin']['frozen']:,.0f} عدد\n\n"
-        
-        # Dollar balance - consistent formatting with :,.2f for currency
-        text += "💵 *موجودی دلار:*\n"
-        text += f"├─ کل: ${balances['dollar']['total']:,.2f}\n"
-        text += f"├─ قابل استفاده: ${balances['dollar']['available']:,.2f}\n"
-        text += f"└─ مسدود شده: ${balances['dollar']['frozen']:,.2f}\n\n"
+        # Format each currency dynamically
+        for currency_code_lower, balance_data in balances.items():
+            currency = balance_data.get('currency')
+            if not currency:
+                continue
+            
+            # Get emoji (could be stored in Currency model in future)
+            emoji = currency_emojis.get(currency_code_lower, '💰')
+            
+            # Format based on decimal places
+            decimal_places = currency.decimal_places
+            symbol = currency.display_symbol
+            name = currency.get_display_name()
+            
+            # Format based on decimal places
+            if decimal_places == 0:
+                total_formatted = f"{balance_data['total']:,.0f}"
+                available_formatted = f"{balance_data['available']:,.0f}"
+                frozen_formatted = f"{balance_data['frozen']:,.0f}"
+            elif decimal_places == 2:
+                total_formatted = f"{balance_data['total']:,.2f}"
+                available_formatted = f"{balance_data['available']:,.2f}"
+                frozen_formatted = f"{balance_data['frozen']:,.2f}"
+            elif decimal_places == 4:
+                total_formatted = f"{balance_data['total']:,.4f}"
+                available_formatted = f"{balance_data['available']:,.4f}"
+                frozen_formatted = f"{balance_data['frozen']:,.4f}"
+            else:
+                # Dynamic decimal places - use format with spec
+                format_spec = f",.{decimal_places}f"
+                total_formatted = f"{balance_data['total']:{format_spec}}"
+                available_formatted = f"{balance_data['available']:{format_spec}}"
+                frozen_formatted = f"{balance_data['frozen']:{format_spec}}"
+            
+            # Add symbol prefix/suffix based on currency
+            if currency_code_lower == 'dollar':
+                total_display = f"${total_formatted}"
+                available_display = f"${available_formatted}"
+                frozen_display = f"${frozen_formatted}"
+            else:
+                total_display = f"{total_formatted} {symbol}"
+                available_display = f"{available_formatted} {symbol}"
+                frozen_display = f"{frozen_formatted} {symbol}"
+            
+            text += f"{emoji} *موجودی {name}:*\n"
+            text += f"├─ کل: {total_display}\n"
+            text += f"├─ قابل استفاده: {available_display}\n"
+            text += f"└─ مسدود شده: {frozen_display}\n\n"
         
         # Format date consistently - handle potential None value
         if profile.updated_at:
