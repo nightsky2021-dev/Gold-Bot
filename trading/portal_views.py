@@ -512,3 +512,98 @@ def api_refresh_prices(request: HttpRequest) -> JsonResponse:
         'prices': prices_data,
         'updated_at': timezone.now().isoformat(),
     })
+
+
+# ==================== Invoice and Receipt Views ====================
+
+@require_http_methods(["GET"])
+@require_portal_auth
+def portal_order_invoice(request: HttpRequest, order_id: int) -> HttpResponse:
+    """
+    Download invoice PDF for a specific order.
+    
+    URL: /portal/order/<order_id>/invoice/
+    """
+    profile = request.profile
+    
+    try:
+        order = Order.objects.select_related('product', 'profile').get(
+            id=order_id,
+            profile=profile,
+            status=Order.OrderStatus.COMPLETED
+        )
+    except Order.DoesNotExist:
+        return render(request, 'portal/error.html', {
+            'error_title': 'فاکتور یافت نشد',
+            'error_message': 'سفارش مورد نظر یافت نشد یا تکمیل نشده است.',
+        })
+    
+    # Generate invoice
+    from .invoice_generator import InvoiceGenerator
+    pdf_buffer = InvoiceGenerator.generate_order_invoice(order)
+    filename = InvoiceGenerator.get_invoice_filename(order)
+    
+    # Log invoice download
+    logger.info(f"Invoice downloaded by {profile.get_display_name()}: Order #{order.id}")
+    
+    # Return PDF response
+    response = HttpResponse(pdf_buffer.read(), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@require_http_methods(["GET"])
+@require_portal_auth
+def portal_receipt_view(request: HttpRequest, transaction_id: int) -> HttpResponse:
+    """
+    View receipt image for a specific transaction.
+    
+    URL: /portal/transaction/<transaction_id>/receipt/
+    """
+    profile = request.profile
+    
+    try:
+        from .models import Transaction
+        transaction = Transaction.objects.get(
+            id=transaction_id,
+            profile=profile
+        )
+    except Transaction.DoesNotExist:
+        return render(request, 'portal/error.html', {
+            'error_title': 'رسید یافت نشد',
+            'error_message': 'تراکنش مورد نظر یافت نشد.',
+        })
+    
+    if not transaction.receipt_image:
+        return render(request, 'portal/error.html', {
+            'error_title': 'رسید موجود نیست',
+            'error_message': 'برای این تراکنش رسیدی آپلود نشده است.',
+        })
+    
+    # Serve the image
+    from django.http import FileResponse
+    import os
+    from django.conf import settings
+    
+    file_path = transaction.receipt_image.path
+    if not os.path.exists(file_path):
+        return render(request, 'portal/error.html', {
+            'error_title': 'فایل یافت نشد',
+            'error_message': 'فایل رسید در سرور یافت نشد.',
+        })
+    
+    # Determine content type
+    file_ext = os.path.splitext(file_path)[1].lower()
+    content_types = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.pdf': 'application/pdf',
+    }
+    content_type = content_types.get(file_ext, 'application/octet-stream')
+    
+    return FileResponse(
+        open(file_path, 'rb'),
+        content_type=content_type,
+        filename=os.path.basename(file_path)
+    )

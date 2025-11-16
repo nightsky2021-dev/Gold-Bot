@@ -315,6 +315,31 @@ class Order(models.Model):
         help_text="زمان تکمیل سفارش"
     )
     
+    invoice_number = models.CharField(
+        max_length=50,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="شماره فاکتور",
+        help_text="شماره یکتای فاکتور (به صورت خودکار تولید می‌شود)"
+    )
+    
+    invoice_generated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="زمان تولید فاکتور",
+        help_text="زمان تولید فاکتور"
+    )
+    
+    invoice_hash = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        verbose_name="هش فاکتور",
+        help_text="هش برای تأیید صحت فاکتور"
+    )
+    
     notes = models.TextField(
         blank=True,
         verbose_name="یادداشت‌ها",
@@ -362,6 +387,44 @@ class Order(models.Model):
     def get_status_display(self) -> str:
         """Get display value for status field (Django auto-generated method stub for type checking)."""
         return cast(str, dict(self.OrderStatus.choices).get(self.status, self.status))
+    
+    def generate_invoice_number(self) -> str:
+        """
+        Generate a unique invoice number for this order.
+        
+        Format: INV-YYYYMMDD-XXXXX (where XXXXX is zero-padded order ID)
+        
+        Returns:
+            Invoice number string
+        """
+        from django.utils import timezone
+        date_str = timezone.now().strftime('%Y%m%d')
+        # Use id if available, otherwise use a temporary identifier
+        if self.id:
+            order_id_str = str(self.id).zfill(5)
+        else:
+            # For new orders, use timestamp-based identifier
+            import time
+            order_id_str = str(int(time.time() * 1000))[-5:]
+        return f"INV-{date_str}-{order_id_str}"
+    
+    def save(self, *args, **kwargs):
+        """Override save to auto-generate invoice number when order is completed."""
+        # Check if status is being changed to COMPLETED
+        is_completing = self.status == self.OrderStatus.COMPLETED
+        
+        # Save first to get the ID
+        super().save(*args, **kwargs)
+        
+        # Generate invoice number if order is completed and doesn't have one
+        if is_completing and not self.invoice_number:
+            # Regenerate with actual ID now that we have it
+            self.invoice_number = self.generate_invoice_number()
+            if not self.invoice_generated_at:
+                from django.utils import timezone
+                self.invoice_generated_at = timezone.now()
+            # Save again to store invoice number
+            super().save(update_fields=['invoice_number', 'invoice_generated_at'])
 
 
 class Transaction(models.Model):
@@ -449,6 +512,32 @@ class Transaction(models.Model):
         help_text="تصویر رسید واریز (فقط برای واریز ریالی)"
     )
     
+    receipt_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('PENDING', 'در انتظار بررسی'),
+            ('VERIFIED', 'تأیید شده'),
+            ('REJECTED', 'رد شده'),
+        ],
+        default='PENDING',
+        db_index=True,
+        verbose_name="وضعیت رسید",
+        help_text="وضعیت بررسی رسید"
+    )
+    
+    receipt_rejection_reason = models.TextField(
+        blank=True,
+        verbose_name="دلیل رد رسید",
+        help_text="دلیل رد رسید (در صورت رد)"
+    )
+    
+    receipt_verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="زمان تأیید رسید",
+        help_text="زمان تأیید رسید توسط مدیر"
+    )
+    
     related_order = models.ForeignKey(
         Order,
         on_delete=models.SET_NULL,
@@ -532,6 +621,35 @@ class Transaction(models.Model):
     def get_status_display(self) -> str:
         """Get display value for status field (Django auto-generated method stub for type checking)."""
         return cast(str, dict(self.TransactionStatus.choices).get(self.status, self.status))
+    
+    def clean(self):
+        """Validate receipt image if present."""
+        from django.core.exceptions import ValidationError
+        from django.conf import settings
+        import os
+        
+        super().clean()
+        
+        # Only validate receipt for PENDING deposit transactions
+        if (self.transaction_type == self.TransactionType.DEPOSIT and 
+            self.status == self.TransactionStatus.PENDING and 
+            self.receipt_image):
+            
+            # Validate file format
+            allowed_formats = getattr(settings, 'ALLOWED_RECEIPT_FORMATS', ['PNG', 'JPG', 'JPEG', 'PDF'])
+            file_ext = os.path.splitext(self.receipt_image.name)[1].upper().replace('.', '')
+            
+            if file_ext not in allowed_formats:
+                raise ValidationError({
+                    'receipt_image': f'فرمت فایل باید یکی از موارد زیر باشد: {", ".join(allowed_formats)}'
+                })
+            
+            # Validate file size (max 5MB by default)
+            max_size = getattr(settings, 'MAX_RECEIPT_SIZE', 5 * 1024 * 1024)  # 5MB
+            if self.receipt_image.size > max_size:
+                raise ValidationError({
+                    'receipt_image': f'حجم فایل نباید بیشتر از {max_size / (1024 * 1024):.1f} مگابایت باشد.'
+                })
 
 
 class WithdrawRequest(models.Model):

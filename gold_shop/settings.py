@@ -331,3 +331,13 @@ IMPORT_EXPORT_USE_TRANSACTIONS = True
 # Admin Actions Settings
 ADMINACTIONS_MERGE_DUPLICATE = True
 
+# ============================================
+# RECEIPT VALIDATION SETTINGS
+# ============================================
+
+# Maximum receipt file size (in bytes) - default 5MB
+MAX_RECEIPT_SIZE = 5 * 1024 * 1024  # 5MB
+
+# Allowed receipt file formats
+ALLOWED_RECEIPT_FORMATS = ['PNG', 'JPG', 'JPEG', 'PDF']
+

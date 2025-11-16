@@ -203,8 +203,9 @@ class InvoiceGenerator:
         elements.append(Spacer(1, 5*mm))
         
         # Invoice metadata
+        invoice_number = order.invoice_number or f"#{order.id}"
         invoice_data = [
-            [cls._prepare_persian_text('شماره فاکتور:'), f'#{order.id}'],
+            [cls._prepare_persian_text('شماره فاکتور:'), invoice_number],
             [cls._prepare_persian_text('تاریخ:'), order.created_at.strftime('%Y/%m/%d - %H:%M')],
             [cls._prepare_persian_text('وضعیت:'), cls._prepare_persian_text(order.get_status_display())],
         ]
@@ -338,7 +339,8 @@ class InvoiceGenerator:
         Returns:
             Filename string
         """
-        order_type = "buy" if order.order_type == 'BUY' else "sell"
-        timestamp = order.created_at.strftime('%Y%m%d_%H%M%S')
-        return f"invoice_{order_type}_{order.id}_{timestamp}.pdf"
+        invoice_number = order.invoice_number or str(order.id)
+        # Remove special characters from invoice number for filename
+        safe_invoice_number = invoice_number.replace('/', '-').replace('\\', '-')
+        return f"invoice_{safe_invoice_number}.pdf"
 
