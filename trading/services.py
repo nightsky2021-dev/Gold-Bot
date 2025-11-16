@@ -873,7 +873,10 @@ class OrderService:
     @staticmethod
     def get_product_currency_type(product: Product) -> str:
         """
-        Get currency type for a product based on product code.
+        Get currency type for a product using ProductCurrencyMapping.
+        
+        Now uses the dynamic ProductCurrencyMapping model instead of hardcoded logic.
+        Falls back to legacy product code mapping if no mapping exists.
         
         Args:
             product: Product instance.
@@ -881,6 +884,21 @@ class OrderService:
         Returns:
             Currency type string ('RIAL', 'GOLD', 'COIN', 'DOLLAR').
         """
+        from trading.models import ProductCurrencyMapping
+        
+        # Try to get from ProductCurrencyMapping (new dynamic system)
+        try:
+            mapping = ProductCurrencyMapping.objects.filter(
+                product=product,
+                is_primary=True
+            ).select_related('currency').first()
+            
+            if mapping and mapping.currency:
+                return mapping.currency.code
+        except Exception as e:
+            logger.debug(f"Could not get currency from mapping for product {product.id}: {e}")
+        
+        # Fallback to legacy product code mapping
         from bot.constants import PRODUCT_GOLD, PRODUCT_COIN, PRODUCT_DOLLAR
         
         if product.product_code == PRODUCT_GOLD:

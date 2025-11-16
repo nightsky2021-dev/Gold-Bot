@@ -266,6 +266,99 @@ class Profile(models.Model):
         """Check if user has sufficient available dollar balance."""
         return self.get_available_dollar_balance() >= amount
     
+    def get_balance(self, currency_code: str) -> Decimal:
+        """
+        Get available balance for a currency by code (dynamic or legacy).
+        
+        This method supports both the new dynamic WalletBalance model
+        and the legacy hardcoded Profile fields for backward compatibility.
+        
+        Args:
+            currency_code: Currency code (e.g., 'RIAL', 'GOLD', 'COIN', 'DOLLAR').
+            
+        Returns:
+            Available balance amount.
+        """
+        # Try to get from WalletBalance first (new dynamic system)
+        try:
+            from trading.models import Currency, WalletBalance
+            currency = Currency.objects.get(code=currency_code, is_active=True)
+            wallet_balance = WalletBalance.objects.filter(
+                profile=self,
+                currency=currency
+            ).first()
+            if wallet_balance:
+                return wallet_balance.available_balance
+        except (Currency.DoesNotExist, WalletBalance.DoesNotExist, ImportError):
+            pass
+        
+        # Fallback to legacy fields
+        return self.get_available_balance(currency_code)
+    
+    def get_frozen_balance(self, currency_code: str) -> Decimal:
+        """
+        Get frozen balance for a currency by code (dynamic or legacy).
+        
+        This method supports both the new dynamic WalletBalance model
+        and the legacy hardcoded Profile fields for backward compatibility.
+        
+        Args:
+            currency_code: Currency code (e.g., 'RIAL', 'GOLD', 'COIN', 'DOLLAR').
+            
+        Returns:
+            Frozen balance amount.
+        """
+        # Try to get from WalletBalance first (new dynamic system)
+        try:
+            from trading.models import Currency, WalletBalance
+            currency = Currency.objects.get(code=currency_code, is_active=True)
+            wallet_balance = WalletBalance.objects.filter(
+                profile=self,
+                currency=currency
+            ).first()
+            if wallet_balance:
+                return wallet_balance.frozen_balance
+        except (Currency.DoesNotExist, WalletBalance.DoesNotExist, ImportError):
+            pass
+        
+        # Fallback to legacy fields
+        if currency_code == 'RIAL':
+            return self.frozen_rial_balance
+        elif currency_code == 'GOLD':
+            return self.frozen_gold_balance
+        elif currency_code == 'COIN':
+            return self.frozen_coin_balance
+        elif currency_code == 'DOLLAR':
+            return self.frozen_dollar_balance
+        else:
+            return Decimal('0')
+    
+    def get_or_create_wallet_balance(self, currency_code: str) -> 'WalletBalance':
+        """
+        Get or create WalletBalance for a currency.
+        
+        This method ensures a WalletBalance record exists for the given currency.
+        If it doesn't exist, it creates one with zero balances.
+        
+        Args:
+            currency_code: Currency code (e.g., 'RIAL', 'GOLD', 'COIN', 'DOLLAR').
+            
+        Returns:
+            WalletBalance instance.
+        """
+        from trading.models import Currency, WalletBalance
+        
+        currency = Currency.objects.get(code=currency_code, is_active=True)
+        wallet_balance, created = WalletBalance.objects.get_or_create(
+            profile=self,
+            currency=currency,
+            defaults={
+                'available_balance': Decimal('0.0000'),
+                'frozen_balance': Decimal('0.0000'),
+            }
+        )
+        return wallet_balance
+    
     def get_available_balance(self, currency_type: str) -> Decimal:
         """
         Get available balance for a given currency type.

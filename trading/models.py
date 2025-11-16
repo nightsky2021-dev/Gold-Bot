@@ -856,3 +856,241 @@ class PriceHistory(models.Model):
         sell_change = ((self.sell_price - previous.sell_price) / previous.sell_price * 100) if previous.sell_price > 0 else Decimal('0')
         
         return (buy_change, sell_change)
+
+
+class Currency(models.Model):
+    """
+    Central registry of supported wallet currencies.
+    
+    This model provides a dynamic configuration for currencies,
+    allowing admins to add new currencies without code changes.
+    """
+    
+    # Type annotations for auto-generated Django fields
+    id: int
+    
+    code = models.CharField(
+        max_length=20,
+        unique=True,
+        db_index=True,
+        verbose_name="کد ارز",
+        help_text="کد یکتای ارز (مثل: RIAL, GOLD, COIN, DOLLAR)"
+    )
+    
+    name = models.CharField(
+        max_length=100,
+        verbose_name="نام فارسی",
+        help_text="نام فارسی ارز (مثل: ریال، طلا، سکه، دلار)"
+    )
+    
+    display_name = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name="نام نمایشی",
+        help_text="نام نمایشی برای استفاده در رابط کاربری"
+    )
+    
+    display_symbol = models.CharField(
+        max_length=20,
+        verbose_name="نماد نمایشی",
+        help_text="نماد نمایشی ارز (مثل: ریال، گرم، عدد، $)"
+    )
+    
+    decimal_places = models.IntegerField(
+        default=0,
+        verbose_name="تعداد اعشار",
+        help_text="تعداد اعشار برای نمایش (0 برای ریال/سکه، 4 برای طلا، 2 برای دلار)"
+    )
+    
+    display_order = models.IntegerField(
+        default=0,
+        verbose_name="ترتیب نمایش",
+        help_text="ترتیب نمایش در لیست ارزها (عدد کمتر = اولویت بیشتر)"
+    )
+    
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,
+        verbose_name="فعال",
+        help_text="آیا این ارز فعال است و در کیف پول نمایش داده می‌شود؟"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="تاریخ ایجاد"
+    )
+    
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="آخرین به‌روزرسانی"
+    )
+
+    class Meta:
+        verbose_name = "ارز"
+        verbose_name_plural = "ارزها"
+        ordering = ['display_order', 'code']
+        indexes = [
+            models.Index(fields=['is_active', 'display_order']),
+            models.Index(fields=['code']),
+        ]
+
+    def __str__(self) -> str:
+        """Return string representation of the currency."""
+        return f"{self.name} ({self.code})"
+    
+    def get_display_name(self) -> str:
+        """Get display name, fallback to name if not set."""
+        return self.display_name or self.name
+
+
+class ProductCurrencyMapping(models.Model):
+    """
+    Maps products to wallet currencies.
+    
+    Each product must have exactly one primary currency mapping.
+    This allows flexible configuration of which currency each product affects.
+    """
+    
+    # Type annotations for auto-generated Django fields
+    id: int
+    
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='currency_mappings',
+        verbose_name="محصول",
+        help_text="محصول مورد نظر"
+    )
+    
+    currency = models.ForeignKey(
+        Currency,
+        on_delete=models.PROTECT,
+        related_name='product_mappings',
+        verbose_name="ارز",
+        help_text="ارز مرتبط با این محصول"
+    )
+    
+    is_primary = models.BooleanField(
+        default=True,
+        verbose_name="ارز اصلی",
+        help_text="آیا این ارز اصلی برای این محصول است؟ (هر محصول باید یک ارز اصلی داشته باشد)"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="تاریخ ایجاد"
+    )
+    
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="آخرین به‌روزرسانی"
+    )
+
+    class Meta:
+        verbose_name = "نقشه‌برداری محصول به ارز"
+        verbose_name_plural = "نقشه‌برداری‌های محصول به ارز"
+        ordering = ['product', '-is_primary', 'currency']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['product', 'currency'],
+                name='unique_product_currency'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['product', 'is_primary']),
+            models.Index(fields=['currency']),
+        ]
+
+    def __str__(self) -> str:
+        """Return string representation of the mapping."""
+        primary_text = " (اصلی)" if self.is_primary else ""
+        return f"{self.product.name} → {self.currency.name}{primary_text}"
+    
+    def save(self, *args, **kwargs):
+        """Override save to ensure only one primary currency per product."""
+        if self.is_primary:
+            # Unset other primary mappings for this product
+            ProductCurrencyMapping.objects.filter(
+                product=self.product,
+                is_primary=True
+            ).exclude(pk=self.pk if self.pk else None).update(is_primary=False)
+        super().save(*args, **kwargs)
+
+
+class WalletBalance(models.Model):
+    """
+    Dynamic wallet balance storage for currencies.
+    
+    This model provides a flexible way to store balances for any currency,
+    complementing the existing hardcoded Profile fields for backward compatibility.
+    """
+    
+    # Type annotations for auto-generated Django fields
+    id: int
+    
+    profile = models.ForeignKey(
+        Profile,
+        on_delete=models.CASCADE,
+        related_name='wallet_balances',
+        verbose_name="پروفایل کاربر",
+        help_text="کاربری که این موجودی متعلق به اوست"
+    )
+    
+    currency = models.ForeignKey(
+        Currency,
+        on_delete=models.PROTECT,
+        related_name='wallet_balances',
+        verbose_name="ارز",
+        help_text="نوع ارز"
+    )
+    
+    available_balance = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        default=Decimal('0.0000'),
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="موجودی قابل استفاده",
+        help_text="موجودی قابل استفاده (غیر مسدود)"
+    )
+    
+    frozen_balance = models.DecimalField(
+        max_digits=15,
+        decimal_places=4,
+        default=Decimal('0.0000'),
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="موجودی مسدود شده",
+        help_text="موجودی مسدود شده (برای برداشت در انتظار)"
+    )
+    
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="تاریخ ایجاد"
+    )
+    
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="آخرین به‌روزرسانی"
+    )
+
+    class Meta:
+        verbose_name = "موجودی کیف پول"
+        verbose_name_plural = "موجودی‌های کیف پول"
+        ordering = ['profile', 'currency']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['profile', 'currency'],
+                name='unique_profile_currency'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['profile', 'currency']),
+            models.Index(fields=['currency']),
+        ]
+
+    def __str__(self) -> str:
+        """Return string representation of the wallet balance."""
+        return f"{self.profile.get_display_name()} - {self.currency.name}: {self.available_balance} (فعال) + {self.frozen_balance} (مسدود)"
+    
+    def get_total_balance(self) -> Decimal:
+        """Get total balance (available + frozen)."""
+        return self.available_balance + self.frozen_balance

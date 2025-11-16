@@ -21,7 +21,10 @@ from rangefilter.filters import DateRangeFilter, NumericRangeFilter  # type: ign
 from import_export import resources, fields  # type: ignore[import-untyped]
 from import_export.admin import ImportExportModelAdmin, ExportActionMixin  # type: ignore[import-untyped]
 
-from .models import Product, Order, Transaction, WithdrawRequest, PortalAccessToken
+from .models import (
+    Product, Order, Transaction, WithdrawRequest, PortalAccessToken,
+    Currency, ProductCurrencyMapping, WalletBalance
+)
 from users.models import Profile
 from .reporting import BusinessReportService
 
@@ -112,6 +115,61 @@ class WithdrawRequestResource(resources.ModelResource):
         export_order = fields
 
 
+@admin.register(Currency)
+class CurrencyAdmin(admin.ModelAdmin):
+    """
+    Admin interface for Currency model.
+    
+    Allows admins to manage supported wallet currencies dynamically.
+    """
+    
+    list_display = (
+        'code',
+        'name',
+        'display_symbol',
+        'decimal_places',
+        'display_order',
+        'is_active',
+        'created_at'
+    )
+    
+    list_editable = ('is_active', 'display_order')
+    
+    list_filter = ('is_active', 'decimal_places')
+    
+    search_fields = ('code', 'name', 'display_name')
+    
+    readonly_fields = ('created_at', 'updated_at')
+    
+    fieldsets = (
+        ('اطلاعات پایه', {
+            'fields': ('code', 'name', 'display_name', 'display_symbol')
+        }),
+        ('تنظیمات نمایش', {
+            'fields': ('decimal_places', 'display_order', 'is_active')
+        }),
+        ('تاریخچه', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    ordering = ['display_order', 'code']
+
+
+class ProductCurrencyMappingInline(admin.TabularInline):
+    """
+    Inline admin for ProductCurrencyMapping.
+    
+    Allows configuring product-to-currency mappings directly from Product admin.
+    """
+    model = ProductCurrencyMapping
+    extra = 0
+    fields = ('currency', 'is_primary')
+    verbose_name = 'نقشه‌برداری ارز'
+    verbose_name_plural = 'نقشه‌برداری‌های ارز'
+
+
 @admin.register(Product)
 class ProductAdmin(ImportExportModelAdmin):
     """
@@ -156,6 +214,8 @@ class ProductAdmin(ImportExportModelAdmin):
         'updated_at', 
         'created_at'
     )
+    
+    inlines = [ProductCurrencyMappingInline]
     
     fieldsets = (
         ('اطلاعات محصول', {
@@ -1225,6 +1285,121 @@ class BusinessReportingAdmin(admin.ModelAdmin):
             'admin/trading/reporting_dashboard.html',
             context
         )
+
+
+@admin.register(ProductCurrencyMapping)
+class ProductCurrencyMappingAdmin(admin.ModelAdmin):
+    """
+    Admin interface for ProductCurrencyMapping model.
+    
+    Allows admins to configure which currency each product affects.
+    """
+    
+    list_display = (
+        'product',
+        'currency',
+        'is_primary',
+        'created_at'
+    )
+    
+    list_filter = ('is_primary', 'currency', 'product')
+    
+    search_fields = (
+        'product__name',
+        'product__product_code',
+        'currency__code',
+        'currency__name'
+    )
+    
+    autocomplete_fields = ('product', 'currency')
+    
+    readonly_fields = ('created_at', 'updated_at')
+    
+    fieldsets = (
+        ('اطلاعات نقشه‌برداری', {
+            'fields': ('product', 'currency', 'is_primary')
+        }),
+        ('تاریخچه', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def save_model(self, request, obj, form, change):
+        """Override save to ensure only one primary currency per product."""
+        super().save_model(request, obj, form, change)
+        # The model's save() method already handles this, but we ensure it here too
+        if obj.is_primary:
+            ProductCurrencyMapping.objects.filter(
+                product=obj.product,
+                is_primary=True
+            ).exclude(pk=obj.pk).update(is_primary=False)
+
+
+@admin.register(WalletBalance)
+class WalletBalanceAdmin(admin.ModelAdmin):
+    """
+    Admin interface for WalletBalance model.
+    
+    Allows admins to view and manage dynamic wallet balances.
+    """
+    
+    list_display = (
+        'profile',
+        'currency',
+        'available_balance_display',
+        'frozen_balance_display',
+        'total_balance_display',
+        'updated_at'
+    )
+    
+    list_filter = ('currency', ('updated_at', DateRangeFilter))
+    
+    search_fields = (
+        'profile__user__username',
+        'profile__user__first_name',
+        'profile__user__last_name',
+        'profile__phone_number',
+        'currency__code',
+        'currency__name'
+    )
+    
+    autocomplete_fields = ('profile', 'currency')
+    
+    readonly_fields = ('created_at', 'updated_at', 'total_balance_display')
+    
+    fieldsets = (
+        ('اطلاعات موجودی', {
+            'fields': ('profile', 'currency')
+        }),
+        ('موجودی‌ها', {
+            'fields': (
+                'available_balance',
+                'frozen_balance',
+                'total_balance_display'
+            )
+        }),
+        ('تاریخچه', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def available_balance_display(self, obj):
+        """Display available balance with currency symbol."""
+        return f"{obj.available_balance:,.{obj.currency.decimal_places}f} {obj.currency.display_symbol}"
+    available_balance_display.short_description = 'موجودی قابل استفاده'
+    
+    def frozen_balance_display(self, obj):
+        """Display frozen balance with currency symbol."""
+        return f"{obj.frozen_balance:,.{obj.currency.decimal_places}f} {obj.currency.display_symbol}"
+    frozen_balance_display.short_description = 'موجودی مسدود شده'
+    
+    def total_balance_display(self, obj):
+        """Display total balance with currency symbol."""
+        total = obj.get_total_balance()
+        return f"{total:,.{obj.currency.decimal_places}f} {obj.currency.display_symbol}"
+    total_balance_display.short_description = 'موجودی کل'
 
 
 @admin.register(PortalAccessToken)
