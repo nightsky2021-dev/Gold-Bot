@@ -7,6 +7,9 @@ urlpatterns = [
     path('', views.home, name='home'),
     path('api/status/', views.api_status, name='api_status'),
     
+    # Admin invoice endpoint
+    path('admin/order/<int:order_id>/invoice/', views.admin_order_invoice, name='admin_order_invoice'),
+    
     # Reporting endpoints
     path('api/reports/transactions/', views_reporting.transaction_history_api, name='transaction_history_api'),
     path('api/reports/orders/', views_reporting.order_history_api, name='order_history_api'),
@@ -33,4 +36,8 @@ urlpatterns = [
     
     # Portal API endpoints
     path('portal/api/prices/', portal_views.api_refresh_prices, name='portal_api_prices'),
+    
+    # Invoice and Receipt endpoints
+    path('portal/order/<int:order_id>/invoice/', portal_views.portal_order_invoice, name='portal_order_invoice'),
+    path('portal/transaction/<int:transaction_id>/receipt/', portal_views.portal_receipt_view, name='portal_receipt_view'),
 ]

@@ -88,12 +88,13 @@
                         <th>قیمت واحد</th>
                         <th>مبلغ کل</th>
                         <th>وضعیت</th>
+                        <th>عملیات</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for order in orders %}
                     <tr>
-                        <td>#{{ order.id }}</td>
+                        <td>#{{ order.id }}{% if order.invoice_number %}<br><small style="color: #666;">{{ order.invoice_number }}</small>{% endif %}</td>
                         <td>{{ order.created_at|date:"Y/m/d H:i" }}</td>
                         <td>
                             <span class="badge {% if order.order_type == 'BUY' %}badge-success{% else %}badge-warning{% endif %}">
@@ -106,6 +107,15 @@
                         <td data-format-number>{{ order.total_amount|floatformat:0 }}</td>
                         <td>
                             <span class="badge badge-success">{{ order.get_status_display }}</span>
+                        </td>
+                        <td>
+                            {% if order.status == 'COMPLETED' %}
+                            <a href="{% url 'trading:portal_order_invoice' order.id %}" class="btn btn-small btn-primary" style="padding: 4px 8px; font-size: 12px;">
+                                📄 دانلود فاکتور
+                            </a>
+                            {% else %}
+                            <span style="color: #999;">—</span>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -127,6 +137,12 @@
                     <div class="transaction-detail-label">تاریخ</div>
                     <div class="transaction-detail-value">{{ order.created_at|date:"Y/m/d H:i" }}</div>
                 </div>
+                {% if order.invoice_number %}
+                <div class="transaction-detail">
+                    <div class="transaction-detail-label">شماره فاکتور</div>
+                    <div class="transaction-detail-value">{{ order.invoice_number }}</div>
+                </div>
+                {% endif %}
                 <div class="transaction-detail">
                     <div class="transaction-detail-label">مقدار</div>
                     <div class="transaction-detail-value">{{ order.quantity_grams|floatformat:4 }}</div>
@@ -139,6 +155,13 @@
                     <div class="transaction-detail-label">مبلغ کل</div>
                     <div class="transaction-detail-value" data-format-number>{{ order.total_amount|floatformat:0 }}</div>
                 </div>
+                {% if order.status == 'COMPLETED' %}
+                <div class="transaction-actions" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee;">
+                    <a href="{% url 'trading:portal_order_invoice' order.id %}" class="btn btn-small btn-primary" style="width: 100%;">
+                        📄 دانلود فاکتور
+                    </a>
+                </div>
+                {% endif %}
             </div>
         </div>
         {% endfor %}

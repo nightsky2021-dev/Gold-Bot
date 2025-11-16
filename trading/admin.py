@@ -332,6 +332,7 @@ class OrderAdmin(ImportExportModelAdmin):
     
     list_display = (
         'id',
+        'invoice_number_display',
         'get_user_display',
         'product',
         'order_type_badge',
@@ -339,6 +340,7 @@ class OrderAdmin(ImportExportModelAdmin):
         'formatted_quantity',
         'formatted_total',
         'user_balance_indicator',
+        'invoice_download_link',
         'created_at'
     )
     
@@ -366,7 +368,10 @@ class OrderAdmin(ImportExportModelAdmin):
         'created_at',
         'updated_at',
         'completed_at',
-        'total_amount'
+        'total_amount',
+        'invoice_number',
+        'invoice_generated_at',
+        'invoice_hash'
     )
     
     fieldsets = (
@@ -382,6 +387,10 @@ class OrderAdmin(ImportExportModelAdmin):
         }),
         ('وضعیت', {
             'fields': ('status', 'notes')
+        }),
+        ('اطلاعات فاکتور', {
+            'fields': ('invoice_number', 'invoice_generated_at', 'invoice_hash'),
+            'classes': ('collapse',)
         }),
         ('تاریخچه', {
             'fields': ('created_at', 'updated_at', 'completed_at'),
@@ -448,6 +457,27 @@ class OrderAdmin(ImportExportModelAdmin):
         return f"{obj.total_amount:,.0f} ریال"
     formatted_total.short_description = 'مبلغ کل'
     formatted_total.admin_order_field = 'total_amount'
+    
+    def invoice_number_display(self, obj: Order) -> str:
+        """Display invoice number."""
+        if obj.invoice_number:
+            return format_html(
+                '<code style="background: #f5f5f5; padding: 2px 6px; border-radius: 3px;">{}</code>',
+                obj.invoice_number
+            )
+        return format_html('<span style="color: #999;">—</span>')
+    invoice_number_display.short_description = 'شماره فاکتور'
+    invoice_number_display.admin_order_field = 'invoice_number'
+    
+    def invoice_download_link(self, obj: Order) -> str:
+        """Display invoice download link."""
+        if obj.status == Order.OrderStatus.COMPLETED:
+            return format_html(
+                '<a href="{}" class="button" style="background-color: #28a745; color: white; padding: 3px 8px; border-radius: 4px; text-decoration: none;">📄 دانلود فاکتور</a>',
+                reverse('trading:admin_order_invoice', args=[obj.id])
+            )
+        return format_html('<span style="color: #999;">—</span>')
+    invoice_download_link.short_description = 'فاکتور'
     
     def get_readonly_fields(self, request, obj=None):
         """Make all fields readonly since orders are executed instantly."""
@@ -537,6 +567,7 @@ class TransactionAdmin(ImportExportModelAdmin):
         'currency_badge',
         'formatted_amount',
         'status_badge',
+        'receipt_status_badge',
         'receipt_preview',
         'bank_account_display',
         'created_at'
@@ -546,6 +577,7 @@ class TransactionAdmin(ImportExportModelAdmin):
         'status',
         'transaction_type',
         'currency',
+        'receipt_status',
         ('created_at', DateRangeFilter),
         ('updated_at', DateRangeFilter),
         ('amount', NumericRangeFilter),
@@ -565,7 +597,8 @@ class TransactionAdmin(ImportExportModelAdmin):
     readonly_fields = (
         'created_at',
         'updated_at',
-        'completed_at'
+        'completed_at',
+        'receipt_verified_at'
     )
     
     fieldsets = (
@@ -580,13 +613,23 @@ class TransactionAdmin(ImportExportModelAdmin):
             'fields': ('status', 'admin_notes'),
             'description': 'برای تعدیل دستی، وضعیت باید "تکمیل شده" باشد.'
         }),
+        ('رسید', {
+            'fields': ('receipt_status', 'receipt_rejection_reason', 'receipt_verified_at'),
+            'description': 'وضعیت بررسی رسید واریز'
+        }),
         ('تاریخچه', {
             'fields': ('created_at', 'updated_at', 'completed_at'),
             'classes': ('collapse',)
         }),
     )
     
-    actions = ['approve_transactions', 'reject_transactions', 'create_manual_adjustment']
+    actions = [
+        'approve_transactions', 
+        'reject_transactions', 
+        'create_manual_adjustment',
+        'verify_receipts',
+        'reject_receipts'
+    ]
     
     date_hierarchy = 'created_at'
     
@@ -648,6 +691,17 @@ class TransactionAdmin(ImportExportModelAdmin):
             )
         return format_html('<span style="color: gray;">-</span>')
     receipt_preview.short_description = 'رسید'
+    
+    def receipt_status_badge(self, obj: Transaction) -> str:
+        """Display receipt status with badge."""
+        badges = {
+            'PENDING': '<span class="badge badge-warning" style="background-color: #ffc107; color: black; padding: 5px 10px; border-radius: 12px;">⏳ در انتظار</span>',
+            'VERIFIED': '<span class="badge badge-success" style="background-color: #28a745; color: white; padding: 5px 10px; border-radius: 12px;">✓ تأیید شده</span>',
+            'REJECTED': '<span class="badge badge-danger" style="background-color: #dc3545; color: white; padding: 5px 10px; border-radius: 12px;">✗ رد شده</span>',
+        }
+        return format_html(badges.get(obj.receipt_status, ''))
+    receipt_status_badge.short_description = 'وضعیت رسید'
+    receipt_status_badge.admin_order_field = 'receipt_status'
     
     def bank_account_display(self, obj: Transaction) -> str:
         """Display bank account."""
@@ -768,6 +822,52 @@ class TransactionAdmin(ImportExportModelAdmin):
             level='info'
         )
     create_manual_adjustment.short_description = '⚙️ ایجاد تعدیل دستی موجودی'
+    
+    @db_transaction.atomic
+    def verify_receipts(self, request, queryset):
+        """Verify receipt status for selected transactions."""
+        from .models import Transaction
+        
+        pending_receipts = queryset.filter(
+            receipt_status='PENDING',
+            receipt_image__isnull=False
+        )
+        verified_count = 0
+        
+        for txn in pending_receipts:
+            txn.receipt_status = Transaction.ReceiptStatus.VERIFIED if hasattr(Transaction, 'ReceiptStatus') else 'VERIFIED'
+            txn.receipt_verified_at = timezone.now()
+            txn.save()
+            verified_count += 1
+        
+        self.message_user(
+            request,
+            f'{verified_count} رسید تأیید شد.'
+        )
+    verify_receipts.short_description = '✓ تأیید رسیدهای انتخاب شده'
+    
+    @db_transaction.atomic
+    def reject_receipts(self, request, queryset):
+        """Reject receipt status for selected transactions."""
+        from .models import Transaction
+        
+        pending_receipts = queryset.filter(
+            receipt_status='PENDING',
+            receipt_image__isnull=False
+        )
+        
+        # For now, just mark as rejected. In a full implementation,
+        # you might want to add a form to collect rejection reason.
+        rejected_count = pending_receipts.update(
+            receipt_status='REJECTED',
+            receipt_rejection_reason='رد شده توسط مدیر'
+        )
+        
+        self.message_user(
+            request,
+            f'{rejected_count} رسید رد شد.'
+        )
+    reject_receipts.short_description = '✗ رد رسیدهای انتخاب شده'
 
 
 @admin.register(WithdrawRequest)
