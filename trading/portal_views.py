@@ -173,10 +173,22 @@ def portal_dashboard(request: HttpRequest) -> HttpResponse:
     # Get dashboard data
     data = PortalDataService.get_dashboard_data(profile)
     
+    # Extract rial_balance structure from wallet_balances if available
+    # Otherwise construct from profile fields
+    if 'wallet_balances' in data and 'rial' in data['wallet_balances']:
+        rial_balance = data['wallet_balances']['rial']
+    else:
+        # Fallback: construct from profile fields
+        rial_balance = {
+            'total': profile.rial_balance + profile.frozen_rial_balance,
+            'available': profile.rial_balance,
+            'frozen': profile.frozen_rial_balance
+        }
+    
     context = {
         'profile': profile,
         'total_portfolio_value': data['total_portfolio_value'],
-        'rial_balance': data['rial_balance'],
+        'rial_balance': rial_balance,
         'portfolio_items': data['portfolio_items'],
         'recent_orders': data['recent_orders'],
         'today_pl': data['today_pl'],

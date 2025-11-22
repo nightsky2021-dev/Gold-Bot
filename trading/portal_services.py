@@ -372,10 +372,26 @@ class PortalDataService:
         # Overall P/L
         overall_pl = ProfitLossService.calculate_portfolio_pl(profile)
         
+        # Get wallet balances using WalletService for consistency
+        from users.services import WalletService
+        wallet_balances = WalletService.get_wallet_balance(profile)
+        
+        # Safely extract rial balance with fallback
+        rial_balance_data = wallet_balances.get('rial')
+        if not rial_balance_data:
+            # Fallback: construct from profile fields if not in wallet_balances
+            logger.warning(f"Rial balance not found in wallet_balances for profile {profile.id}, using fallback")
+            rial_balance_data = {
+                'total': profile.rial_balance + profile.frozen_rial_balance,
+                'available': profile.rial_balance,
+                'frozen': profile.frozen_rial_balance
+            }
+        
         return {
             'profile': profile,
             'total_portfolio_value': total_portfolio_value,
-            'rial_balance': profile.rial_balance,
+            'rial_balance': rial_balance_data,
+            'wallet_balances': wallet_balances,
             'portfolio_items': portfolio_items,
             'recent_orders': recent_orders,
             'today_pl': today_pl['total_pl'],
@@ -477,12 +493,14 @@ class PortalDataService:
                     'value_in_rial': balance * product.sell_price
                 })
         
-        # Rial balance
-        rial_balance = {
+        # Rial balance - use WalletService for consistency
+        from users.services import WalletService
+        wallet_balances = WalletService.get_wallet_balance(profile)
+        rial_balance = wallet_balances.get('rial', {
             'available': profile.get_available_rial_balance(),
             'frozen': profile.frozen_rial_balance,
-            'total': profile.rial_balance
-        }
+            'total': profile.rial_balance + profile.frozen_rial_balance
+        })
         
         # Total deposits and withdrawals
         deposits = Transaction.objects.filter(
