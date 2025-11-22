@@ -1,24 +1,25 @@
 """
-Wallet handlers for deposits, withdrawals, and transactions.
+Wallet handlers module.
 
-This module re-exports all wallet handlers from the modular wallet subpackage
-for backward compatibility. The actual implementation is now organized in:
-- wallet/display.py: Wallet display and transaction history
-- wallet/deposit.py: Deposit flow handlers
-- wallet/withdraw.py: Withdrawal flow handlers
-- wallet/utils.py: Common utilities
+This module provides a modular structure for wallet-related handlers:
+- display: Wallet display and transaction history
+- deposit: Deposit flow handlers
+- withdraw: Withdrawal flow handlers
+- utils: Common utilities
 
-This file maintains backward compatibility with existing imports.
+All handlers are exported from this module for easy importing.
 """
 
-# Re-export all handlers from the modular structure
-from .wallet import (
-    # Display handlers
+# Display handlers
+from .display import (
     show_wallet,
     wallet_refresh,
     show_wallet_transactions,
     wallet_back,
-    # Deposit handlers
+)
+
+# Deposit handlers
+from .deposit import (
     deposit_start,
     deposit_system_bank_selected,
     deposit_amount_entered,
@@ -30,7 +31,10 @@ from .wallet import (
     deposit_back_to_amount,
     deposit_back_to_source_bank,
     deposit_back_to_receipt,
-    # Withdrawal handlers
+)
+
+# Withdrawal handlers
+from .withdraw import (
     withdraw_start,
     withdraw_currency_selected,
     withdraw_amount_entered,
@@ -40,6 +44,13 @@ from .wallet import (
     withdraw_back_to_start,
     withdraw_back_to_amount,
     withdraw_back_to_bank,
+)
+
+# Utilities
+from .utils import (
+    safe_edit_message,
+    get_callback_data,
+    get_amount_from_text,
 )
 
 __all__ = [
@@ -70,4 +81,8 @@ __all__ = [
     'withdraw_back_to_start',
     'withdraw_back_to_amount',
     'withdraw_back_to_bank',
+    # Utilities
+    'safe_edit_message',
+    'get_callback_data',
+    'get_amount_from_text',
 ]

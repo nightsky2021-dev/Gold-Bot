@@ -17,8 +17,10 @@ CONFIRMING_SELL: Final[int] = 4
 
 # States for deposit workflow
 DEPOSIT_SELECT_CURRENCY: Final[int] = 10
+DEPOSIT_SELECT_SYSTEM_BANK: Final[int] = 10  # Alias for backward compatibility
 DEPOSIT_ENTER_AMOUNT: Final[int] = 11
 DEPOSIT_SELECT_BANK: Final[int] = 12
+DEPOSIT_SELECT_SOURCE_BANK: Final[int] = 12  # Alias for source bank selection
 DEPOSIT_UPLOAD_RECEIPT: Final[int] = 13
 DEPOSIT_CONFIRM: Final[int] = 14
 
@@ -54,6 +56,7 @@ CONFIRM_PREFIX: Final[str] = "confirm_"
 CANCEL_PREFIX: Final[str] = "cancel_"
 CURRENCY_PREFIX: Final[str] = "currency_"
 BANK_PREFIX: Final[str] = "bank_"
+SYSBANK_PREFIX: Final[str] = "sysbank_"
 TRANSACTION_PREFIX: Final[str] = "transaction_"
 FILTER_PREFIX: Final[str] = "filter_"
 SETTINGS_PREFIX: Final[str] = "settings_"
