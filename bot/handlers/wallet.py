@@ -65,6 +65,9 @@ async def show_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text(ERROR_NOT_APPROVED, parse_mode='Markdown')
         return
     
+    # Refresh profile from database to get latest balance data
+    await sync_to_async(profile.refresh_from_db)()
+    
     # Format wallet display
     wallet_text = await sync_to_async(WalletService.format_wallet_display)(profile)
     

@@ -43,12 +43,23 @@ class WalletService:
         - frozen_*_balance fields represent FROZEN balance
         - Total = Available + Frozen
         
+        This method always returns all supported currencies, regardless of balance amount.
+        Currencies with zero balances are still included for consistency.
+        
         Args:
             profile: User profile.
             
         Returns:
-            Dict containing all balance information.
+            Dict containing all balance information with structure:
+            {
+                'rial': {'available': Decimal, 'frozen': Decimal, 'total': Decimal},
+                'gold': {'available': Decimal, 'frozen': Decimal, 'total': Decimal},
+                'coin': {'available': Decimal, 'frozen': Decimal, 'total': Decimal},
+                'dollar': {'available': Decimal, 'frozen': Decimal, 'total': Decimal}
+            }
         """
+        # Always return all currencies for consistency
+        # This ensures the structure is predictable regardless of balance amounts
         return {
             'rial': {
                 'available': profile.rial_balance,

@@ -16,8 +16,16 @@
     
     <div class="stat-card secondary">
         <div class="stat-label">موجودی ریالی</div>
-        <div class="stat-value" data-format-number>{{ rial_balance|floatformat:0 }}</div>
+        <div class="stat-value" data-format-number>{% if rial_balance.total %}{{ rial_balance.total|floatformat:0 }}{% else %}{{ rial_balance|floatformat:0 }}{% endif %}</div>
         <div class="stat-change">ریال</div>
+        {% if rial_balance.available is not None %}
+        <div class="stat-detail" style="font-size: 0.85em; margin-top: 0.5em; color: #666;">
+            قابل استفاده: {{ rial_balance.available|floatformat:0 }} ریال
+            {% if rial_balance.frozen > 0 %}
+            | مسدود: {{ rial_balance.frozen|floatformat:0 }} ریال
+            {% endif %}
+        </div>
+        {% endif %}
     </div>
     
     <div class="stat-card {% if today_pl >= 0 %}accent{% else %}danger{% endif %}">
